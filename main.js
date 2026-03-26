@@ -1,8 +1,10 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const encryption = require('./encryption');
 
 let mainWindow;
+let isHTMLFullscreen = false;
 let tabs = {}; // Store views by ID
 const UI_HEIGHT = 112; // Height of our tabs + nav bar + bookmark bar
 
@@ -23,8 +25,29 @@ function createWindow() {
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
-            nodeIntegration: false
+            nodeIntegration: false,
+            sandbox: true
         }
+    });
+
+    // Security constraints for main window
+    mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+        if (permission === 'fullscreen') return callback(true);
+        callback(false); // Deny all other permissions safely
+    });
+
+    mainWindow.webContents.setWindowOpenHandler(() => {
+        return { action: 'deny' }; // Block popups
+    });
+
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+        if (!url.includes('/renderer/index.html')) {
+            event.preventDefault(); // Prevent navigating away from main app UI
+        }
+    });
+
+    mainWindow.webContents.on('will-attach-webview', (event) => {
+        event.preventDefault(); // Prevent unexpected webview attachments
     });
 
     // mainWindow.webContents.openDevTools();
@@ -102,7 +125,11 @@ function createWindow() {
     mainWindow.on('resize', () => {
         const { width, height } = mainWindow.getContentBounds();
         Object.values(tabs).forEach(view => {
-            view.setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+            if (isHTMLFullscreen) {
+                view.setBounds({ x: 0, y: 0, width, height });
+            } else {
+                view.setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+            }
         });
     });
 }
@@ -137,9 +164,24 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
 
     // Initial bounds set
     const { width, height } = mainWindow.getContentBounds();
-    view.setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+    view.setBounds({ x: 0, y: isHTMLFullscreen ? 0 : UI_HEIGHT, width, height: isHTMLFullscreen ? height : height - UI_HEIGHT });
 
     view.webContents.focus(); // Focus the view immediately
+
+    // Fullscreen handling
+    view.webContents.on('enter-html-full-screen', () => {
+        isHTMLFullscreen = true;
+        mainWindow.setFullScreen(true);
+        const { width, height } = mainWindow.getContentBounds();
+        view.setBounds({ x: 0, y: 0, width, height });
+    });
+
+    view.webContents.on('leave-html-full-screen', () => {
+        isHTMLFullscreen = false;
+        mainWindow.setFullScreen(false);
+        const { width, height } = mainWindow.getContentBounds();
+        view.setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+    });
 
     // --- SYNCING METADATA TO UI ---
     view.webContents.on('context-menu', (event, params) => {
@@ -265,7 +307,16 @@ function getSessionPath() {
 ipcMain.handle('session:load', () => {
     try {
         const p = getSessionPath();
-        if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'));
+        if (fs.existsSync(p)) {
+            const raw = fs.readFileSync(p, 'utf-8');
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.encrypted !== undefined) {
+                const dec = encryption.decrypt(parsed);
+                return dec ? JSON.parse(dec) : null;
+            } else {
+                return parsed; // Fallback to legacy plaintext
+            }
+        }
     } catch (e) {
         console.error('Failed to load session:', e);
     }
@@ -274,7 +325,8 @@ ipcMain.handle('session:load', () => {
 
 ipcMain.handle('session:save', (e, data) => {
     try {
-        fs.writeFileSync(getSessionPath(), JSON.stringify(data, null, 2), 'utf-8');
+        const payload = encryption.encrypt(JSON.stringify(data));
+        fs.writeFileSync(getSessionPath(), JSON.stringify(payload, null, 2), 'utf-8');
     } catch (e) {
         console.error('Failed to save session:', e);
     }
@@ -287,7 +339,9 @@ function appendHistory(url, title) {
     // Ignore Google's homepage and its query parameter variants (but keep /search queries)
     if (url.startsWith('https://www.google.com/') && !url.includes('/search')) return;
 
-    const entry = JSON.stringify({ url, title, timestamp: Date.now() }) + '\n';
+    const dataObj = JSON.stringify({ url, title, timestamp: Date.now() });
+    const payload = encryption.encrypt(dataObj);
+    const entry = JSON.stringify(payload) + '\n';
     fs.appendFile(getHistoryPath(), entry, (err) => {
         if (err) console.error('Failed to append history:', err);
     });
@@ -299,7 +353,18 @@ ipcMain.handle('history:get', async () => {
         if (!fs.existsSync(p)) return [];
         const content = fs.readFileSync(p, 'utf-8');
         const lines = content.trim().split('\n');
-        return lines.filter(Boolean).map(l => JSON.parse(l)).reverse(); // latest first
+        return lines.filter(Boolean).map(l => {
+            try {
+                const parsed = JSON.parse(l);
+                if (parsed && parsed.encrypted !== undefined) {
+                    const dec = encryption.decrypt(parsed);
+                    return dec ? JSON.parse(dec) : null;
+                }
+                return parsed; // Fallback to legacy plaintext
+            } catch (err) {
+                return null;
+            }
+        }).filter(Boolean).reverse(); // latest first
     } catch (e) {
         console.error('Failed to load history:', e);
         return [];
@@ -330,7 +395,13 @@ function loadBookmarks() {
     try {
         const p = getBookmarksPath();
         if (fs.existsSync(p)) {
-            return JSON.parse(fs.readFileSync(p, 'utf-8'));
+            const raw = fs.readFileSync(p, 'utf-8');
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.encrypted !== undefined) {
+                const dec = encryption.decrypt(parsed);
+                return dec ? JSON.parse(dec) : { bar: [] };
+            }
+            return parsed; // Fallback to legacy plaintext
         }
     } catch (e) {
         console.error('Failed to load bookmarks:', e);
@@ -340,7 +411,8 @@ function loadBookmarks() {
 
 function saveBookmarks(data) {
     try {
-        fs.writeFileSync(getBookmarksPath(), JSON.stringify(data, null, 2), 'utf-8');
+        const payload = encryption.encrypt(JSON.stringify(data));
+        fs.writeFileSync(getBookmarksPath(), JSON.stringify(payload, null, 2), 'utf-8');
     } catch (e) {
         console.error('Failed to save bookmarks:', e);
     }
