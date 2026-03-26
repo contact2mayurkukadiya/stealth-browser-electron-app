@@ -1,0 +1,37 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('electronAPI', {
+    // Tab management
+    newTab: (id, isStealth = false, url = null) => ipcRenderer.send('new-tab', { id, isStealth, url }),
+    switchTab: (id) => ipcRenderer.send('switch-tab', { id }),
+    closeTab: (id) => ipcRenderer.send('close-tab', { id }),
+    navigate: (id, url) => ipcRenderer.send('navigate', { id, url }),
+    goBack: (id) => ipcRenderer.send('go-back', { id }),
+    goForward: (id) => ipcRenderer.send('go-forward', { id }),
+    reload: (id) => ipcRenderer.send('reload', { id }),
+    onUrlChanged: (callback) => ipcRenderer.on('url-changed', (event, data) => callback(data)),
+    onTabUpdate: (callback) => ipcRenderer.on('tab-update', (event, data) => callback(data)),
+    onShortcutNewTab: (callback) => ipcRenderer.on('shortcut-new-tab', () => callback()),
+    onShortcutNewStealthTab: (callback) => ipcRenderer.on('shortcut-new-stealth-tab', () => callback()),
+    onShortcutHistory: (callback) => ipcRenderer.on('shortcut-history', () => callback()),
+    onShortcutCloseTab: (callback) => ipcRenderer.on('shortcut-close-tab', () => callback()),
+    onShortcutReload: (callback) => ipcRenderer.on('shortcut-reload', () => callback()),
+    onShortcutSwitchTab: (callback) => ipcRenderer.on('shortcut-switch-tab', (event, data) => callback(data)),
+
+    // Bookmarks
+    bookmarksGet: () => ipcRenderer.invoke('bookmarks:get'),
+    bookmarksSave: (data) => ipcRenderer.invoke('bookmarks:save', data),
+    bookmarksAdd: (item) => ipcRenderer.invoke('bookmarks:add', item),
+    bookmarksRemove: (id) => ipcRenderer.invoke('bookmarks:remove', id),
+    bookmarksReorder: (bar) => ipcRenderer.invoke('bookmarks:reorder', bar),
+    bookmarksAddFolder: (name) => ipcRenderer.invoke('bookmarks:addFolder', name),
+    bookmarksAddToFolder: (folderId, item) => ipcRenderer.invoke('bookmarks:addToFolder', folderId, item),
+
+    // History
+    historyGet: () => ipcRenderer.invoke('history:get'),
+    historyClear: () => ipcRenderer.invoke('history:clear'),
+
+    // Session
+    sessionSave: (data) => ipcRenderer.invoke('session:save', data),
+    sessionLoad: () => ipcRenderer.invoke('session:load'),
+});
