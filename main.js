@@ -12,7 +12,7 @@ process.on('uncaughtException', (error) => {
 let mainWindow;
 let isHTMLFullscreen = false;
 let tabs = {}; // Store views by ID
-const UI_HEIGHT = 112; // Height of our tabs + nav bar + bookmark bar
+const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
 
 try {
     require("electron-reloader")(module, {
