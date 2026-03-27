@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: transparent;
+        }
+
+        .tooltip {
+            /* background: rgba(47, 60, 66, 0.85); */
+            background: rgba(255, 255, 255, 1);
+            backdrop-filter: blur(0px);
+            -webkit-backdrop-filter: blur(0px);
+            color: rgba(47, 60, 66, 0.85);
+            padding: 12px;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+            display: inline-block;
+            max-width: 300px;
+            pointer-events: none;
+            margin: 0px 10px;
+        }
+
+        .tooltip-title {
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 6px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.4;
+            word-break: break-all;
+        }
+
+        .tooltip-domain {
+            font-size: 11px;
+            opacity: 0.6;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .tooltip-stats {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #FFB430;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="tooltip" class="tooltip" style="display: none;">
+        <div id="title" class="tooltip-title">Loading...</div>
+        <div id="domain" class="tooltip-domain">domain.com</div>
+        <div id="stats" class="tooltip-stats" style="display: none;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path
+                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" />
+                <path d="M13 7h-2v5.41l4.29 4.29 1.41-1.41L13 12.59V7z" />
+            </svg>
+            <span id="memory-usage">0.0 MB private memory</span>
+        </div>
+    </div>
+
+    <script>
+        // The electronAPI is provided via the preload.js script
+        if (window.electronAPI && window.electronAPI.onTooltipUpdate) {
+            const tooltipEl = document.getElementById('tooltip');
+            const titleEl = document.getElementById('title');
+            const domainEl = document.getElementById('domain');
+            const statsEl = document.getElementById('stats');
+            const memoryUsageEl = document.getElementById('memory-usage');
+
+            window.electronAPI.onTooltipUpdate((data) => {
+                if (!data) {
+                    tooltipEl.style.display = 'none';
+                    return;
+                }
+
+                titleEl.textContent = data.title || 'New Tab';
+
+                let domain = 'New Tab';
+                try {
+                    if (data.url && !data.url.startsWith('app://')) {
+                        domain = new URL(data.url).hostname;
+                    }
+                } catch (e) { }
+                domainEl.textContent = domain;
+
+                if (data.memory > 0) {
+                    statsEl.style.display = 'flex';
+                    memoryUsageEl.textContent = `${(data.memory / (1024 * 1024)).toFixed(1)} MB private memory`;
+                } else {
+                    statsEl.style.display = 'none';
+                }
+
+                tooltipEl.style.display = 'inline-block';
+            });
+        }
+    </script>
+</body>
+
+</html>

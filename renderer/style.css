@@ -33,7 +33,7 @@ body {
     flex: 1 1 200px;
     min-width: 50px;
     max-width: 240px;
-    transition: all 0.2s ease;
+    transition: all 0.3s ease;
     user-select: none;
     display: flex;
     align-items: center;
@@ -50,16 +50,20 @@ body {
 
 /* Stealth Tab styling */
 .stealth-tab {
-    background: #3a1515; /* Dark red inactive tab */
-    color: #eba1a1; /* Light red text */
+    background: #3a1515;
+    /* Dark red inactive tab */
+    color: #eba1a1;
+    /* Light red text */
 }
 
 .stealth-tab:not(.active):hover {
-    background: #4a1c1c; /* Lighter red on hover */
+    background: #4a1c1c;
+    /* Lighter red on hover */
 }
 
 .stealth-tab.active {
-    background: #5c2020; /* Deep red active tab */
+    background: #5c2020;
+    /* Deep red active tab */
     color: #fff;
     border-radius: 6px 6px 0 0;
 }
@@ -67,8 +71,11 @@ body {
 .tab-title {
     flex: 1;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
+    /* Instead of ellipsis, use a fade-out mask like modern browsers */
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+    pointer-events: none;
 }
 
 /* ── Nav bar ──────────────────────────────────────────────────────────────── */
@@ -81,19 +88,73 @@ body {
     height: 45px;
 }
 
-#url-input {
+.url-container {
+    position: relative;
     flex-grow: 1;
+    display: flex;
+    align-items: center;
     background: #2F3C42;
-    border: none;
     border-radius: 20px;
+    height: 34px;
+    overflow: hidden;
+    box-sizing: border-box;
+    transition: border 0.2s;
+}
+
+#url-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
     color: white;
-    padding: 8px 15px;
-    -webkit-app-region: no-drag;
+    padding: 0 15px;
     outline: none;
+    z-index: 2;
+    font-size: 14px;
+    -webkit-app-region: no-drag;
+}
+
+#url-input:not(:focus) {
+    /* Completely hide input text and selection when not focused */
+    opacity: 0;
+}
+
+.url-display {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.4); /* Gray for non-domain */
+    pointer-events: none;
+    z-index: 1;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.url-display .domain {
+    color: #FFFFFF; /* White for domain */
+}
+
+#url-input:focus ~ .url-display {
+    opacity: 0;
+}
+
+.url-container:focus-within {
+    border: 1px solid #FFB430;
 }
 
 #url-input:focus {
-    border: 1px solid #FFB430;
+    background: transparent;
+    outline: none;
+}
+
+#url-input::selection {
+    background: #FFB430;
+    color: #000000;
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
@@ -143,9 +204,17 @@ body {
 }
 
 @keyframes star-pop {
-    0%   { transform: scale(1); }
-    50%  { transform: scale(1.45); }
-    100% { transform: scale(1); }
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.45);
+    }
+
+    100% {
+        transform: scale(1);
+    }
 }
 
 .bookmark-bar {
@@ -325,10 +394,10 @@ body {
     min-width: 180px;
     max-width: 280px;
     background: #2D3E45;
-    border: 1px solid rgba(255,255,255,0.12);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
     padding: 4px 0;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
     overflow: hidden;
 }
 
@@ -340,7 +409,7 @@ body {
     padding: 7px 12px;
     background: transparent;
     border: none;
-    color: rgba(255,255,255,0.85);
+    color: rgba(255, 255, 255, 0.85);
     font-size: 13px;
     cursor: pointer;
     text-align: left;
@@ -351,13 +420,13 @@ body {
 }
 
 .bk-dropdown-item:hover {
-    background: rgba(255,255,255,0.1);
+    background: rgba(255, 255, 255, 0.1);
     color: white;
 }
 
 .bk-dropdown-empty {
     padding: 8px 12px;
-    color: rgba(255,255,255,0.35);
+    color: rgba(255, 255, 255, 0.35);
     font-size: 12px;
     font-style: italic;
 }
@@ -368,10 +437,10 @@ body {
     z-index: 1000;
     min-width: 160px;
     background: #2D3E45;
-    border: 1px solid rgba(255,255,255,0.12);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
     padding: 4px 0;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .bk-context-item {
@@ -419,7 +488,7 @@ body {
 }
 
 .bk-folder-prompt button {
-    background: rgba(255,255,255,0.1);
+    background: rgba(255, 255, 255, 0.1);
     border: none;
     color: white;
     border-radius: 4px;
@@ -430,7 +499,7 @@ body {
 }
 
 .bk-folder-prompt button:hover {
-    background: rgba(255,255,255,0.2);
+    background: rgba(255, 255, 255, 0.2);
 }
 
 /* ── Tab active chrome ────────────────────────────────────────────────────── */
@@ -511,7 +580,9 @@ body {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* ── Close button ─────────────────────────────────────────────────────────── */
@@ -533,3 +604,9 @@ body {
 .close-btn:hover {
     background: rgba(255, 255, 255, 0.1);
 }
+
+/* ── Tab drag-and-drop ─────────────────────────────────────────────────────── */
+.tab.tab-dragging {
+    transition: none !important;
+}
+

@@ -34,4 +34,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Session
     sessionSave: (data) => ipcRenderer.invoke('session:save', data),
     sessionLoad: () => ipcRenderer.invoke('session:load'),
+
+    getTabInfo: (id) => ipcRenderer.invoke('tab:get-info', { id }),
+
+    // Tooltip Overlay
+    tooltipShow: (data) => ipcRenderer.send('tooltip:show', data),
+    tooltipHide: () => ipcRenderer.send('tooltip:hide'),
+    onTooltipUpdate: (callback) => ipcRenderer.on('tooltip:update', (event, data) => callback(data)),
 });

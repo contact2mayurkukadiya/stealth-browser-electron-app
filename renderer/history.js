@@ -36,7 +36,11 @@ function renderHistory(searchQuery = '') {
     }
 
     if (filteredHistory.length === 0) {
-        container.innerHTML = `<div class="empty-state">${searchQuery ? 'No history entries found matching your search.' : 'Your browsing history is empty.'}</div>`;
+        container.textContent = '';
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.textContent = searchQuery ? 'No history entries found matching your search.' : 'Your browsing history is empty.';
+        container.appendChild(empty);
         return;
     }
 
@@ -49,7 +53,7 @@ function renderHistory(searchQuery = '') {
         grouped[dayLabel].push(item);
     });
 
-    container.innerHTML = '';
+    container.textContent = '';
 
     for (const [dateLabel, items] of Object.entries(grouped)) {
         const titleEl = document.createElement('div');
@@ -69,21 +73,50 @@ function renderHistory(searchQuery = '') {
             try { domain = new URL(item.url).hostname; } catch (e) {}
             const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : '';
 
+            // Build item using DOM APIs — no innerHTML with user data (XSS fix)
             const itemEl = document.createElement('div');
             itemEl.className = 'history-item';
-            
-            const imgHtml = faviconUrl 
-                ? `<img src="${faviconUrl}" class="favicon" onerror="this.style.display='none'">` 
-                : `<div class="favicon"></div>`;
 
-            itemEl.innerHTML = `
-                <div class="time">${timeStr}</div>
-                ${imgHtml}
-                <div class="details">
-                    <a href="${item.url}" class="title" onclick="event.preventDefault(); window.electronAPI.newTab(Date.now().toString()); setTimeout(() => window.electronAPI.navigate(Date.now().toString(), '${item.url}'), 100);">${escapeHtml(item.title)}</a>
-                    <div class="url">${escapeHtml(item.url)}</div>
-                </div>
-            `;
+            const timeEl = document.createElement('div');
+            timeEl.className = 'time';
+            timeEl.textContent = timeStr;
+
+            let faviconEl;
+            if (faviconUrl) {
+                faviconEl = document.createElement('img');
+                faviconEl.src = faviconUrl;
+                faviconEl.className = 'favicon';
+                faviconEl.onerror = () => { faviconEl.style.display = 'none'; };
+            } else {
+                faviconEl = document.createElement('div');
+                faviconEl.className = 'favicon';
+            }
+
+            const detailsEl = document.createElement('div');
+            detailsEl.className = 'details';
+
+            const titleLink = document.createElement('a');
+            titleLink.href = '#';
+            titleLink.className = 'title';
+            titleLink.textContent = item.title || item.url;
+            titleLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                // Open history URL in a new tab via IPC
+                const tabId = 'hist-' + Date.now();
+                window.electronAPI.newTab(tabId, false, item.url);
+            });
+
+            const urlEl = document.createElement('div');
+            urlEl.className = 'url';
+            urlEl.textContent = item.url;
+
+            detailsEl.appendChild(titleLink);
+            detailsEl.appendChild(urlEl);
+
+            itemEl.appendChild(timeEl);
+            itemEl.appendChild(faviconEl);
+            itemEl.appendChild(detailsEl);
+
             listEl.appendChild(itemEl);
         });
 

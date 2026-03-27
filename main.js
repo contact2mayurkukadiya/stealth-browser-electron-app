@@ -1,4 +1,5 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem, dialog } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem, dialog, protocol, net } = require('electron');
+const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs');
 const encryption = require('./encryption');
@@ -46,8 +47,9 @@ function createWindow() {
     });
 
     mainWindow.webContents.on('will-navigate', (event, url) => {
-        if (!url.includes('/renderer/index.html')) {
-            event.preventDefault(); // Prevent navigating away from main app UI
+        // Only allow staying on the app:// UI page
+        if (!url.startsWith('app://')) {
+            event.preventDefault();
         }
     });
 
@@ -61,7 +63,7 @@ function createWindow() {
     // --- STEALTH MODE ---
     mainWindow.setContentProtection(true);
 
-    mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'));
+    mainWindow.loadURL('app://index.html');
 
     // Custom Application Menu for Robust Shortcuts
     const menu = Menu.buildFromTemplate([
@@ -137,7 +139,52 @@ function createWindow() {
             }
         });
     });
+
+    createTooltipOverlay();
 }
+
+let tooltipView;
+function createTooltipOverlay() {
+    tooltipView = new WebContentsView({
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+        }
+    });
+
+    tooltipView.setBackgroundColor('#00000000'); // Transparent background
+    tooltipView.webContents.loadURL('app://renderer/tooltip.html');
+
+    // Add it last so it's on top of all other views
+    mainWindow.contentView.addChildView(tooltipView);
+    tooltipView.setBounds({ x: 0, y: 0, width: 0, height: 0 }); // Hide initially
+}
+
+ipcMain.on('tooltip:show', (e, { title, url, memory, x, y, width, height }) => {
+    if (!isSenderTrusted(e)) return;
+    if (!tooltipView) return;
+
+    // Re-assert it as the top-most view to solve z-order issues after tab switches
+    mainWindow.contentView.addChildView(tooltipView);
+
+    // Position and size the overlay view
+    tooltipView.setBounds({
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(width),
+        height: Math.round(height)
+    });
+    tooltipView.webContents.send('tooltip:update', { title, url, memory });
+});
+
+ipcMain.on('tooltip:hide', (e) => {
+    if (!isSenderTrusted(e)) return;
+    if (tooltipView) {
+        tooltipView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    }
+});
 
 // Helper to handle keyboard shortcuts across different WebContents
 function handleShortcuts(event, input) {
@@ -173,6 +220,21 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
 
     view.webContents.focus(); // Focus the view immediately
 
+    // ─── Security guards for tab content (Rules 13, 14) ────
+    // Block all popup windows opened by web content
+    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+    // Block navigations to non-http(s) URLs (prevents file:// exfiltration)
+    view.webContents.on('will-navigate', (event, targetUrl) => {
+        const allowed = targetUrl.startsWith('https://') ||
+            targetUrl.startsWith('http://') ||
+            targetUrl.startsWith('app://');
+        if (!allowed) {
+            console.warn(`[Security] Blocked navigation to: ${targetUrl}`);
+            event.preventDefault();
+        }
+    });
+
     // Fullscreen handling
     view.webContents.on('enter-html-full-screen', () => {
         isHTMLFullscreen = true;
@@ -205,7 +267,7 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
 
     const getDisplayUrl = (rawUrl) => {
         if (!rawUrl) return '';
-        if (rawUrl.includes('/renderer/history.html')) return 'stealth://history';
+        if (rawUrl.startsWith('app://') && rawUrl.includes('history')) return 'stealth://history';
         return rawUrl;
     };
 
@@ -309,7 +371,8 @@ function getSessionPath() {
     return sessionPath;
 }
 
-ipcMain.handle('session:load', () => {
+ipcMain.handle('session:load', (e) => {
+    if (!isSenderTrusted(e)) return null;
     try {
         const p = getSessionPath();
         if (fs.existsSync(p)) {
@@ -329,6 +392,7 @@ ipcMain.handle('session:load', () => {
 });
 
 ipcMain.handle('session:save', (e, data) => {
+    if (!isSenderTrusted(e)) return false;
     try {
         const payload = encryption.encrypt(JSON.stringify(data));
         fs.writeFileSync(getSessionPath(), JSON.stringify(payload, null, 2), 'utf-8');
@@ -340,7 +404,7 @@ ipcMain.handle('session:save', (e, data) => {
 
 function appendHistory(url, title) {
     if (!url || url.startsWith('stealth://')) return;
-    
+
     // Ignore Google's homepage and its query parameter variants (but keep /search queries)
     if (url.startsWith('https://www.google.com/') && !url.includes('/search')) return;
 
@@ -352,7 +416,8 @@ function appendHistory(url, title) {
     });
 }
 
-ipcMain.handle('history:get', async () => {
+ipcMain.handle('history:get', async (e) => {
+    if (!isSenderTrusted(e)) return [];
     try {
         const p = getHistoryPath();
         if (!fs.existsSync(p)) return [];
@@ -376,7 +441,8 @@ ipcMain.handle('history:get', async () => {
     }
 });
 
-ipcMain.handle('history:clear', async () => {
+ipcMain.handle('history:clear', async (e) => {
+    if (!isSenderTrusted(e)) return false;
     try {
         fs.writeFileSync(getHistoryPath(), '', 'utf-8');
         return true;
@@ -423,14 +489,19 @@ function saveBookmarks(data) {
     }
 }
 
-ipcMain.handle('bookmarks:get', () => loadBookmarks());
+ipcMain.handle('bookmarks:get', (e) => {
+    if (!isSenderTrusted(e)) return { bar: [] };
+    return loadBookmarks();
+});
 
 ipcMain.handle('bookmarks:save', (e, data) => {
+    if (!isSenderTrusted(e)) return false;
     saveBookmarks(data);
     return true;
 });
 
 ipcMain.handle('bookmarks:add', (e, item) => {
+    if (!isSenderTrusted(e)) return loadBookmarks();
     const data = loadBookmarks();
     data.bar.push(item);
     saveBookmarks(data);
@@ -438,6 +509,7 @@ ipcMain.handle('bookmarks:add', (e, item) => {
 });
 
 ipcMain.handle('bookmarks:remove', (e, id) => {
+    if (!isSenderTrusted(e)) return loadBookmarks();
     const data = loadBookmarks();
     function removeFromList(list) {
         return list.filter(item => {
@@ -454,6 +526,7 @@ ipcMain.handle('bookmarks:remove', (e, id) => {
 });
 
 ipcMain.handle('bookmarks:reorder', (e, bar) => {
+    if (!isSenderTrusted(e)) return false;
     const data = loadBookmarks();
     data.bar = bar;
     saveBookmarks(data);
@@ -461,6 +534,7 @@ ipcMain.handle('bookmarks:reorder', (e, bar) => {
 });
 
 ipcMain.handle('bookmarks:addFolder', (e, name) => {
+    if (!isSenderTrusted(e)) return loadBookmarks();
     const data = loadBookmarks();
     const folder = { id: 'f-' + Date.now(), type: 'folder', title: name, children: [] };
     data.bar.push(folder);
@@ -469,6 +543,7 @@ ipcMain.handle('bookmarks:addFolder', (e, name) => {
 });
 
 ipcMain.handle('bookmarks:addToFolder', (e, folderId, item) => {
+    if (!isSenderTrusted(e)) return loadBookmarks();
     const data = loadBookmarks();
     const folder = data.bar.find(b => b.id === folderId && b.type === 'folder');
     if (folder) {
@@ -478,25 +553,67 @@ ipcMain.handle('bookmarks:addToFolder', (e, folderId, item) => {
     return data;
 });
 
-// IPC LISTENERS
-ipcMain.on('new-tab', (e, { id, isStealth, url }) => createTab(id, url || "https://www.google.com", isStealth));
+// ─── IPC SENDER VALIDATION (Rule 17) ─────────────────────────────────────────
+// Only messages originating from our own app:// pages are trusted.
+function isSenderTrusted(event) {
+    try {
+        const frameUrl = event.senderFrame?.url || '';
+        // Allow app:// (our custom protocol) and data: pages (error pages)
+        return frameUrl.startsWith('app://') || frameUrl.startsWith('data:');
+    } catch {
+        return false;
+    }
+}
+
+ipcMain.handle('tab:get-info', async (e, { id }) => {
+    if (!isSenderTrusted(e)) return null;
+    const view = tabs[id];
+    if (!view || view.webContents.isDestroyed()) return null;
+
+    try {
+        const wc = view.webContents;
+        let memoryBytes = 0;
+
+        // Safety check for Electron versions that might not have this method
+        if (typeof wc.getProcessMemoryInfo === 'function') {
+            try {
+                const info = await wc.getProcessMemoryInfo();
+                memoryBytes = info.privateBytes || 0;
+            } catch (err) {
+                console.error('getProcessMemoryInfo failed:', err);
+            }
+        }
+
+        return {
+            title: wc.getTitle(),
+            url: wc.getURL(),
+            memory: memoryBytes
+        };
+    } catch (err) {
+        console.error('Failed to get tab info:', err);
+        return null;
+    }
+});
+
+// ─── IPC LISTENERS ───────────────────────────────────────────────────────────
+ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
+    if (!isSenderTrusted(e)) return;
+    createTab(id, url || 'https://www.google.com', isStealth);
+});
 
 ipcMain.on('switch-tab', (e, { id }) => {
-    Object.values(tabs).forEach(v => {
-        // Hide by moving off-screen or removing. Modern approach is removing or hiding via visibility.
-        // For WebContentsView, we can remove it from parent and add it back or change z-index.
-        mainWindow.contentView.removeChildView(v);
-    });
+    if (!isSenderTrusted(e)) return;
+    Object.values(tabs).forEach(v => mainWindow.contentView.removeChildView(v));
     if (tabs[id]) {
         mainWindow.contentView.addChildView(tabs[id]);
-        // Reset bounds since it was removed
         const { width, height } = mainWindow.getContentBounds();
         tabs[id].setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
-        tabs[id].webContents.focus(); // Ensure the new view is focused
+        tabs[id].webContents.focus();
     }
 });
 
 ipcMain.on('close-tab', (e, { id }) => {
+    if (!isSenderTrusted(e)) return;
     if (tabs[id]) {
         mainWindow.contentView.removeChildView(tabs[id]);
         tabs[id].webContents.destroy();
@@ -504,15 +621,16 @@ ipcMain.on('close-tab', (e, { id }) => {
     }
 });
 
-ipcMain.on('go-back', (e, { id }) => tabs[id]?.webContents.navigationHistory.goBack());
-ipcMain.on('go-forward', (e, { id }) => tabs[id]?.webContents.navigationHistory.goForward());
-ipcMain.on('reload', (e, { id }) => tabs[id]?.webContents.reload());
+ipcMain.on('go-back', (e, { id }) => { if (isSenderTrusted(e)) tabs[id]?.webContents.navigationHistory.goBack(); });
+ipcMain.on('go-forward', (e, { id }) => { if (isSenderTrusted(e)) tabs[id]?.webContents.navigationHistory.goForward(); });
+ipcMain.on('reload', (e, { id }) => { if (isSenderTrusted(e)) tabs[id]?.webContents.reload(); });
 ipcMain.on('navigate', (e, { id, url }) => {
+    if (!isSenderTrusted(e)) return;
     let formattedUrl = url.trim();
-    
+
     // Internal stealth:// pages
     if (formattedUrl.toLowerCase() === 'stealth://history') {
-        tabs[id]?.webContents.loadURL(`file://${path.join(__dirname, 'renderer', 'history.html')}`);
+        tabs[id]?.webContents.loadURL('app://history.html');
         return;
     }
 
@@ -532,4 +650,18 @@ ipcMain.on('navigate', (e, { id, url }) => {
     tabs[id]?.webContents.loadURL(formattedUrl);
 });
 
-app.whenReady().then(createWindow);
+// ─── CUSTOM PROTOCOL (Rule 18 — no file://) ─────────────────────────────────
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false } }
+]);
+
+app.whenReady().then(() => {
+    protocol.handle('app', (request) => {
+        const url = new URL(request.url);
+        // url.hostname is the filename e.g. 'index.html'
+        const safeName = path.basename(url.hostname + url.pathname); // strip traversal
+        const filePath = path.join(__dirname, 'renderer', safeName);
+        return net.fetch(pathToFileURL(filePath).toString());
+    });
+    createWindow();
+});
