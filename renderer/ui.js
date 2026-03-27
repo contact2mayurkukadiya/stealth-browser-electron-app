@@ -88,7 +88,8 @@ function createTab(isStealth = false) {
 
 function createTabUI(id, isStealth = false, initialUrl = null) {
     if (!tabsData[id]) tabsData[id] = {};
-    tabsData[id].isNewTab = !initialUrl || initialUrl === 'https://www.google.com/';
+    const isGoogleHome = initialUrl && initialUrl.startsWith('https://www.google.com/') && !initialUrl.includes('/search');
+    tabsData[id].isNewTab = !initialUrl || isGoogleHome;
     tabsData[id].url = initialUrl || 'https://www.google.com/';
 
     const tabEl = document.createElement('div');
@@ -219,7 +220,7 @@ document.getElementById('bookmark-btn').onclick = () => {
     const url = tabsData[currentTabId]?.url || '';
     const title = tabsData[currentTabId]?.title || url;
     const favicon = tabsData[currentTabId]?.favicon || null;
-    if (!url || url === 'https://www.google.com/') return;
+    if (!url || (url.startsWith('https://www.google.com/') && !url.includes('/search'))) return;
 
     // Pop animation
     const btn = document.getElementById('bookmark-btn');

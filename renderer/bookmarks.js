@@ -40,7 +40,7 @@ function updateStarButton(url) {
 }
 
 async function toggleBookmark(url, title, favicon) {
-    if (!url || url === 'https://www.google.com/' || url === '') return;
+    if (!url || url === '' || (url.startsWith('https://www.google.com/') && !url.includes('/search'))) return;
 
     const existing = findBookmarkByUrl(url, bookmarksData.bar);
     if (existing) {
