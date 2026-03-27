@@ -1,20 +1,17 @@
 const { safeStorage } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
-const machineId = require('node-machine-id').machineIdSync || (() => crypto.createHash('sha256').update(os.hostname() + os.userInfo().username).digest('hex'));
 
 // Fallback key using PBKDF2 with machine-specific details
 let fallbackKey = null;
 
 function getFallbackKey() {
     if (!fallbackKey) {
-        // We use machineId to ensure it's specific to the host
-        // Fallback is only used if safeStorage is utterly unavailable
         let id;
         try {
-            id = machineId();
-        } catch(e) {
             id = crypto.createHash('sha256').update(os.hostname() + os.userInfo().username).digest('hex');
+        } catch(e) {
+            id = 'fallback-stealth-browser-id';
         }
         fallbackKey = crypto.pbkdf2Sync(id, 'stealth-browser-salt', 100000, 32, 'sha512');
     }

@@ -4,7 +4,28 @@
   "description": "",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --mac",
+    "dist:win": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.stealth.browser",
+    "productName": "StealthBrowser",
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "identity": null
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "keywords": [],
   "author": "",
@@ -12,6 +33,7 @@
   "type": "commonjs",
   "devDependencies": {
     "electron": "^41.0.4",
+    "electron-builder": "^26.8.1",
     "electron-reloader": "^1.2.3"
   },
   "dependencies": {

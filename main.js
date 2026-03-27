@@ -1,7 +1,12 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const encryption = require('./encryption');
+
+process.on('uncaughtException', (error) => {
+    dialog.showErrorBox('Fatal Application Error', error.stack || error.message || String(error));
+    app.quit();
+});
 
 let mainWindow;
 let isHTMLFullscreen = false;
