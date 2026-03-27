@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: transparent;
+            color: #2F3C42;
+            overflow: hidden;
+        }
+
+        .popup-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            padding: 8px;
+            display: inline-block;
+            min-width: 250px;
+            max-width: 350px;
+            pointer-events: auto;
+            margin: 0 10px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        /* ── Folder Mode ── */
+        .folder-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            gap: 10px;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        .folder-item:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        .favicon {
+            width: 16px;
+            height: 16px;
+            object-fit: contain;
+        }
+        .label {
+            flex: 1;
+            overflow: hidden;
+            white-space: nowrap;
+            mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
+            -webkit-mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
+        }
+        .icon {
+            opacity: 0.6;
+            display: flex;
+            align-items: center;
+        }
+
+        /* ── Edit Mode ── */
+        .edit-form {
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .field-label {
+            font-size: 11px;
+            font-weight: 600;
+            opacity: 0.6;
+            text-transform: uppercase;
+        }
+        input, select {
+            padding: 8px 10px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+            font-size: 13px;
+            background: #F5F7F8;
+            outline: none;
+        }
+        input:focus, select:focus {
+            border-color: #007AFF;
+            background: white;
+        }
+        .actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            gap: 10px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-second { background: rgba(0, 0, 0, 0.05); color: #2F3C42; }
+        .btn-prime { background: #007AFF; color: white; flex: 1; }
+        .btn:hover { opacity: 0.8; }
+        .btn-danger { color: #FF3B30; }
+
+        /* ── New Folder Dialog ── */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            z-index: 100;
+        }
+        .modal {
+            background: white;
+            padding: 16px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            width: 80%;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div id="popup" class="popup-container" style="display: none;">
+        <!-- Content will be injected here -->
+    </div>
+
+    <!-- New Folder Modal Template -->
+    <template id="new-folder-modal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <span class="field-label">New Folder Name</span>
+                <input type="text" id="new-folder-input" placeholder="Enter folder name..." autofocus>
+                <div class="actions">
+                    <button class="btn btn-second" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-prime" onclick="confirmNewFolder()">Create</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        const popupEl = document.getElementById('popup');
+        let currentMode = null; // 'folder' or 'edit'
+        let currentData = null;
+
+        if (window.electronAPI && window.electronAPI.onBookmarkPopupUpdate) {
+            window.electronAPI.onBookmarkPopupUpdate((v) => {
+                if (!v) {
+                    popupEl.style.display = 'none';
+                    return;
+                }
+                currentMode = v.type;
+                currentData = v.data;
+                render();
+                popupEl.style.display = 'inline-block';
+            });
+        }
+
+        if (window.electronAPI && window.electronAPI.onBookmarksUpdated) {
+            window.electronAPI.onBookmarksUpdated(() => {
+                if (currentMode === 'edit') renderEdit();
+            });
+        }
+
+        async function render() {
+            if (currentMode === 'folder') {
+                renderFolder();
+            } else if (currentMode === 'edit') {
+                renderEdit();
+            }
+        }
+
+        function renderFolder() {
+            popupEl.innerHTML = `
+                <div class="folder-list">
+                    ${currentData.children.length === 0 ? '<div style="padding:10px; opacity:0.5; font-size:12px;">No items</div>' : ''}
+                    ${currentData.children.map(child => `
+                        <div class="folder-item" onclick="handleItemClick('${child.id}')">
+                            <div class="icon">
+                                ${child.type === 'folder' ? 
+                                    '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : 
+                                    (child.favicon ? `<img src="${child.favicon}" class="favicon" onerror="this.src='🔖'">` : '🔖')
+                                }
+                            </div>
+                            <div class="label" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(child.title)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        async function renderEdit() {
+            const bookmarks = await window.electronAPI.bookmarksGet();
+            const folders = getAllFolders(bookmarks.bar);
+            
+            popupEl.innerHTML = `
+                <div class="edit-form">
+                    <div class="field-group">
+                        <span class="field-label">Name</span>
+                        <input type="text" id="bm-name" value="${escapeHtml(currentData.title)}" placeholder="Bookmark name">
+                    </div>
+                    <div class="field-group">
+                        <span class="field-label">Folder</span>
+                        <select id="bm-folder">
+                            <option value="root">Bookmark bar</option>
+                            ${folders.map(f => `<option value="${f.id}" ${currentData.folderId === f.id ? 'selected' : ''}>${escapeHtml(f.title)}</option>`).join('')}
+                            <option value="new-folder">+ Create new folder...</option>
+                        </select>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-second btn-danger" onclick="removeBookmark()">Remove</button>
+                        <button class="btn btn-prime" onclick="saveBookmark()">Done</button>
+                    </div>
+                </div>
+            `;
+
+            const select = document.getElementById('bm-folder');
+            select.onchange = (e) => {
+                if (e.target.value === 'new-folder') {
+                    showNewFolderModal();
+                }
+            };
+        }
+
+        function getAllFolders(list, prefix = '') {
+            let folders = [];
+            list.forEach(item => {
+                if (item.type === 'folder') {
+                    folders.push({ id: item.id, title: prefix + item.title });
+                    if (item.children) {
+                        folders = folders.concat(getAllFolders(item.children, prefix + '  '));
+                    }
+                }
+            });
+            return folders;
+        }
+
+        async function handleItemClick(id) {
+            const item = currentData.children.find(c => c.id === id);
+            if (item.type === 'bookmark') {
+                window.electronAPI.navigate('current', item.url);
+                window.electronAPI.bookmarkPopupHide();
+            } else {
+                // Nested folders not requested yet, but we could handle them
+            }
+        }
+
+        async function saveBookmark() {
+            try {
+                const name = document.getElementById('bm-name').value;
+                const folderId = document.getElementById('bm-folder').value;
+                
+                const item = {
+                    id: currentData.id || 'bk-' + Date.now(),
+                    type: 'bookmark',
+                    title: name,
+                    url: currentData.url,
+                    favicon: currentData.favicon
+                };
+
+                if (folderId === 'root') {
+                    await window.electronAPI.bookmarksAdd(item);
+                    window.electronAPI.bookmarkPopupHide();
+                } else {
+                    await window.electronAPI.bookmarksAddToFolder(folderId, item);
+                    // Transition to folder view to show where it was saved
+                    const bookmarks = await window.electronAPI.bookmarksGet();
+                    const findFolder = (list) => {
+                        for (const b of list) {
+                            if (b.id === folderId && b.type === 'folder') return b;
+                            if (b.type === 'folder' && b.children) {
+                                const found = findFolder(b.children);
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    };
+                    const folder = findFolder(bookmarks.bar);
+                    if (folder) {
+                        currentMode = 'folder';
+                        currentData = folder;
+                        render();
+                    } else {
+                        window.electronAPI.bookmarkPopupHide();
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to save bookmark:', err);
+                window.electronAPI.bookmarkPopupHide();
+            }
+        }
+
+        async function removeBookmark() {
+            try {
+                if (currentData.id) {
+                    await window.electronAPI.bookmarksRemove(currentData.id);
+                }
+            } catch (err) {
+                console.error('Failed to remove bookmark:', err);
+            } finally {
+                window.electronAPI.bookmarkPopupHide();
+            }
+        }
+
+        function showNewFolderModal() {
+            const template = document.getElementById('new-folder-modal');
+            const clone = template.content.cloneNode(true);
+            document.body.appendChild(clone);
+            const input = document.getElementById('new-folder-input');
+            input.focus();
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') confirmNewFolder();
+                if (e.key === 'Escape') closeModal();
+            };
+        }
+
+        function closeModal() {
+            const modal = document.querySelector('.modal-overlay');
+            if (modal) modal.remove();
+            document.getElementById('bm-folder').value = currentData.folderId || 'root';
+        }
+
+        async function confirmNewFolder() {
+            const name = document.getElementById('new-folder-input').value.trim();
+            if (name) {
+                const newFolder = await window.electronAPI.bookmarksAddFolder(name);
+                // Refresh folders and select the new one
+                renderEdit().then(() => {
+                    document.getElementById('bm-folder').value = newFolder.bar[newFolder.bar.length - 1].id;
+                });
+                closeModal();
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>

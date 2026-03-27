@@ -447,6 +447,16 @@ window.electronAPI.onShortcutSwitchTab(({ direction }) => {
     switchTab(tabs[nextIndex].id);
 });
 
+window.electronAPI.onBookmarksUpdated(async () => {
+    // Refresh the bookmark data/bar and then the star button state
+    if (window.bookmarkSystem) {
+        await window.bookmarkSystem.initBookmarks();
+        if (currentTabId && tabsData[currentTabId]) {
+            window.bookmarkSystem.updateStarButton(tabsData[currentTabId].url);
+        }
+    }
+});
+
 // ─── Init ─────────────────────────────────────────────────────────────────
 async function initSessionAndTabs() {
     let session = null;

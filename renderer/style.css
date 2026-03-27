@@ -236,6 +236,13 @@ body {
     display: none;
 }
 
+.bk-item-wrap {
+    display: flex;
+    align-items: center;
+    position: relative;
+    -webkit-app-region: no-drag;
+}
+
 .bk-item,
 .bk-folder {
     display: flex;
@@ -253,7 +260,6 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     transition: background 0.15s ease;
-    -webkit-app-region: no-drag;
     flex-shrink: 0;
 }
 
@@ -261,6 +267,34 @@ body {
 .bk-folder:hover {
     background: rgba(255, 255, 255, 0.12);
     color: white;
+}
+
+.bk-del-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 0;
+    overflow: hidden;
+    height: 18px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 100, 100, 0.4);
+    cursor: pointer;
+    padding: 0;
+    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s;
+    border-radius: 4px;
+    margin-left: -2px;
+}
+
+.bk-item-wrap:hover .bk-del-btn {
+    width: 18px;
+    margin-left: 2px;
+    margin-right: 4px;
+}
+
+.bk-del-btn:hover {
+    color: #ff6b6b;
+    background: rgba(255, 100, 100, 0.15);
 }
 
 .bk-item.dragging,
@@ -298,35 +332,6 @@ body {
     gap: 4px;
 }
 
-/* ── Breadcrumb (inline folder view) ────────────────────────────────────── */
-.bk-breadcrumb-wrap {
-    display: flex;
-    align-items: center;
-    background: rgba(255, 180, 48, 0.1);
-    border: 1px solid rgba(255, 180, 48, 0.25);
-    border-radius: 5px;
-    overflow: hidden;
-    flex-shrink: 0;
-}
-
-.bk-breadcrumb {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 6px 3px 6px;
-    background: transparent;
-    border: none;
-    color: #FFB430;
-    font-size: 12px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.15s;
-    -webkit-app-region: no-drag;
-}
-
-.bk-breadcrumb:hover {
-    background: rgba(255, 180, 48, 0.2);
-}
 
 .bk-breadcrumb-del {
     display: flex;

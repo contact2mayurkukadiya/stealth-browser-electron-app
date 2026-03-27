@@ -40,5 +40,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Tooltip Overlay
     tooltipShow: (data) => ipcRenderer.send('tooltip:show', data),
     tooltipHide: () => ipcRenderer.send('tooltip:hide'),
-    onTooltipUpdate: (callback) => ipcRenderer.on('tooltip:update', (event, data) => callback(data)),
+    onTooltipUpdate: (callback) => ipcRenderer.on('tooltip:update', (event, v) => callback(v)),
+
+    bookmarkPopupShow: (v) => ipcRenderer.send('bookmark-popup:show', v),
+    bookmarkPopupHide: () => ipcRenderer.send('bookmark-popup:hide'),
+    onBookmarkPopupUpdate: (callback) => ipcRenderer.on('bookmark-popup:update', (event, v) => callback(v)),
+    onBookmarksUpdated: (callback) => ipcRenderer.on('bookmarks:updated', () => callback()),
 });
