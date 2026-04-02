@@ -109,21 +109,36 @@ export default function App() {
     window.electronAPI.switchTab(nextId);
   }, [dispatch]);
 
-  const handleOpenHistory = useCallback(() => {
+  /**
+   * Opens an internal stealth:// page as a singleton tab.
+   * If a tab with the given URL is already open, switches to it instead
+   * of creating a duplicate — matching Chrome's behaviour for chrome:// pages.
+   *
+   * @param {string} navigateTo - The stealth:// URL to navigate to (e.g. 'stealth://History')
+   * @param {string} canonicalUrl - The lowercase display URL stored in Redux (e.g. 'stealth://history')
+   */
+  const openSingletonTab = useCallback((navigateTo, canonicalUrl) => {
+    const { tabs, tabOrder } = stateRef.current;
+    const existingId = tabOrder.find(id => tabs[id]?.url === canonicalUrl);
+    if (existingId) {
+      dispatch(setCurrentTab(existingId));
+      window.electronAPI.switchTab(existingId);
+      return;
+    }
     const id = 'tab-' + Date.now();
     dispatch(addTab({ id, isStealth: false, initialUrl: null }));
     window.electronAPI.newTab(id, false, null);
     window.electronAPI.switchTab(id);
-    setTimeout(() => window.electronAPI.navigate(id, 'stealth://History'), 50);
+    setTimeout(() => window.electronAPI.navigate(id, navigateTo), 50);
   }, [dispatch]);
 
+  const handleOpenHistory = useCallback(() => {
+    openSingletonTab('stealth://History', 'stealth://history');
+  }, [openSingletonTab]);
+
   const handleOpenSettings = useCallback(() => {
-    const id = 'tab-' + Date.now();
-    dispatch(addTab({ id, isStealth: false, initialUrl: null }));
-    window.electronAPI.newTab(id, false, null);
-    window.electronAPI.switchTab(id);
-    setTimeout(() => window.electronAPI.navigate(id, 'stealth://Settings'), 50);
-  }, [dispatch]);
+    openSingletonTab('stealth://Settings', 'stealth://settings');
+  }, [openSingletonTab]);
 
   const handleTabCreated = useCallback(({ id, url, isStealth }) => {
     const { tabs } = stateRef.current;

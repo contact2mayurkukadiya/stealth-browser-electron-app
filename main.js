@@ -276,6 +276,7 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
     const getDisplayUrl = (rawUrl) => {
         if (!rawUrl) return '';
         if (rawUrl.startsWith('app://') && rawUrl.includes('history')) return 'stealth://history';
+        if (rawUrl.startsWith('app://') && rawUrl.includes('settings')) return 'stealth://settings';
         return rawUrl;
     };
 
@@ -299,7 +300,7 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
     view.webContents.on('did-navigate', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
         mainWindow.webContents.send('url-changed', { id, url: displayUrl });
-        if (!isStealth && !targetUrl.startsWith('data:') && !isInternalHistoryPageUrl(targetUrl)) {
+        if (!isStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
             appendHistory(displayUrl, view.webContents.getTitle() || displayUrl);
         }
     });
@@ -307,7 +308,7 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
     view.webContents.on('did-navigate-in-page', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
         mainWindow.webContents.send('url-changed', { id, url: displayUrl });
-        if (!isStealth && !targetUrl.startsWith('data:') && !isInternalHistoryPageUrl(targetUrl)) {
+        if (!isStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
             appendHistory(displayUrl, view.webContents.getTitle() || displayUrl);
         }
     });
@@ -369,12 +370,15 @@ function getHistoryPath() {
     return historyPath;
 }
 
-function isInternalHistoryPageUrl(url) {
+/**
+ * Returns true for any internal browser page (history, settings, etc.) that
+ * should never be recorded in browsing history.
+ */
+function isInternalPageUrl(url) {
     if (!url) return false;
-    // Matches old renderer/history.html and new React dist/history.html served via app://
-    if (url.includes('/renderer/history.html')) return true;
-    if (url.includes('/renderer/dist/history.html')) return true;
+    if (url.startsWith('stealth://')) return true;
     if (url.startsWith('app://') && url.includes('history.html')) return true;
+    if (url.startsWith('app://') && url.includes('settings.html')) return true;
     return false;
 }
 
