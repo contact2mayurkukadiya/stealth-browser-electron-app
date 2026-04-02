@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     reload: (id) => ipcRenderer.send('reload', { id }),
     onUrlChanged: (callback) => ipcRenderer.on('url-changed', (event, data) => callback(data)),
     onTabUpdate: (callback) => ipcRenderer.on('tab-update', (event, data) => callback(data)),
+    onTabCreated: (callback) => ipcRenderer.on('tab-created', (event, data) => callback(data)),
+    onTabSwitched: (callback) => ipcRenderer.on('tab-switched', (event, data) => callback(data)),
     onShortcutNewTab: (callback) => ipcRenderer.on('shortcut-new-tab', () => callback()),
     onShortcutNewStealthTab: (callback) => ipcRenderer.on('shortcut-new-stealth-tab', () => callback()),
     onShortcutHistory: (callback) => ipcRenderer.on('shortcut-history', () => callback()),
@@ -29,6 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // History
     historyGet: () => ipcRenderer.invoke('history:get'),
+    historyRemoveItems: (timestamps) => ipcRenderer.invoke('history:remove-items', timestamps),
     historyClear: () => ipcRenderer.invoke('history:clear'),
 
     // Session
@@ -36,14 +39,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sessionLoad: () => ipcRenderer.invoke('session:load'),
 
     getTabInfo: (id) => ipcRenderer.invoke('tab:get-info', { id }),
+    tabHideActive: () => ipcRenderer.invoke('tab:hide-active'),
+    tabRestoreActive: () => ipcRenderer.invoke('tab:restore-active'),
 
     // Tooltip Overlay
     tooltipShow: (data) => ipcRenderer.send('tooltip:show', data),
     tooltipHide: () => ipcRenderer.send('tooltip:hide'),
     onTooltipUpdate: (callback) => ipcRenderer.on('tooltip:update', (event, v) => callback(v)),
 
-    bookmarkPopupShow: (v) => ipcRenderer.send('bookmark-popup:show', v),
-    bookmarkPopupHide: () => ipcRenderer.send('bookmark-popup:hide'),
-    onBookmarkPopupUpdate: (callback) => ipcRenderer.on('bookmark-popup:update', (event, v) => callback(v)),
-    onBookmarksUpdated: (callback) => ipcRenderer.on('bookmarks:updated', () => callback()),
 });

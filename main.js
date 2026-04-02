@@ -62,9 +62,10 @@ function createWindow() {
 
 
     // --- STEALTH MODE ---
-    mainWindow.setContentProtection(true);
+    // mainWindow.setContentProtection(true);
 
-    mainWindow.loadURL('app://index.html');
+    // Load renderer through app:// so IPC sender validation stays consistent.
+    mainWindow.loadURL('app://dist/index.html');
 
     // Custom Application Menu for Robust Shortcuts
     const menu = Menu.buildFromTemplate([
@@ -142,7 +143,6 @@ function createWindow() {
     });
 
     createTooltipOverlay();
-    createBookmarkOverlay();
 }
 
 let tooltipView;
@@ -157,47 +157,13 @@ function createTooltipOverlay() {
     });
 
     tooltipView.setBackgroundColor('#00000000'); // Transparent background
-    tooltipView.webContents.loadURL('app://renderer/tooltip.html');
+    tooltipView.webContents.loadURL('app://localhost/tooltip.html');
 
     // Add it last so it's on top of all other views
     mainWindow.contentView.addChildView(tooltipView);
     tooltipView.setBounds({ x: 0, y: 0, width: 0, height: 0 }); // Hide initially
 }
 
-let bookmarkView;
-function createBookmarkOverlay() {
-    bookmarkView = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        }
-    });
-
-    bookmarkView.setBackgroundColor('#00000000'); // Transparent background
-    bookmarkView.webContents.loadURL('app://renderer/bookmark-popup.html');
-    
-    // Bookmark overlays should be above everything else
-    mainWindow.contentView.addChildView(bookmarkView);
-    bookmarkView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-}
-
-ipcMain.on('bookmark-popup:show', (e, { type, data, x, y, width, height }) => {
-    if (!isSenderTrusted(e)) return;
-    if (!bookmarkView) return;
-
-    mainWindow.contentView.addChildView(bookmarkView); // Move to top
-    bookmarkView.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) });
-    bookmarkView.webContents.send('bookmark-popup:update', { type, data });
-});
-
-ipcMain.on('bookmark-popup:hide', (e) => {
-    if (!isSenderTrusted(e)) return;
-    if (bookmarkView) {
-        bookmarkView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-    }
-});
 
 ipcMain.on('tooltip:show', (e, { title, url, memory, x, y, width, height }) => {
     if (!isSenderTrusted(e)) return;
@@ -328,7 +294,7 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
     view.webContents.on('did-navigate', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
         mainWindow.webContents.send('url-changed', { id, url: displayUrl });
-        if (!isStealth && !targetUrl.startsWith('data:') && !targetUrl.includes('/renderer/history.html')) {
+        if (!isStealth && !targetUrl.startsWith('data:') && !isInternalHistoryPageUrl(targetUrl)) {
             appendHistory(displayUrl, view.webContents.getTitle() || displayUrl);
         }
     });
@@ -336,7 +302,7 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
     view.webContents.on('did-navigate-in-page', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
         mainWindow.webContents.send('url-changed', { id, url: displayUrl });
-        if (!isStealth && !targetUrl.startsWith('data:') && !targetUrl.includes('/renderer/history.html')) {
+        if (!isStealth && !targetUrl.startsWith('data:') && !isInternalHistoryPageUrl(targetUrl)) {
             appendHistory(displayUrl, view.webContents.getTitle() || displayUrl);
         }
     });
@@ -396,6 +362,15 @@ function getHistoryPath() {
         historyPath = path.join(app.getPath('userData'), 'history.ndjson');
     }
     return historyPath;
+}
+
+function isInternalHistoryPageUrl(url) {
+    if (!url) return false;
+    // Matches old renderer/history.html and new React dist/history.html served via app://
+    if (url.includes('/renderer/history.html')) return true;
+    if (url.includes('/renderer/dist/history.html')) return true;
+    if (url.startsWith('app://') && url.includes('history.html')) return true;
+    return false;
 }
 
 // ─── SESSION STORAGE ───────────────────────────────────────────────────────────
@@ -489,6 +464,47 @@ ipcMain.handle('history:clear', async (e) => {
     }
 });
 
+ipcMain.handle('history:remove-items', async (e, timestamps) => {
+    if (!isSenderTrusted(e)) return false;
+    if (!Array.isArray(timestamps) || timestamps.length === 0) return true;
+
+    try {
+        const historyFilePath = getHistoryPath();
+        if (!fs.existsSync(historyFilePath)) return true;
+
+        const removeSet = new Set(
+            timestamps
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value))
+        );
+        if (removeSet.size === 0) return true;
+
+        const content = fs.readFileSync(historyFilePath, 'utf-8');
+        const lines = content.split('\n').filter(Boolean);
+        const keptLines = lines.filter((line) => {
+            try {
+                const parsed = JSON.parse(line);
+                const decoded = (parsed && parsed.encrypted !== undefined)
+                    ? encryption.decrypt(parsed)
+                    : JSON.stringify(parsed);
+                if (!decoded) return false;
+                const item = JSON.parse(decoded);
+                return !removeSet.has(Number(item.timestamp));
+            } catch (error) {
+                // Keep unreadable legacy lines to avoid silent data loss.
+                return true;
+            }
+        });
+
+        const nextContent = keptLines.length > 0 ? `${keptLines.join('\n')}\n` : '';
+        fs.writeFileSync(historyFilePath, nextContent, 'utf-8');
+        return true;
+    } catch (error) {
+        console.error('Failed to remove history items:', error);
+        return false;
+    }
+});
+
 // ─── BOOKMARK STORAGE ────────────────────────────────────────────────────────
 let bookmarksPath;
 
@@ -530,9 +546,6 @@ function broadcastBookmarks() {
     if (mainWindow && !mainWindow.webContents.isDestroyed()) {
         mainWindow.webContents.send('bookmarks:updated');
     }
-    if (bookmarkView && !bookmarkView.webContents.isDestroyed()) {
-        bookmarkView.webContents.send('bookmarks:updated');
-    }
 }
 
 ipcMain.handle('bookmarks:get', (e) => {
@@ -550,7 +563,7 @@ ipcMain.handle('bookmarks:save', (e, data) => {
 ipcMain.handle('bookmarks:add', (event, item) => {
     if (!isSenderTrusted(event)) return loadBookmarks();
     const data = loadBookmarks();
-    
+
     const normUrl = (u) => u.toLowerCase().replace(/\/$/, '');
     const itemNorm = normUrl(item.url || '');
 
@@ -559,7 +572,7 @@ ipcMain.handle('bookmarks:add', (event, item) => {
         return list.filter(b => {
             if (b.id === item.id) return false;
             if (b.type === 'bookmark' && normUrl(b.url || '') === itemNorm) return false;
-            
+
             if (b.type === 'folder' && b.children) {
                 b.children = removeFromList(b.children);
             }
@@ -567,7 +580,7 @@ ipcMain.handle('bookmarks:add', (event, item) => {
         });
     };
     data.bar = removeFromList(data.bar);
-    
+
     // Add to root
     data.bar.push(item);
     saveBookmarks(data);
@@ -615,7 +628,7 @@ ipcMain.handle('bookmarks:addFolder', (e, name) => {
 ipcMain.handle('bookmarks:addToFolder', (e, folderId, item) => {
     if (!isSenderTrusted(e)) return loadBookmarks();
     const data = loadBookmarks();
-    
+
     const normUrl = (u) => u.toLowerCase().replace(/\/$/, '');
     const itemNorm = normUrl(item.url || '');
 
@@ -665,6 +678,25 @@ function isSenderTrusted(event) {
     }
 }
 
+// Hide / restore the active tab view so React modals can appear above it.
+// WebContentsViews are native children that always render on top of the
+// BrowserWindow web content; setting bounds to 0×0 is the only way to
+// let a React-rendered modal show above the tab content.
+ipcMain.handle('tab:hide-active', (e) => {
+    if (!isSenderTrusted(e)) return;
+    if (activeTabId && tabs[activeTabId]) {
+        tabs[activeTabId].setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    }
+});
+
+ipcMain.handle('tab:restore-active', (e) => {
+    if (!isSenderTrusted(e)) return;
+    if (activeTabId && tabs[activeTabId]) {
+        const { width, height } = mainWindow.getContentBounds();
+        tabs[activeTabId].setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+    }
+});
+
 ipcMain.handle('tab:get-info', async (e, { id }) => {
     if (!isSenderTrusted(e)) return null;
     const view = tabs[id];
@@ -698,7 +730,20 @@ ipcMain.handle('tab:get-info', async (e, { id }) => {
 // ─── IPC LISTENERS ───────────────────────────────────────────────────────────
 ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
     if (!isSenderTrusted(e)) return;
-    createTab(id, url || 'https://www.google.com', isStealth);
+
+    // Resolve internal stealth:// URLs the same way the navigate handler does,
+    // so that session-restored history tabs load correctly.
+    let resolvedUrl = url || 'https://www.google.com';
+    if (resolvedUrl.toLowerCase() === 'stealth://history') {
+        resolvedUrl = 'app://localhost/dist/history.html';
+    }
+
+    createTab(id, resolvedUrl, isStealth);
+
+    // Notify the main React shell so it can add the tab to its state
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('tab-created', { id, isStealth, url: resolvedUrl });
+    }
 });
 
 ipcMain.on('switch-tab', (e, { id }) => {
@@ -711,6 +756,10 @@ ipcMain.on('switch-tab', (e, { id }) => {
         tabs[id].webContents.focus();
     }
     activeTabId = id;
+    // Notify the main React shell so it updates the active tab highlight
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('tab-switched', { id });
+    }
 });
 
 ipcMain.on('close-tab', (e, { id }) => {
@@ -723,22 +772,22 @@ ipcMain.on('close-tab', (e, { id }) => {
     }
 });
 
-ipcMain.on('go-back', (e, { id }) => { 
+ipcMain.on('go-back', (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const targetId = id === 'current' ? activeTabId : id;
-    if (tabs[targetId]) tabs[targetId].webContents.navigationHistory.goBack(); 
+    if (tabs[targetId]) tabs[targetId].webContents.navigationHistory.goBack();
 });
 
-ipcMain.on('go-forward', (e, { id }) => { 
+ipcMain.on('go-forward', (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const targetId = id === 'current' ? activeTabId : id;
-    if (tabs[targetId]) tabs[targetId].webContents.navigationHistory.goForward(); 
+    if (tabs[targetId]) tabs[targetId].webContents.navigationHistory.goForward();
 });
 
-ipcMain.on('reload', (e, { id }) => { 
+ipcMain.on('reload', (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const targetId = id === 'current' ? activeTabId : id;
-    if (tabs[targetId]) tabs[targetId].webContents.reload(); 
+    if (tabs[targetId]) tabs[targetId].webContents.reload();
 });
 
 ipcMain.on('navigate', (e, { id, url }) => {
@@ -752,7 +801,8 @@ ipcMain.on('navigate', (e, { id, url }) => {
 
     // Internal stealth:// pages
     if (formattedUrl.toLowerCase() === 'stealth://history') {
-        tabs[targetId]?.webContents.loadURL('app://history.html');
+        // React build output served from renderer/dist/history.html
+        tabs[targetId]?.webContents.loadURL('app://localhost/dist/history.html');
         return;
     }
 
@@ -774,16 +824,48 @@ ipcMain.on('navigate', (e, { id, url }) => {
 
 // ─── CUSTOM PROTOCOL (Rule 18 — no file://) ─────────────────────────────────
 protocol.registerSchemesAsPrivileged([
-    { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false } }
+    { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
 ]);
 
 app.whenReady().then(() => {
     protocol.handle('app', (request) => {
         const url = new URL(request.url);
-        // url.hostname is the filename e.g. 'index.html'
-        const safeName = path.basename(url.hostname + url.pathname); // strip traversal
-        const filePath = path.join(__dirname, 'renderer', safeName);
-        return net.fetch(pathToFileURL(filePath).toString());
+        // url.hostname may contain file name (app://history.html) or host (app://localhost/...)
+        // Support subdirectories (e.g. app://dist/assets/main.js)
+        const normalizedPathname = url.pathname === '/' ? '' : url.pathname;
+        let reqPath = normalizedPathname;
+        if (url.hostname && url.hostname !== 'localhost') {
+            reqPath = '/' + url.hostname + normalizedPathname;
+        }
+        if (!reqPath) {
+            reqPath = '/index.html';
+        }
+        const relativePath = path.normalize(reqPath).replace(/^(\.\.[/\\])+/, ''); // strip leading ../
+        const safePath = relativePath.replace(/^\//, '').replace(/\/+$/, '');
+        const filePath = path.join(__dirname, 'renderer', safePath);
+
+        try {
+            const data = fs.readFileSync(filePath);
+            let mimeType = 'text/plain';
+            const ext = path.extname(filePath).toLowerCase();
+            if (ext === '.html') mimeType = 'text/html';
+            else if (ext === '.js') mimeType = 'text/javascript';
+            else if (ext === '.css') mimeType = 'text/css';
+            else if (ext === '.json') mimeType = 'application/json';
+            else if (ext === '.svg') mimeType = 'image/svg+xml';
+            else if (ext === '.png') mimeType = 'image/png';
+
+            return new Response(data, {
+                status: 200,
+                headers: {
+                    'Content-Type': mimeType,
+                    'Access-Control-Allow-Origin': '*'
+                }
+            });
+        } catch (err) {
+            console.error('Protocol handle error reading', filePath, err);
+            return new Response('File not found', { status: 404 });
+        }
     });
     createWindow();
 });
