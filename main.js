@@ -61,8 +61,8 @@ function createWindow() {
     // mainWindow.webContents.openDevTools();
 
 
-    // --- STEALTH MODE ---
-    // mainWindow.setContentProtection(true);
+    // --- STEALTH MODE: apply persisted setting (defaults to true) ---
+    mainWindow.setContentProtection(loadSettings().contentProtection);
 
     // Load renderer through app:// so IPC sender validation stays consistent.
     mainWindow.loadURL('app://dist/index.html');
@@ -86,6 +86,11 @@ function createWindow() {
                     label: 'History',
                     accelerator: 'CmdOrCtrl+Y',
                     click: () => mainWindow.webContents.send('shortcut-history')
+                },
+                {
+                    label: 'Settings',
+                    accelerator: 'CmdOrCtrl+,',
+                    click: () => mainWindow.webContents.send('shortcut-settings')
                 },
                 {
                     label: 'Close Tab',
@@ -373,6 +378,59 @@ function isInternalHistoryPageUrl(url) {
     return false;
 }
 
+// ─── SETTINGS STORAGE ────────────────────────────────────────────────────────
+let settingsPath;
+
+const SETTINGS_DEFAULTS = {
+    contentProtection: true,
+    startupBehavior: 'continue', // 'fresh' | 'continue' | 'clearHistory'
+};
+
+function getSettingsPath() {
+    if (!settingsPath) {
+        settingsPath = path.join(app.getPath('userData'), 'settings.json');
+    }
+    return settingsPath;
+}
+
+function loadSettings() {
+    try {
+        const p = getSettingsPath();
+        if (fs.existsSync(p)) {
+            return { ...SETTINGS_DEFAULTS, ...JSON.parse(fs.readFileSync(p, 'utf-8')) };
+        }
+    } catch (e) {
+        console.error('Failed to load settings:', e);
+    }
+    return { ...SETTINGS_DEFAULTS };
+}
+
+function saveSettings(data) {
+    try {
+        fs.writeFileSync(getSettingsPath(), JSON.stringify(data, null, 2), 'utf-8');
+    } catch (e) {
+        console.error('Failed to save settings:', e);
+    }
+}
+
+ipcMain.handle('settings:get', (e) => {
+    if (!isSenderTrusted(e)) return SETTINGS_DEFAULTS;
+    return loadSettings();
+});
+
+ipcMain.handle('settings:save', (e, data) => {
+    if (!isSenderTrusted(e)) return false;
+    const current = loadSettings();
+    saveSettings({ ...current, ...data });
+    return true;
+});
+
+ipcMain.handle('app:relaunch', (e) => {
+    if (!isSenderTrusted(e)) return;
+    app.relaunch();
+    app.exit(0);
+});
+
 // ─── SESSION STORAGE ───────────────────────────────────────────────────────────
 let sessionPath;
 
@@ -385,6 +443,26 @@ function getSessionPath() {
 
 ipcMain.handle('session:load', (e) => {
     if (!isSenderTrusted(e)) return null;
+
+    const { startupBehavior } = loadSettings();
+
+    // 'clearHistory': wipe history file, then start fresh (no session restore)
+    if (startupBehavior === 'clearHistory') {
+        try {
+            const hp = getHistoryPath();
+            if (fs.existsSync(hp)) fs.unlinkSync(hp);
+        } catch (err) {
+            console.error('Failed to clear history on startup:', err);
+        }
+        return null;
+    }
+
+    // 'fresh': start with a single new tab, no session restore
+    if (startupBehavior === 'fresh') {
+        return null;
+    }
+
+    // 'continue' (default): restore previous session
     try {
         const p = getSessionPath();
         if (fs.existsSync(p)) {
@@ -736,6 +814,8 @@ ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
     let resolvedUrl = url || 'https://www.google.com';
     if (resolvedUrl.toLowerCase() === 'stealth://history') {
         resolvedUrl = 'app://localhost/dist/history.html';
+    } else if (resolvedUrl.toLowerCase() === 'stealth://settings') {
+        resolvedUrl = 'app://localhost/dist/settings.html';
     }
 
     createTab(id, resolvedUrl, isStealth);
@@ -801,8 +881,11 @@ ipcMain.on('navigate', (e, { id, url }) => {
 
     // Internal stealth:// pages
     if (formattedUrl.toLowerCase() === 'stealth://history') {
-        // React build output served from renderer/dist/history.html
         tabs[targetId]?.webContents.loadURL('app://localhost/dist/history.html');
+        return;
+    }
+    if (formattedUrl.toLowerCase() === 'stealth://settings') {
+        tabs[targetId]?.webContents.loadURL('app://localhost/dist/settings.html');
         return;
     }
 

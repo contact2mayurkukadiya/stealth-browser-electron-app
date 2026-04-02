@@ -15,6 +15,7 @@ export function useElectronIPC({
   onReload,
   onSwitchTabDir,
   onHistory,
+  onSettings,
 }) {
   const dispatch = useDispatch();
 
@@ -42,6 +43,7 @@ export function useElectronIPC({
     api.onShortcutNewTab(() => onNewTab(false));
     api.onShortcutNewStealthTab(() => onNewTab(true));
     api.onShortcutHistory(onHistory);
+    if (api.onShortcutSettings) api.onShortcutSettings(onSettings);
     api.onShortcutCloseTab(onCloseTab);
     api.onShortcutReload(onReload);
     api.onShortcutSwitchTab(({ direction }) => onSwitchTabDir(direction));

@@ -28,6 +28,13 @@ const STAR_FILLED = (
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 );
+const MORE_ICON = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="12" cy="5" r="1.5" />
+    <circle cx="12" cy="12" r="1.5" />
+    <circle cx="12" cy="19" r="1.5" />
+  </svg>
+);
 
 /** Search bar → root, folder → folder id, not found → 'root' (fallback). */
 function findFolderIdForBookmark(bookmarkId, list) {
@@ -56,7 +63,7 @@ function findBookmarkByUrl(url, list) {
   return null;
 }
 
-export default function NavBar({ currentTabId }) {
+export default function NavBar({ currentTabId, onOpenSettings }) {
   const tabs = useSelector(s => s.browser.tabs);
   const bookmarksData = useSelector(s => s.bookmarks.data);
   const tab = tabs[currentTabId];
@@ -131,6 +138,15 @@ export default function NavBar({ currentTabId }) {
         onClick={handleBookmark}
       >
         {isBookmarked ? STAR_FILLED : STAR_EMPTY}
+      </button>
+
+      <button
+        id="more-btn"
+        className="btn"
+        title="Settings"
+        onClick={onOpenSettings}
+      >
+        {MORE_ICON}
       </button>
 
       {editPopup && (

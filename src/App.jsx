@@ -117,6 +117,14 @@ export default function App() {
     setTimeout(() => window.electronAPI.navigate(id, 'stealth://History'), 50);
   }, [dispatch]);
 
+  const handleOpenSettings = useCallback(() => {
+    const id = 'tab-' + Date.now();
+    dispatch(addTab({ id, isStealth: false, initialUrl: null }));
+    window.electronAPI.newTab(id, false, null);
+    window.electronAPI.switchTab(id);
+    setTimeout(() => window.electronAPI.navigate(id, 'stealth://Settings'), 50);
+  }, [dispatch]);
+
   const handleTabCreated = useCallback(({ id, url, isStealth }) => {
     const { tabs } = stateRef.current;
     if (!tabs[id]) {
@@ -143,6 +151,7 @@ export default function App() {
     },
     onSwitchTabDir: handleSwitchTabDir,
     onHistory: handleOpenHistory,
+    onSettings: handleOpenSettings,
   });
 
   // ── Initialise: load bookmarks then restore session ──────────────────────
@@ -186,7 +195,7 @@ export default function App() {
         onSwitchTab={switchTab}
         onDragEnd={handleDragEnd}
       />
-      <NavBar currentTabId={currentTabId} />
+      <NavBar currentTabId={currentTabId} onOpenSettings={handleOpenSettings} />
       <BookmarkBar currentTabId={currentTabId} />
     </div>
   );

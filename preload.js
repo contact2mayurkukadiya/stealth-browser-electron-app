@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onShortcutNewTab: (callback) => ipcRenderer.on('shortcut-new-tab', () => callback()),
     onShortcutNewStealthTab: (callback) => ipcRenderer.on('shortcut-new-stealth-tab', () => callback()),
     onShortcutHistory: (callback) => ipcRenderer.on('shortcut-history', () => callback()),
+    onShortcutSettings: (callback) => ipcRenderer.on('shortcut-settings', () => callback()),
     onShortcutCloseTab: (callback) => ipcRenderer.on('shortcut-close-tab', () => callback()),
     onShortcutReload: (callback) => ipcRenderer.on('shortcut-reload', () => callback()),
     onShortcutSwitchTab: (callback) => ipcRenderer.on('shortcut-switch-tab', (event, data) => callback(data)),
@@ -41,6 +42,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getTabInfo: (id) => ipcRenderer.invoke('tab:get-info', { id }),
     tabHideActive: () => ipcRenderer.invoke('tab:hide-active'),
     tabRestoreActive: () => ipcRenderer.invoke('tab:restore-active'),
+
+    // Settings
+    settingsGet: () => ipcRenderer.invoke('settings:get'),
+    settingsSave: (data) => ipcRenderer.invoke('settings:save', data),
+    appRelaunch: () => ipcRenderer.invoke('app:relaunch'),
 
     // Tooltip Overlay
     tooltipShow: (data) => ipcRenderer.send('tooltip:show', data),
