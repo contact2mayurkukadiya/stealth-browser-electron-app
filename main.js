@@ -15,13 +15,15 @@ let tabs = {}; // Store views by ID
 let activeTabId = null; // Track currently visible tab
 const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
 
-try {
-    require("electron-reloader")(module, {
-        debug: true,
-        watchRenderer: true // ensures changes in renderer trigger reloads
-    });
-} catch (err) {
-    console.error("Hot reload error:", err);
+if (!app.isPackaged) {
+    try {
+        require("electron-reloader")(module, {
+            debug: true,
+            watchRenderer: true
+        });
+    } catch (err) {
+        console.error("Hot reload error:", err);
+    }
 }
 
 function createWindow() {
@@ -301,7 +303,7 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
         let displayUrl = getDisplayUrl(targetUrl);
         mainWindow.webContents.send('url-changed', { id, url: displayUrl });
         if (!isStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
-            appendHistory(displayUrl, view.webContents.getTitle() || displayUrl);
+            appendHistory(id, displayUrl, view.webContents.getTitle() || displayUrl);
         }
     });
 
@@ -309,7 +311,7 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
         let displayUrl = getDisplayUrl(targetUrl);
         mainWindow.webContents.send('url-changed', { id, url: displayUrl });
         if (!isStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
-            appendHistory(displayUrl, view.webContents.getTitle() || displayUrl);
+            appendHistory(id, displayUrl, view.webContents.getTitle() || displayUrl);
         }
     });
 
@@ -362,6 +364,11 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
 
 // ─── HISTORY STORAGE ───────────────────────────────────────────────────────────
 let historyPath;
+
+// Tracks the last-recorded {url, timestamp} per tab to deduplicate rapid
+// duplicate entries caused by did-navigate + did-navigate-in-page both firing
+// for a single Google search (Google uses pushState to normalise its URL).
+const lastRecordedByTab = new Map();
 
 function getHistoryPath() {
     if (!historyPath) {
@@ -496,13 +503,21 @@ ipcMain.handle('session:save', (e, data) => {
     return true;
 });
 
-function appendHistory(url, title) {
+function appendHistory(tabId, url, title) {
     if (!url || url.startsWith('stealth://')) return;
 
     // Ignore Google's homepage and its query parameter variants (but keep /search queries)
     if (url.startsWith('https://www.google.com/') && !url.includes('/search')) return;
 
-    const dataObj = JSON.stringify({ url, title, timestamp: Date.now() });
+    // Skip duplicate: same URL recorded for this tab within the last 3 seconds.
+    // This prevents did-navigate + did-navigate-in-page (Google pushState) from
+    // writing multiple entries for a single search.
+    const now = Date.now();
+    const last = lastRecordedByTab.get(tabId);
+    if (last && last.url === url && now - last.timestamp < 3000) return;
+    lastRecordedByTab.set(tabId, { url, timestamp: now });
+
+    const dataObj = JSON.stringify({ url, title, timestamp: now });
     const payload = encryption.encrypt(dataObj);
     const entry = JSON.stringify(payload) + '\n';
     fs.appendFile(getHistoryPath(), entry, (err) => {
@@ -854,6 +869,7 @@ ipcMain.on('close-tab', (e, { id }) => {
         delete tabs[id];
         if (activeTabId === id) activeTabId = null;
     }
+    lastRecordedByTab.delete(id);
 });
 
 ipcMain.on('go-back', (e, { id }) => {

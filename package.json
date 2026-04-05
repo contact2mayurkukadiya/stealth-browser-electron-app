@@ -13,11 +13,13 @@
   "build": {
     "appId": "com.stealth.browser",
     "productName": "StealthBrowser",
+    "copyright": "Copyright © 2026 Mark Oliver",
     "mac": {
       "target": [
         "dmg"
       ],
-      "identity": null
+      "identity": null,
+      "category": "public.app-category.utilities"
     },
     "win": {
       "target": [
@@ -30,7 +32,10 @@
     }
   },
   "keywords": [],
-  "author": "",
+  "author": {
+    "name": "Mark Oliver",
+    "email": "dev.markoliver@gmail.com"
+  },
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
