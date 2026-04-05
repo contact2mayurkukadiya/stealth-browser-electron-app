@@ -19,10 +19,20 @@ body {
 /* ── Tab bar ─────────────────────────────────────────────────────────────── */
 .tab-bar {
     display: flex;
-    padding: 5px 10px 0 80px;
+    padding: 5px 10px 0 10px;
     gap: 5px;
     height: 45px;
     align-items: flex-end;
+}
+
+/* macOS — reserve space for the traffic-light buttons on the left */
+.tab-bar--mac {
+    padding-left: 90px;
+}
+
+/* Windows — reserve space for the native caption-button overlay on the right */
+.tab-bar--win {
+    padding-right: 150px;
 }
 
 .tab {

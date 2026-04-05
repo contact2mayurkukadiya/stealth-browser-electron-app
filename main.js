@@ -27,10 +27,23 @@ if (!app.isPackaged) {
 }
 
 function createWindow() {
+    const isMac = process.platform === 'darwin';
     mainWindow = new BrowserWindow({
         width: 1200, height: 800,
-        titleBarStyle: 'hidden', // Custom title bar
-        trafficLightPosition: { x: 15, y: 15 }, // Fix for Mac close/min/max
+        // macOS: 'hiddenInset' keeps traffic lights visible inside the window frame.
+        // Windows/Linux: 'hidden' removes the default title bar; titleBarOverlay
+        // re-adds the native caption buttons (minimize/maximize/close) on the right.
+        titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+        ...(isMac
+            ? { trafficLightPosition: { x: 15, y: 15 } }
+            : {
+                titleBarOverlay: {
+                    color: '#1a1a1a',
+                    symbolColor: '#ffffff',
+                    height: 45,
+                },
+            }
+        ),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -847,15 +860,13 @@ ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
 
 ipcMain.on('switch-tab', (e, { id }) => {
     if (!isSenderTrusted(e)) return;
+    if (!tabs[id]) return; // Unknown tab — don't blank the window
     Object.values(tabs).forEach(v => mainWindow.contentView.removeChildView(v));
-    if (tabs[id]) {
-        mainWindow.contentView.addChildView(tabs[id]);
-        const { width, height } = mainWindow.getContentBounds();
-        tabs[id].setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
-        tabs[id].webContents.focus();
-    }
+    mainWindow.contentView.addChildView(tabs[id]);
+    const { width, height } = mainWindow.getContentBounds();
+    tabs[id].setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+    tabs[id].webContents.focus();
     activeTabId = id;
-    // Notify the main React shell so it updates the active tab highlight
     if (mainWindow && !mainWindow.webContents.isDestroyed()) {
         mainWindow.webContents.send('tab-switched', { id });
     }
@@ -927,7 +938,7 @@ ipcMain.on('navigate', (e, { id, url }) => {
 
 // ─── CUSTOM PROTOCOL (Rule 18 — no file://) ─────────────────────────────────
 protocol.registerSchemesAsPrivileged([
-    { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
+    { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false } }
 ]);
 
 app.whenReady().then(() => {
@@ -960,10 +971,7 @@ app.whenReady().then(() => {
 
             return new Response(data, {
                 status: 200,
-                headers: {
-                    'Content-Type': mimeType,
-                    'Access-Control-Allow-Origin': '*'
-                }
+                headers: { 'Content-Type': mimeType }
             });
         } catch (err) {
             console.error('Protocol handle error reading', filePath, err);

@@ -44,8 +44,12 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd })
     }, 500);
   }, []);
 
+  const platform = window.electronAPI?.platform;
+  const isMac = platform === 'darwin';
+  const isWin = platform === 'win32';
+
   return (
-    <div className="tab-bar">
+    <div className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}`}>
       {tabOrder.map(id => (
         <Tab
           key={id}

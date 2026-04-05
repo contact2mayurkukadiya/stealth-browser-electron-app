@@ -61,22 +61,21 @@ export default function HistoryApp() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  // Load history on mount
-  useEffect(() => {
-    async function fetchHistory() {
-      setIsLoading(true);
-      try {
-        const raw = await window.electronAPI.historyGet();
-        setEntries(normalizeEntries(raw));
-      } catch (err) {
-        console.error('Failed to load history:', err);
-        setEntries([]);
-      } finally {
-        setIsLoading(false);
-      }
+  const fetchHistory = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const raw = await window.electronAPI.historyGet();
+      setEntries(normalizeEntries(raw));
+    } catch (err) {
+      console.error('Failed to load history:', err);
+      setEntries([]);
+    } finally {
+      setIsLoading(false);
     }
-    fetchHistory();
   }, []);
+
+  // Load history on mount
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
   const filteredEntries = searchTerm
     ? entries.filter((e) => {
@@ -178,6 +177,7 @@ export default function HistoryApp() {
       <Sidebar
         activeItem="chrome-history"
         onDeleteBrowsingData={() => setShowClearModal(true)}
+        onRefresh={fetchHistory}
       />
 
       <main className="h-main">

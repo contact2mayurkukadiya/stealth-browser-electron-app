@@ -6,6 +6,12 @@ const CLOCK_ICON = (
   </svg>
 );
 
+const REFRESH_ICON = (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.418 0-7.993 3.582-7.993 8s3.575 8 7.993 8c3.73 0 6.847-2.56 7.73-6h-2.08A5.988 5.988 0 0 1 12 18c-3.314 0-6-2.686-6-6s2.686-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+  </svg>
+);
+
 const TRASH_ICON = (
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
@@ -25,7 +31,7 @@ const GOOGLE_HISTORY_LOGO = (
   </svg>
 );
 
-export default function Sidebar({ activeItem, onDeleteBrowsingData }) {
+export default function Sidebar({ activeItem, onDeleteBrowsingData, onRefresh }) {
   return (
     <aside className="h-sidebar" aria-label="History navigation">
       <div className="h-sidebar-brand">
@@ -41,6 +47,17 @@ export default function Sidebar({ activeItem, onDeleteBrowsingData }) {
         >
           {CLOCK_ICON}
           <span className="h-nav-item-label">Chrome history</span>
+          <span
+            role="button"
+            tabIndex={0}
+            className="h-nav-refresh-btn"
+            title="Refresh history"
+            onClick={(e) => { e.stopPropagation(); onRefresh?.(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onRefresh?.(); } }}
+            aria-label="Refresh history"
+          >
+            {REFRESH_ICON}
+          </span>
         </button>
 
         <button

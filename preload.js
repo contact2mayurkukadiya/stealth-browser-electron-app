@@ -53,4 +53,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tooltipHide: () => ipcRenderer.send('tooltip:hide'),
     onTooltipUpdate: (callback) => ipcRenderer.on('tooltip:update', (event, v) => callback(v)),
 
+    // Platform identifier — used by the renderer to apply platform-specific styles
+    platform: process.platform,
 });
