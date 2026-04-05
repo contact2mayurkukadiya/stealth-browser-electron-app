@@ -42,6 +42,7 @@ export default function Tab({
 
   const handleClose = (e) => {
     e.stopPropagation();
+    onHideTooltip();
     onClose();
   };
 
@@ -51,7 +52,7 @@ export default function Tab({
 
   // Middle-click to close
   const handleMouseDown = (e) => {
-    if (e.button === 1) { e.preventDefault(); onClose(); }
+    if (e.button === 1) { e.preventDefault(); onHideTooltip(); onClose(); }
   };
 
   const className = ['tab', isActive ? 'active' : '', isStealth ? 'stealth-tab' : ''].filter(Boolean).join(' ');
