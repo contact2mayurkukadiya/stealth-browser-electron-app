@@ -78,6 +78,30 @@ export default function SettingsApp() {
     window.electronAPI.appRelaunch();
   }, []);
 
+  const [diagReportText, setDiagReportText] = useState('');
+  const [diagLoading, setDiagLoading] = useState(false);
+
+  const refreshDiagReport = useCallback(async () => {
+    setDiagLoading(true);
+    try {
+      const report = await window.electronAPI.compatDiagGetReport({});
+      setDiagReportText(JSON.stringify(report, null, 2));
+    } catch (err) {
+      setDiagReportText(JSON.stringify({ error: String(err?.message || err) }, null, 2));
+    } finally {
+      setDiagLoading(false);
+    }
+  }, []);
+
+  const copyDiagReport = useCallback(() => {
+    window.electronAPI.clipboardWriteText(diagReportText);
+  }, [diagReportText]);
+
+  const handleCompatibilityDiagnosticsChange = useCallback(async (value) => {
+    await persist({ ...settings, compatibilityDiagnosticsEnabled: value });
+    if (value) refreshDiagReport();
+  }, [settings, persist, refreshDiagReport]);
+
   if (!settings) {
     return <div className="settings-loading">Loading…</div>;
   }
@@ -132,6 +156,66 @@ export default function SettingsApp() {
                 onChange={handleStartupChange}
               />
             ))}
+          </div>
+        </section>
+
+        {/* ── Compatibility diagnostics ───────────────────────────────── */}
+        <section className="settings-section">
+          <h2 className="settings-section__title">Compatibility diagnostics</h2>
+          <div className="settings-card">
+            <div className="setting-row">
+              <div className="setting-row__text">
+                <span className="setting-row__label">Collect navigation diagnostics</span>
+                <span className="setting-row__desc">
+                  When enabled, the app records main-frame navigations, load failures, redirect
+                  guard actions, and selected response headers (for example CSP) in memory only.
+                  Use this to troubleshoot sites that fail to load — not for evading protections.
+                </span>
+              </div>
+              <Toggle
+                checked={!!settings.compatibilityDiagnosticsEnabled}
+                onChange={handleCompatibilityDiagnosticsChange}
+              />
+            </div>
+
+            {settings.compatibilityDiagnosticsEnabled && (
+              <div className="diag-panel">
+                <div className="diag-panel__actions">
+                  <button
+                    type="button"
+                    className="diag-btn"
+                    onClick={refreshDiagReport}
+                    disabled={diagLoading}
+                  >
+                    {diagLoading ? 'Refreshing…' : 'Refresh report'}
+                  </button>
+                  <button
+                    type="button"
+                    className="diag-btn diag-btn--secondary"
+                    onClick={() => window.electronAPI.compatDiagClear({}).then(refreshDiagReport)}
+                  >
+                    Clear log
+                  </button>
+                </div>
+                <div className="diag-report-wrap">
+                  <button
+                    type="button"
+                    className="diag-copy-icon-btn"
+                    onClick={copyDiagReport}
+                    aria-label="Copy diagnostics JSON"
+                    title="Copy JSON"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="9" y="9" width="10" height="10" rx="2" ry="2" />
+                      <rect x="5" y="5" width="10" height="10" rx="2" ry="2" />
+                    </svg>
+                  </button>
+                  <pre className="diag-panel__pre" role="region" aria-label="Diagnostics JSON report">
+                    {diagReportText || 'Click “Refresh report” to load the in-memory log.'}
+                  </pre>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       </div>

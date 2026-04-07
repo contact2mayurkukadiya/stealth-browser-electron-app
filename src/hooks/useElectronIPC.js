@@ -11,6 +11,7 @@ export function useElectronIPC({
   onNewTab,
   onTabCreated,
   onTabSwitched,
+  onTabAwoken,
   onCloseTab,
   onReload,
   onSwitchTabDir,
@@ -38,6 +39,11 @@ export function useElectronIPC({
     api.onTabSwitched(({ id }) => {
       onTabSwitched(id);
     });
+
+    // Fired when a sleeping tab's WebContentsView is created on first activation.
+    if (api.onTabAwoken) {
+      api.onTabAwoken(({ id }) => onTabAwoken(id));
+    }
 
     // ── Keyboard shortcut IPC ────────────────────────────────────────────
     api.onShortcutNewTab(() => onNewTab(false));

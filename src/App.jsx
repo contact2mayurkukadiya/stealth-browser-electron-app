@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
-  addTab, removeTab, setCurrentTab,
+  addTab, addSleepingTab, wakeTab,
+  removeTab, setCurrentTab,
   reorderTabs, setTabNewTab,
 } from './store/browserSlice';
 import { setBookmarks } from './store/bookmarksSlice';
@@ -28,7 +29,14 @@ export default function App() {
       const { tabs, tabOrder, currentTabId } = stateRef.current;
       const tabsToSave = tabOrder
         .filter(id => tabs[id] && !tabs[id].isStealth)
-        .map(id => ({ id, url: tabs[id].url || 'https://www.google.com/' }));
+        .map(id => ({
+          id,
+          url: tabs[id].url || 'https://www.google.com/',
+          // Persist display metadata so sleeping tabs can show the right
+          // title and favicon immediately on the next session restore.
+          title: tabs[id].title || 'New Tab',
+          favicon: tabs[id].favicon || null,
+        }));
 
       if (tabsToSave.length > 0 && window.electronAPI.sessionSave) {
         let activeTab = currentTabId;
@@ -151,11 +159,17 @@ export default function App() {
     dispatch(setCurrentTab(id));
   }, [dispatch]);
 
+  // Fired by main process when a sleeping tab's WebContentsView is created.
+  const handleTabAwoken = useCallback((id) => {
+    dispatch(wakeTab(id));
+  }, [dispatch]);
+
   // ── Register all IPC listeners ───────────────────────────────────────────
   useElectronIPC({
     onNewTab: createTab,
     onTabCreated: handleTabCreated,
     onTabSwitched: handleTabSwitched,
+    onTabAwoken: handleTabAwoken,
     onCloseTab: () => {
       const { currentTabId } = stateRef.current;
       if (currentTabId) closeTab(currentTabId);
@@ -183,17 +197,28 @@ export default function App() {
       }
 
       if (session?.tabs?.length > 0) {
-        for (const t of session.tabs) {
-          createTabWithUrl(t.id, false, t.url);
-        }
-        const target = session.activeTabId && document.getElementById(session.activeTabId)
+        // Determine which tab should be active on restore.
+        const activeId = session.activeTabId && session.tabs.some(t => t.id === session.activeTabId)
           ? session.activeTabId
           : session.tabs[session.tabs.length - 1].id;
 
-        // Give React a tick to render the tabs before switching
+        for (const t of session.tabs) {
+          if (t.id === activeId) {
+            // Active tab: create the WebContentsView and load its URL eagerly.
+            dispatch(addTab({ id: t.id, isStealth: false, initialUrl: t.url }));
+            window.electronAPI.newTab(t.id, false, t.url);
+          } else {
+            // Inactive tabs: add to the tab strip using cached metadata only.
+            // No WebContentsView is created; it will be created on first activation.
+            dispatch(addSleepingTab({ id: t.id, url: t.url, title: t.title, favicon: t.favicon }));
+            window.electronAPI.tabSleepRegister(t.id, t.url);
+          }
+        }
+
+        // Give React a tick to render the tab strip before switching.
         setTimeout(() => {
-          dispatch(setCurrentTab(target));
-          window.electronAPI.switchTab(target);
+          dispatch(setCurrentTab(activeId));
+          window.electronAPI.switchTab(activeId);
         }, 0);
       } else {
         createTab(false);
