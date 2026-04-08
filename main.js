@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem, dialog, protocol, net } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem, dialog, protocol, net, clipboard } = require('electron');
 const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs');
@@ -15,6 +15,7 @@ let isHTMLFullscreen = false;
 let tabs = {}; // Store views by ID (only fully-loaded tabs)
 let activeTabId = null; // Track currently visible tab
 const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
+let generatedTabCounter = 0;
 
 // Holds metadata for session-restored tabs that have not been activated yet.
 // Key: tabId, Value: { url } — enough to create the WebContentsView on demand.
@@ -399,6 +400,48 @@ function createTooltipOverlay() {
     tooltipView.setBounds({ x: 0, y: 0, width: 0, height: 0 }); // Hide initially
 }
 
+function generateTabId() {
+    generatedTabCounter += 1;
+    return `tab-${Date.now()}-${generatedTabCounter}`;
+}
+
+function isAllowedTabNavigationUrl(targetUrl) {
+    if (!targetUrl || typeof targetUrl !== 'string') return false;
+    return targetUrl.startsWith('https://') ||
+        targetUrl.startsWith('http://') ||
+        targetUrl.startsWith('app://');
+}
+
+function activateTab(id) {
+    if (!tabs[id]) return false;
+    Object.values(tabs).forEach(v => mainWindow.contentView.removeChildView(v));
+    mainWindow.contentView.addChildView(tabs[id]);
+    const { width, height } = mainWindow.getContentBounds();
+    tabs[id].setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+    tabs[id].webContents.focus();
+    activeTabId = id;
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('tab-switched', { id });
+    }
+    return true;
+}
+
+function openUrlInNewTab(targetUrl, options = {}) {
+    const openInBackground = options.background === true;
+    if (!isAllowedTabNavigationUrl(targetUrl)) return false;
+
+    const newTabId = generateTabId();
+    createTab(newTabId, targetUrl, false, { activate: !openInBackground });
+
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('tab-created', { id: newTabId, isStealth: false, url: targetUrl });
+    }
+    if (!openInBackground) {
+        activateTab(newTabId);
+    }
+    return true;
+}
+
 
 ipcMain.on('tooltip:show', (e, { title, url, memory, x, y, width, height }) => {
     if (!isSenderTrusted(e)) return;
@@ -438,7 +481,8 @@ function handleShortcuts(event, input) {
 }
 
 // Logic to create a new Tab View
-function createTab(id, url = "https://www.google.com", isStealth = false) {
+function createTab(id, url = "https://www.google.com", isStealth = false, options = {}) {
+    const shouldActivate = options.activate !== false;
     const view = new WebContentsView({
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -465,19 +509,30 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
 
     // Initial bounds set
     const { width, height } = mainWindow.getContentBounds();
-    view.setBounds({ x: 0, y: isHTMLFullscreen ? 0 : UI_HEIGHT, width, height: isHTMLFullscreen ? height : height - UI_HEIGHT });
-
-    view.webContents.focus(); // Focus the view immediately
+    if (shouldActivate) {
+        view.setBounds({ x: 0, y: isHTMLFullscreen ? 0 : UI_HEIGHT, width, height: isHTMLFullscreen ? height : height - UI_HEIGHT });
+        view.webContents.focus();
+    } else {
+        view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    }
 
     // ─── Security guards for tab content (Rules 13, 14) ────
-    // Block all popup windows opened by web content
-    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    // Convert safe popup/new-tab intents into app tabs; block everything else.
+    view.webContents.setWindowOpenHandler(({ url: targetUrl, disposition }) => {
+        if (!isAllowedTabNavigationUrl(targetUrl)) {
+            console.warn(`[Security] Blocked popup/open to: ${targetUrl}`);
+            return { action: 'deny' };
+        }
+
+        const isBackgroundTab = disposition === 'background-tab';
+        openUrlInNewTab(targetUrl, { background: isBackgroundTab });
+
+        return { action: 'deny' };
+    });
 
     // Block navigations to non-http(s) URLs (prevents file:// exfiltration)
     view.webContents.on('will-navigate', (event, targetUrl) => {
-        const allowed = targetUrl.startsWith('https://') ||
-            targetUrl.startsWith('http://') ||
-            targetUrl.startsWith('app://');
+        const allowed = isAllowedTabNavigationUrl(targetUrl);
         if (!allowed) {
             console.warn(`[Security] Blocked navigation to: ${targetUrl}`);
             event.preventDefault();
@@ -543,16 +598,96 @@ function createTab(id, url = "https://www.google.com", isStealth = false) {
     });
 
     // --- SYNCING METADATA TO UI ---
-    view.webContents.on('context-menu', (event, params) => {
-        const menu = Menu.buildFromTemplate([
-            {
-                label: 'Inspect Element',
-                click: () => {
-                    view.webContents.inspectElement(params.x, params.y);
-                }
-            }
-        ]);
-        menu.popup();
+    view.webContents.on('context-menu', (_event, params) => {
+        const contextTemplate = [];
+        const hasSelection = Boolean(params.selectionText && params.selectionText.trim());
+        const linkUrl = params.linkURL || '';
+        const imageUrl = params.srcURL || '';
+        const isLinkContext = Boolean(linkUrl);
+        const isImageContext = params.mediaType === 'image' && Boolean(imageUrl);
+
+        if (isLinkContext) {
+            contextTemplate.push(
+                {
+                    label: 'Open link in new tab',
+                    click: () => openUrlInNewTab(linkUrl, { background: false }),
+                },
+                {
+                    label: 'Open link in new tab in background',
+                    click: () => openUrlInNewTab(linkUrl, { background: true }),
+                },
+                {
+                    label: 'Open link in current tab',
+                    click: () => view.webContents.loadURL(linkUrl),
+                },
+                {
+                    type: 'separator',
+                },
+                {
+                    label: 'Copy link address',
+                    click: () => clipboard.writeText(linkUrl),
+                },
+            );
+        }
+
+        if (isImageContext) {
+            if (contextTemplate.length > 0) contextTemplate.push({ type: 'separator' });
+            contextTemplate.push(
+                {
+                    label: 'Open image in new tab',
+                    click: () => openUrlInNewTab(imageUrl, { background: false }),
+                },
+                {
+                    label: 'Copy image address',
+                    click: () => clipboard.writeText(imageUrl),
+                },
+            );
+        }
+
+        if (params.isEditable) {
+            if (contextTemplate.length > 0) contextTemplate.push({ type: 'separator' });
+            contextTemplate.push(
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
+                { role: 'selectAll' },
+            );
+        } else if (hasSelection) {
+            if (contextTemplate.length > 0) contextTemplate.push({ type: 'separator' });
+            contextTemplate.push({ role: 'copy' });
+        }
+
+        if (!params.isEditable) {
+            if (contextTemplate.length > 0) contextTemplate.push({ type: 'separator' });
+            contextTemplate.push(
+                {
+                    label: 'Back',
+                    enabled: view.webContents.canGoBack(),
+                    click: () => view.webContents.goBack(),
+                },
+                {
+                    label: 'Forward',
+                    enabled: view.webContents.canGoForward(),
+                    click: () => view.webContents.goForward(),
+                },
+                {
+                    label: 'Reload',
+                    click: () => view.webContents.reload(),
+                },
+            );
+        }
+
+        if (contextTemplate.length > 0) contextTemplate.push({ type: 'separator' });
+        contextTemplate.push({
+            label: 'Inspect Element',
+            click: () => view.webContents.inspectElement(params.x, params.y),
+        });
+
+        const contextMenu = Menu.buildFromTemplate(contextTemplate);
+        contextMenu.popup();
     });
 
     view.webContents.on('before-input-event', handleShortcuts);
@@ -1238,16 +1373,7 @@ ipcMain.on('switch-tab', (e, { id }) => {
     }
 
     if (!tabs[id]) return; // Truly unknown tab — don't blank the window
-
-    Object.values(tabs).forEach(v => mainWindow.contentView.removeChildView(v));
-    mainWindow.contentView.addChildView(tabs[id]);
-    const { width, height } = mainWindow.getContentBounds();
-    tabs[id].setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
-    tabs[id].webContents.focus();
-    activeTabId = id;
-    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send('tab-switched', { id });
-    }
+    activateTab(id);
 });
 
 ipcMain.on('close-tab', (e, { id }) => {
