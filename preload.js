@@ -20,6 +20,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onShortcutCloseTab: (callback) => ipcRenderer.on('shortcut-close-tab', () => callback()),
     onShortcutReload: (callback) => ipcRenderer.on('shortcut-reload', () => callback()),
     onShortcutSwitchTab: (callback) => ipcRenderer.on('shortcut-switch-tab', (event, data) => callback(data)),
+    onShortcutTabNewToRight: (callback) => ipcRenderer.on('shortcut-tab-new-to-right', () => callback()),
+    onShortcutTabDuplicate: (callback) => ipcRenderer.on('shortcut-tab-duplicate', () => callback()),
+    onShortcutTabMuteSite: (callback) => ipcRenderer.on('shortcut-tab-mute-site', () => callback()),
+    onShortcutTabPin: (callback) => ipcRenderer.on('shortcut-tab-pin', () => callback()),
+    onShortcutTabCloseOthers: (callback) => ipcRenderer.on('shortcut-tab-close-others', () => callback()),
+    onShortcutTabCloseRight: (callback) => ipcRenderer.on('shortcut-tab-close-right', () => callback()),
+    onShortcutTabSearch: (callback) => ipcRenderer.on('shortcut-tab-search', () => callback()),
+    onShortcutCommandPalette: (callback) => ipcRenderer.on('shortcut-command-palette', () => callback()),
+
+    runMenuCommand: (commandId) => ipcRenderer.invoke('app:run-menu-command', commandId),
+
+    tabSetAudioMuted: (id, muted) => ipcRenderer.send('tab:set-audio-muted', { id, muted }),
+    tabMenuSyncLabels: (payload) => ipcRenderer.send('tab-menu:sync-labels', payload),
 
     // Bookmarks
     bookmarksGet: () => ipcRenderer.invoke('bookmarks:get'),

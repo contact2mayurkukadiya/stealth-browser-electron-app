@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem, dialog, protocol, net, clipboard } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem, dialog, protocol, net, clipboard, webContents } = require('electron');
 const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs');
@@ -12,6 +12,9 @@ process.on('uncaughtException', (error) => {
 
 let mainWindow;
 let isHTMLFullscreen = false;
+/** Tab menu labels synced from renderer (active tab / site mute state). */
+let tabMenuMuteSiteShowsUnmute = false;
+let tabMenuPinShowsUnpin = false;
 let tabs = {}; // Store views by ID (only fully-loaded tabs)
 let activeTabId = null; // Track currently visible tab
 const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
@@ -622,6 +625,18 @@ function buildApplicationMenu() {
             ]
         },
         {
+            label: 'Edit',
+            submenu: [
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
+                { role: 'selectAll' }
+            ]
+        },
+        {
             label: 'History',
             submenu: [
                 { label: 'Home', click: () => navigateActiveTabHome() },
@@ -633,24 +648,151 @@ function buildApplicationMenu() {
             ]
         },
         {
-            label: 'Edit',
+            label: 'Tab',
             submenu: [
-                { role: 'undo' },
-                { role: 'redo' },
+                {
+                    label: 'New Tab to the Right',
+                    click: () => mainWindow.webContents.send('shortcut-tab-new-to-right'),
+                },
                 { type: 'separator' },
-                { role: 'cut' },
-                { role: 'copy' },
-                { role: 'paste' },
-                { role: 'selectAll' }
-            ]
-        }
+                {
+                    label: 'Select Next Tab',
+                    accelerator: 'Control+Tab',
+                    click: () => mainWindow.webContents.send('shortcut-switch-tab', { direction: 1 }),
+                },
+                {
+                    label: 'Select Previous Tab',
+                    accelerator: 'Control+Shift+Tab',
+                    click: () => mainWindow.webContents.send('shortcut-switch-tab', { direction: -1 }),
+                },
+                { type: 'separator' },
+                {
+                    label: 'Duplicate Tab',
+                    accelerator: 'CommandOrControl+Shift+D',
+                    click: () => mainWindow.webContents.send('shortcut-tab-duplicate'),
+                },
+                {
+                    label: tabMenuMuteSiteShowsUnmute ? 'Unmute Site' : 'Mute Site',
+                    click: () => mainWindow.webContents.send('shortcut-tab-mute-site'),
+                },
+                {
+                    label: tabMenuPinShowsUnpin ? 'Unpin Tab' : 'Pin Tab',
+                    click: () => mainWindow.webContents.send('shortcut-tab-pin'),
+                },
+                {
+                    label: 'Group Tab',
+                    enabled: false,
+                },
+                { type: 'separator' },
+                {
+                    label: 'Close Other Tabs',
+                    click: () => mainWindow.webContents.send('shortcut-tab-close-others'),
+                },
+                {
+                    label: 'Close Tabs to the Right',
+                    click: () => mainWindow.webContents.send('shortcut-tab-close-right'),
+                },
+                { type: 'separator' },
+                {
+                    label: 'Move Tab to New Window',
+                    enabled: false,
+                },
+                {
+                    label: 'Search Tabs…',
+                    accelerator: 'Shift+CommandOrControl+A',
+                    click: () => mainWindow.webContents.send('shortcut-tab-search'),
+                },
+            ],
+        },
+        {
+            label: 'Help',
+            submenu: [
+                {
+                    label: 'Search…',
+                    accelerator: 'CommandOrControl+Shift+P',
+                    click: () => mainWindow.webContents.send('shortcut-command-palette'),
+                },
+            ],
+        },
     ]);
+}
+
+function runMenuCommandFromPalette(commandId) {
+    switch (commandId) {
+        case 'open-settings':
+            openOrActivateSettingsTab();
+            return true;
+        case 'navigate-home':
+            navigateActiveTabHome();
+            return true;
+        case 'history-back':
+            goBackInActiveTab();
+            return true;
+        case 'history-forward':
+            goForwardInActiveTab();
+            return true;
+        case 'view-source':
+            openViewSourceForActiveTab();
+            return true;
+        case 'devtools-elements':
+            openDevToolsForActiveTab('elements');
+            return true;
+        case 'devtools-console':
+            openDevToolsForActiveTab('console');
+            return true;
+        case 'toggle-fullscreen':
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.setFullScreen(!mainWindow.isFullScreen());
+            }
+            return true;
+        case 'quit':
+            app.quit();
+            return true;
+        case 'edit-undo': {
+            const focused = webContents.getFocusedWebContents();
+            if (focused && !focused.isDestroyed()) focused.undo();
+            return true;
+        }
+        case 'edit-redo': {
+            const focused = webContents.getFocusedWebContents();
+            if (focused && !focused.isDestroyed()) focused.redo();
+            return true;
+        }
+        case 'edit-cut': {
+            const focused = webContents.getFocusedWebContents();
+            if (focused && !focused.isDestroyed()) focused.cut();
+            return true;
+        }
+        case 'edit-copy': {
+            const focused = webContents.getFocusedWebContents();
+            if (focused && !focused.isDestroyed()) focused.copy();
+            return true;
+        }
+        case 'edit-paste': {
+            const focused = webContents.getFocusedWebContents();
+            if (focused && !focused.isDestroyed()) focused.paste();
+            return true;
+        }
+        case 'edit-select-all': {
+            const focused = webContents.getFocusedWebContents();
+            if (focused && !focused.isDestroyed()) focused.selectAll();
+            return true;
+        }
+        default:
+            return false;
+    }
 }
 
 function rebuildApplicationMenu() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     Menu.setApplicationMenu(buildApplicationMenu());
 }
+
+ipcMain.handle('app:run-menu-command', (event, commandId) => {
+    if (!isSenderTrusted(event)) return false;
+    if (typeof commandId !== 'string') return false;
+    return runMenuCommandFromPalette(commandId);
+});
 
 
 ipcMain.on('tooltip:show', (e, { title, url, memory, x, y, width, height }) => {
@@ -1582,6 +1724,26 @@ ipcMain.on('switch-tab', (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     if (!tabs[id] && !sleepingTabs[id]) return; // Truly unknown tab — don't blank the window
     activateOrWakeTab(id);
+});
+
+ipcMain.on('tab-menu:sync-labels', (e, payload = {}) => {
+    if (!isSenderTrusted(e)) return;
+    if (typeof payload.muteSiteShowsUnmute === 'boolean') {
+        tabMenuMuteSiteShowsUnmute = payload.muteSiteShowsUnmute;
+    }
+    if (typeof payload.pinShowsUnpin === 'boolean') {
+        tabMenuPinShowsUnpin = payload.pinShowsUnpin;
+    }
+    rebuildApplicationMenu();
+});
+
+ipcMain.on('tab:set-audio-muted', (e, { id, muted }) => {
+    if (!isSenderTrusted(e)) return;
+    if (!id || typeof muted !== 'boolean') return;
+    if (!tabs[id] || tabs[id].webContents.isDestroyed()) return;
+    try {
+        tabs[id].webContents.setAudioMuted(muted);
+    } catch (_) {}
 });
 
 ipcMain.on('close-tab', (e, { id }) => {

@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import Tab from './Tab';
 
@@ -48,6 +48,11 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd })
   const isMac = platform === 'darwin';
   const isWin = platform === 'win32';
 
+  const pinnedTabCount = useMemo(
+    () => tabOrder.filter((tid) => tabs[tid]?.isPinned).length,
+    [tabOrder, tabs],
+  );
+
   return (
     <div className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}`}>
       {tabOrder.map(id => (
@@ -56,6 +61,7 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd })
           id={id}
           tab={tabs[id]}
           isActive={id === currentTabId}
+          pinnedTabCount={pinnedTabCount}
           onClose={() => onCloseTab(id)}
           onSwitch={onSwitchTab}
           onDragEnd={onDragEnd}

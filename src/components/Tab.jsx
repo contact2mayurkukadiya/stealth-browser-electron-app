@@ -19,8 +19,9 @@ export default function Tab({
   id, tab, isActive,
   onClose, onSwitch, onDragEnd,
   onHoverEnter, onHoverLeave, onHideTooltip,
+  pinnedTabCount = 0,
 }) {
-  const { url, title, favicon, isNewTab, isStealth, isLoading } = tab || {};
+  const { url, title, favicon, isNewTab, isStealth, isLoading, isPinned } = tab || {};
 
   const handleSwitchTab = useCallback((tabId) => onSwitch(tabId), [onSwitch]);
   const handleDragEnd = useCallback((ids) => onDragEnd(ids), [onDragEnd]);
@@ -30,6 +31,8 @@ export default function Tab({
     onSwitchTab: handleSwitchTab,
     onDragEnd: handleDragEnd,
     onHideTooltip,
+    isPinned: !!isPinned,
+    pinnedTabCount,
   });
 
   // Resolve favicon to display
@@ -55,7 +58,7 @@ export default function Tab({
     if (e.button === 1) { e.preventDefault(); onHideTooltip(); onClose(); }
   };
 
-  const className = ['tab', isActive ? 'active' : '', isStealth ? 'stealth-tab' : ''].filter(Boolean).join(' ');
+  const className = ['tab', isActive ? 'active' : '', isStealth ? 'stealth-tab' : '', isPinned ? 'tab--pinned' : ''].filter(Boolean).join(' ');
 
   return (
     <div

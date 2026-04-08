@@ -17,6 +17,14 @@ export function useElectronIPC({
   onSwitchTabDir,
   onHistory,
   onSettings,
+  onTabNewToRight,
+  onTabDuplicate,
+  onTabMuteSite,
+  onTabPin,
+  onTabCloseOthers,
+  onTabCloseRight,
+  onTabSearch,
+  onCommandPalette,
 }) {
   const dispatch = useDispatch();
 
@@ -53,6 +61,15 @@ export function useElectronIPC({
     api.onShortcutCloseTab(onCloseTab);
     api.onShortcutReload(onReload);
     api.onShortcutSwitchTab(({ direction }) => onSwitchTabDir(direction));
+
+    if (api.onShortcutTabNewToRight) api.onShortcutTabNewToRight(() => onTabNewToRight?.());
+    if (api.onShortcutTabDuplicate) api.onShortcutTabDuplicate(() => onTabDuplicate?.());
+    if (api.onShortcutTabMuteSite) api.onShortcutTabMuteSite(() => onTabMuteSite?.());
+    if (api.onShortcutTabPin) api.onShortcutTabPin(() => onTabPin?.());
+    if (api.onShortcutTabCloseOthers) api.onShortcutTabCloseOthers(() => onTabCloseOthers?.());
+    if (api.onShortcutTabCloseRight) api.onShortcutTabCloseRight(() => onTabCloseRight?.());
+    if (api.onShortcutTabSearch) api.onShortcutTabSearch(() => onTabSearch?.());
+    if (api.onShortcutCommandPalette) api.onShortcutCommandPalette(() => onCommandPalette?.());
 
     // Listeners registered once; no cleanup needed (Electron IPC listeners
     // persist for the renderer lifetime and ipcRenderer has no removeListener

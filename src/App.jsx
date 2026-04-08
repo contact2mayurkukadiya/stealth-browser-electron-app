@@ -1,21 +1,39 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   addTab, addSleepingTab, wakeTab,
   removeTab, setCurrentTab,
-  reorderTabs, setTabNewTab,
+  reorderTabs,
+  insertTabAfter,
+  setTabPinned,
+  setTabAudioMuted,
 } from './store/browserSlice';
 import { setBookmarks } from './store/bookmarksSlice';
 import { useElectronIPC } from './hooks/useElectronIPC';
 import TabBar from './components/TabBar';
 import NavBar from './components/NavBar';
 import BookmarkBar from './components/BookmarkBar';
+import SearchTabsModal from './components/SearchTabsModal';
+import CommandPaletteModal from './components/CommandPaletteModal';
+import { buildCommandPaletteCommands } from './commandPaletteCommands';
+
+function hostnameFromUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    return new URL(url).hostname || '';
+  } catch {
+    return '';
+  }
+}
 
 export default function App() {
   const dispatch = useDispatch();
   const tabs = useSelector(s => s.browser.tabs);
   const tabOrder = useSelector(s => s.browser.tabOrder);
   const currentTabId = useSelector(s => s.browser.currentTabId);
+
+  const [searchTabsOpen, setSearchTabsOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   // Always-fresh ref so event-handler closures never capture stale state
   const stateRef = useRef({});
@@ -51,6 +69,24 @@ export default function App() {
   useEffect(() => {
     if (tabOrder.length > 0) requestSessionSave();
   }, [tabOrder, requestSessionSave]);
+
+  // Native Tab menu: Mute/Unmute Site + Pin/Unpin labels for the active tab
+  useEffect(() => {
+    const sync = window.electronAPI.tabMenuSyncLabels;
+    if (!sync) return;
+    const cur = tabs[currentTabId];
+    let muteSiteShowsUnmute = false;
+    let pinShowsUnpin = false;
+    if (cur) {
+      pinShowsUnpin = !!cur.isPinned;
+      const host = hostnameFromUrl(cur.url);
+      if (host) {
+        const match = tabOrder.filter((tid) => hostnameFromUrl(tabs[tid]?.url) === host);
+        muteSiteShowsUnmute = match.length > 0 && match.every((tid) => tabs[tid]?.isAudioMuted);
+      }
+    }
+    sync({ muteSiteShowsUnmute, pinShowsUnpin });
+  }, [tabs, tabOrder, currentTabId]);
 
   // ── navigate bridge for bookmark-popup.html (separate overlay window) ───
   useEffect(() => {
@@ -117,6 +153,65 @@ export default function App() {
     window.electronAPI.switchTab(nextId);
   }, [dispatch]);
 
+  const newTabToRight = useCallback(() => {
+    const { currentTabId } = stateRef.current;
+    if (!currentTabId) return;
+    const id = `tab-${Date.now()}`;
+    dispatch(insertTabAfter({ afterId: currentTabId, id, isStealth: false, initialUrl: null }));
+    window.electronAPI.newTab(id, false, null);
+    window.electronAPI.switchTab(id);
+  }, [dispatch]);
+
+  const duplicateTab = useCallback(() => {
+    const { currentTabId, tabs: tmap } = stateRef.current;
+    if (!currentTabId || !tmap[currentTabId]) return;
+    const t = tmap[currentTabId];
+    const url = t.url || 'https://www.google.com/';
+    const isStealth = !!t.isStealth;
+    const newId = `tab-${Date.now()}`;
+    dispatch(insertTabAfter({ afterId: currentTabId, id: newId, isStealth, initialUrl: url }));
+    window.electronAPI.newTab(newId, isStealth, url);
+    window.electronAPI.switchTab(newId);
+  }, [dispatch]);
+
+  const toggleMuteSite = useCallback(() => {
+    const { tabs: tmap, tabOrder: order, currentTabId: cur } = stateRef.current;
+    if (!cur || !tmap[cur]) return;
+    const host = hostnameFromUrl(tmap[cur].url);
+    if (!host) return;
+    const matching = order.filter((id) => hostnameFromUrl(tmap[id]?.url) === host);
+    const anyUnmuted = matching.some((id) => !tmap[id]?.isAudioMuted);
+    const muted = anyUnmuted;
+    matching.forEach((id) => {
+      dispatch(setTabAudioMuted({ id, muted }));
+      if (!tmap[id]?.isSleeping && window.electronAPI.tabSetAudioMuted) {
+        window.electronAPI.tabSetAudioMuted(id, muted);
+      }
+    });
+  }, [dispatch]);
+
+  const togglePinTab = useCallback(() => {
+    const { currentTabId: cur, tabs: tmap } = stateRef.current;
+    if (!cur || !tmap[cur]) return;
+    dispatch(setTabPinned({ id: cur, pinned: !tmap[cur].isPinned }));
+  }, [dispatch]);
+
+  const closeOtherTabs = useCallback(() => {
+    const { currentTabId: cur, tabOrder: order } = stateRef.current;
+    if (!cur) return;
+    const toClose = order.filter((id) => id !== cur);
+    toClose.forEach((id) => closeTab(id));
+  }, [closeTab]);
+
+  const closeTabsToTheRight = useCallback(() => {
+    const { currentTabId: cur, tabOrder: order } = stateRef.current;
+    if (!cur) return;
+    const idx = order.indexOf(cur);
+    if (idx === -1) return;
+    const toClose = order.slice(idx + 1);
+    toClose.forEach((id) => closeTab(id));
+  }, [closeTab]);
+
   /**
    * Opens an internal stealth:// page as a singleton tab.
    * If a tab with the given URL is already open, switches to it instead
@@ -144,6 +239,47 @@ export default function App() {
     openSingletonTab('stealth://History', 'stealth://history');
   }, [openSingletonTab]);
 
+  const paletteCommands = useMemo(
+    () =>
+      buildCommandPaletteCommands({
+        platform: window.electronAPI?.platform || 'darwin',
+        createTab,
+        closeCurrentTab: () => {
+          const id = stateRef.current.currentTabId;
+          if (id) closeTab(id);
+        },
+        reload: () => {
+          const id = stateRef.current.currentTabId;
+          if (id) window.electronAPI.reload(id);
+        },
+        openHistory: handleOpenHistory,
+        switchTabDir: handleSwitchTabDir,
+        newTabToRight,
+        duplicateTab,
+        toggleMuteSite,
+        togglePinTab,
+        closeOtherTabs,
+        closeTabsToTheRight,
+        openTabSearch: () => {
+          setCommandPaletteOpen(false);
+          setSearchTabsOpen(true);
+        },
+        runMenuCommand: (id) => window.electronAPI.runMenuCommand(id),
+      }),
+    [
+      createTab,
+      closeTab,
+      handleOpenHistory,
+      handleSwitchTabDir,
+      newTabToRight,
+      duplicateTab,
+      toggleMuteSite,
+      togglePinTab,
+      closeOtherTabs,
+      closeTabsToTheRight,
+    ],
+  );
+
   const handleOpenSettings = useCallback(() => {
     openSingletonTab('stealth://Settings', 'stealth://settings');
   }, [openSingletonTab]);
@@ -162,6 +298,12 @@ export default function App() {
   // Fired by main process when a sleeping tab's WebContentsView is created.
   const handleTabAwoken = useCallback((id) => {
     dispatch(wakeTab(id));
+    setTimeout(() => {
+      const t = stateRef.current.tabs[id];
+      if (t?.isAudioMuted && window.electronAPI.tabSetAudioMuted) {
+        window.electronAPI.tabSetAudioMuted(id, true);
+      }
+    }, 0);
   }, [dispatch]);
 
   // ── Register all IPC listeners ───────────────────────────────────────────
@@ -181,6 +323,20 @@ export default function App() {
     onSwitchTabDir: handleSwitchTabDir,
     onHistory: handleOpenHistory,
     onSettings: handleOpenSettings,
+    onTabNewToRight: newTabToRight,
+    onTabDuplicate: duplicateTab,
+    onTabMuteSite: toggleMuteSite,
+    onTabPin: togglePinTab,
+    onTabCloseOthers: closeOtherTabs,
+    onTabCloseRight: closeTabsToTheRight,
+    onTabSearch: () => {
+      setCommandPaletteOpen(false);
+      setSearchTabsOpen(true);
+    },
+    onCommandPalette: () => {
+      setSearchTabsOpen(false);
+      setCommandPaletteOpen(true);
+    },
   });
 
   // ── Initialise: load bookmarks then restore session ──────────────────────
@@ -229,6 +385,23 @@ export default function App() {
 
   return (
     <div className="header">
+      <CommandPaletteModal
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        commands={paletteCommands}
+      />
+      <SearchTabsModal
+        open={searchTabsOpen}
+        onClose={() => setSearchTabsOpen(false)}
+        tabOrder={tabOrder}
+        tabs={tabs}
+        currentTabId={currentTabId}
+        onSelectTab={(id) => {
+          dispatch(setCurrentTab(id));
+          window.electronAPI.switchTab(id);
+        }}
+        onCloseTab={closeTab}
+      />
       <TabBar
         onNewTab={createTab}
         onCloseTab={closeTab}

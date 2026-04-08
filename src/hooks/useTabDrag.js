@@ -10,14 +10,23 @@ import { useEffect, useRef } from 'react';
  * @param {Function} opts.onSwitchTab - Switch to this tab on click
  * @param {Function} opts.onDragEnd   - Called with new ordered ID array on drop
  * @param {Function} opts.onHideTooltip
+ * @param {boolean}  [opts.isPinned] - pinned tabs cannot be dragged
+ * @param {number}   [opts.pinnedTabCount] - unpinned tabs cannot move left of this index
  * @returns {React.RefObject} ref – attach to the <div className="tab"> element
  */
-export function useTabDrag({ id, onSwitchTab, onDragEnd, onHideTooltip }) {
+export function useTabDrag({
+  id,
+  onSwitchTab,
+  onDragEnd,
+  onHideTooltip,
+  isPinned = false,
+  pinnedTabCount = 0,
+}) {
   const tabRef = useRef(null);
 
   // Keep stable refs to callbacks so the effect never needs to re-run
   const cbRef = useRef({});
-  cbRef.current = { onSwitchTab, onDragEnd, onHideTooltip };
+  cbRef.current = { onSwitchTab, onDragEnd, onHideTooltip, isPinned, pinnedTabCount };
 
   useEffect(() => {
     const tabEl = tabRef.current;
@@ -29,6 +38,8 @@ export function useTabDrag({ id, onSwitchTab, onDragEnd, onHideTooltip }) {
 
       cbRef.current.onSwitchTab(id);
       cbRef.current.onHideTooltip();
+
+      if (cbRef.current.isPinned) return;
 
       let dragStarted = false;
       const startX = e.clientX;
@@ -71,6 +82,10 @@ export function useTabDrag({ id, onSwitchTab, onDragEnd, onHideTooltip }) {
           if (i < draggingIndex && me.clientX < center) { targetIndex = i; break; }
           if (i > draggingIndex && me.clientX > center) targetIndex = i;
         }
+        const pinCount = cbRef.current.pinnedTabCount || 0;
+        if (pinCount > 0 && !cbRef.current.isPinned) {
+          targetIndex = Math.max(pinCount, targetIndex);
+        }
         finalTargetIndex = targetIndex;
 
         // ── Animate via transform (no DOM reorder during drag) ───────────
@@ -103,7 +118,12 @@ export function useTabDrag({ id, onSwitchTab, onDragEnd, onHideTooltip }) {
             // Build new id order and hand off to Redux
             const ids = originalTabs.map(t => t.id);
             const [moved] = ids.splice(draggingIndex, 1);
-            ids.splice(finalTargetIndex, 0, moved);
+            let dropIndex = finalTargetIndex;
+            const pc = cbRef.current.pinnedTabCount || 0;
+            if (pc > 0 && !cbRef.current.isPinned) {
+              dropIndex = Math.max(pc, dropIndex);
+            }
+            ids.splice(dropIndex, 0, moved);
             cbRef.current.onDragEnd(ids);
           }
         }
@@ -128,7 +148,7 @@ export function useTabDrag({ id, onSwitchTab, onDragEnd, onHideTooltip }) {
       tabEl.removeEventListener('pointerdown', handlePointerDown);
       tabEl.removeEventListener('mousedown', handleMouseDown);
     };
-  }, [id]); // Only re-run if tab ID changes (never)
+  }, [id, isPinned, pinnedTabCount]);
 
   return tabRef;
 }
