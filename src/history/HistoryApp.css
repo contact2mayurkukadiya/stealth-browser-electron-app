@@ -1,4 +1,28 @@
 /* ── Design tokens ─────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'StealthUIFont';
+  src: url('app://localhost/assets/fonts/static/Roboto-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'StealthUIFont';
+  src: url('app://localhost/assets/fonts/static/Roboto-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'StealthUIFont';
+  src: url('app://localhost/assets/fonts/static/Roboto-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --blue: #1a73e8;
   --blue-light: #e8f0fe;
@@ -22,7 +46,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text-primary);
-  font-family: "Google Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: 'StealthUIFont', 'Google Sans', 'Segoe UI', Roboto, Arial, sans-serif;
   font-size: 14px;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
