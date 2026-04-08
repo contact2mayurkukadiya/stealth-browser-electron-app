@@ -16,6 +16,8 @@ let tabs = {}; // Store views by ID (only fully-loaded tabs)
 let activeTabId = null; // Track currently visible tab
 const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
 let generatedTabCounter = 0;
+const MAX_RECENTLY_CLOSED_TABS = 25;
+const recentlyClosedTabs = [];
 
 // Holds metadata for session-restored tabs that have not been activated yet.
 // Key: tabId, Value: { url } — enough to create the WebContentsView on demand.
@@ -298,70 +300,8 @@ function createWindow() {
     // Load renderer through app:// so IPC sender validation stays consistent.
     mainWindow.loadURL('app://dist/index.html');
 
-    // Custom Application Menu for Robust Shortcuts
-    const menu = Menu.buildFromTemplate([
-        {
-            label: 'File',
-            submenu: [
-                {
-                    label: 'New Tab',
-                    accelerator: 'CmdOrCtrl+T',
-                    click: () => mainWindow.webContents.send('shortcut-new-tab')
-                },
-                {
-                    label: 'New Stealth Tab',
-                    accelerator: 'CmdOrCtrl+Shift+T',
-                    click: () => mainWindow.webContents.send('shortcut-new-stealth-tab')
-                },
-                {
-                    label: 'History',
-                    accelerator: 'CmdOrCtrl+Y',
-                    click: () => mainWindow.webContents.send('shortcut-history')
-                },
-                {
-                    label: 'Settings',
-                    accelerator: 'CmdOrCtrl+,',
-                    click: () => mainWindow.webContents.send('shortcut-settings')
-                },
-                {
-                    label: 'Close Tab',
-                    accelerator: 'CmdOrCtrl+W',
-                    click: () => mainWindow.webContents.send('shortcut-close-tab')
-                },
-                { type: 'separator' },
-                { role: 'quit' }
-            ]
-        },
-        {
-            label: 'View',
-            submenu: [
-                {
-                    label: 'Reload',
-                    accelerator: 'CmdOrCtrl+R',
-                    click: () => mainWindow.webContents.send('shortcut-reload')
-                },
-                { type: 'separator' },
-                { role: 'resetZoom' },
-                { role: 'zoomIn' },
-                { role: 'zoomOut' },
-                { type: 'separator' },
-                { role: 'togglefullscreen' }
-            ]
-        },
-        {
-            label: 'Edit',
-            submenu: [
-                { role: 'undo' },
-                { role: 'redo' },
-                { type: 'separator' },
-                { role: 'cut' },
-                { role: 'copy' },
-                { role: 'paste' },
-                { role: 'selectAll' }
-            ]
-        }
-    ]);
-    Menu.setApplicationMenu(menu);
+    // Custom Application Menu for robust shortcuts and tab actions
+    rebuildApplicationMenu();
 
     // Global Shortcut Interception (for Ctrl+Tab, which is not easy in menu)
     mainWindow.webContents.on('before-input-event', handleShortcuts);
@@ -409,7 +349,8 @@ function isAllowedTabNavigationUrl(targetUrl) {
     if (!targetUrl || typeof targetUrl !== 'string') return false;
     return targetUrl.startsWith('https://') ||
         targetUrl.startsWith('http://') ||
-        targetUrl.startsWith('app://');
+        targetUrl.startsWith('app://') ||
+        targetUrl.startsWith('view-source:');
 }
 
 function activateTab(id) {
@@ -428,18 +369,287 @@ function activateTab(id) {
 
 function openUrlInNewTab(targetUrl, options = {}) {
     const openInBackground = options.background === true;
-    if (!isAllowedTabNavigationUrl(targetUrl)) return false;
+    const resolvedTargetUrl = resolveInternalPageUrl(targetUrl);
+    if (!isAllowedTabNavigationUrl(resolvedTargetUrl)) return false;
 
     const newTabId = generateTabId();
-    createTab(newTabId, targetUrl, false, { activate: !openInBackground });
+    createTab(newTabId, resolvedTargetUrl, false, { activate: !openInBackground });
 
     if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send('tab-created', { id: newTabId, isStealth: false, url: targetUrl });
+        mainWindow.webContents.send('tab-created', { id: newTabId, isStealth: false, url: resolvedTargetUrl });
     }
     if (!openInBackground) {
         activateTab(newTabId);
     }
     return true;
+}
+
+function resolveInternalPageUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return '';
+    const normalizedUrl = rawUrl.trim().toLowerCase();
+    if (normalizedUrl === 'stealth://history') return 'app://localhost/dist/history.html';
+    if (normalizedUrl === 'stealth://settings') return 'app://localhost/dist/settings.html';
+    return rawUrl;
+}
+
+function toDisplayUrl(rawUrl) {
+    if (!rawUrl) return '';
+    if (rawUrl.startsWith('app://') && rawUrl.includes('history')) return 'stealth://history';
+    if (rawUrl.startsWith('app://') && rawUrl.includes('settings')) return 'stealth://settings';
+    return rawUrl;
+}
+
+function truncateMenuLabel(value, maxLength = 70) {
+    if (!value) return '';
+    return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+}
+
+function getActiveTabView() {
+    if (!activeTabId) return null;
+    return tabs[activeTabId] || null;
+}
+
+function getTabIdByDisplayUrl(targetDisplayUrl) {
+    if (!targetDisplayUrl) return null;
+
+    for (const [id, view] of Object.entries(tabs)) {
+        if (!view || view.webContents.isDestroyed()) continue;
+        const currentDisplayUrl = toDisplayUrl(view.webContents.getURL());
+        if (currentDisplayUrl === targetDisplayUrl) return id;
+    }
+
+    for (const [id, entry] of Object.entries(sleepingTabs)) {
+        if (toDisplayUrl(entry.url) === targetDisplayUrl) return id;
+    }
+
+    return null;
+}
+
+function activateOrWakeTab(id) {
+    if (!id) return false;
+    if (!tabs[id] && sleepingTabs[id]) {
+        const resolvedUrl = resolveInternalPageUrl(sleepingTabs[id].url);
+        delete sleepingTabs[id];
+        createTab(id, resolvedUrl, false);
+
+        if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send('tab:awoken', { id });
+        }
+    }
+    return activateTab(id);
+}
+
+function openOrActivateSettingsTab() {
+    const existingSettingsTabId = getTabIdByDisplayUrl('stealth://settings');
+    if (existingSettingsTabId) {
+        return activateOrWakeTab(existingSettingsTabId);
+    }
+    return openUrlInNewTab('stealth://settings', { background: false });
+}
+
+function navigateActiveTabHome() {
+    const activeView = getActiveTabView();
+    if (!activeView || activeView.webContents.isDestroyed()) return;
+    activeView.webContents.loadURL('https://www.google.com');
+}
+
+function goBackInActiveTab() {
+    const activeView = getActiveTabView();
+    if (!activeView || activeView.webContents.isDestroyed()) return;
+    activeView.webContents.navigationHistory.goBack();
+}
+
+function goForwardInActiveTab() {
+    const activeView = getActiveTabView();
+    if (!activeView || activeView.webContents.isDestroyed()) return;
+    activeView.webContents.navigationHistory.goForward();
+}
+
+function openViewSourceForActiveTab() {
+    const activeView = getActiveTabView();
+    if (!activeView || activeView.webContents.isDestroyed()) return;
+    const currentUrl = activeView.webContents.getURL();
+    if (!currentUrl || currentUrl.startsWith('view-source:')) return;
+    if (currentUrl.startsWith('data:')) return;
+    openUrlInNewTab(`view-source:${currentUrl}`, { background: false });
+}
+
+function openDevToolsForActiveTab(panel) {
+    const activeView = getActiveTabView();
+    if (!activeView || activeView.webContents.isDestroyed()) return;
+    const webContents = activeView.webContents;
+    webContents.openDevTools({ mode: 'right', activate: true });
+    if (!panel) return;
+
+    const panelScript = `
+        (() => {
+            const panelName = ${JSON.stringify(panel)};
+            const trySelectPanel = () => {
+                try {
+                    if (typeof InspectorFrontendAPI !== 'undefined' && InspectorFrontendAPI.showPanel) {
+                        InspectorFrontendAPI.showPanel(panelName);
+                        return true;
+                    }
+                    if (typeof UI !== 'undefined' && UI.inspectorView && UI.inspectorView.showPanel) {
+                        UI.inspectorView.showPanel(panelName);
+                        return true;
+                    }
+                } catch (_) {}
+                return false;
+            };
+            if (!trySelectPanel()) setTimeout(trySelectPanel, 120);
+        })();
+    `;
+
+    const selectPanel = () => {
+        const devToolsWebContents = webContents.devToolsWebContents;
+        if (!devToolsWebContents || devToolsWebContents.isDestroyed()) return;
+        devToolsWebContents.executeJavaScript(panelScript).catch(() => { });
+    };
+
+    if (webContents.isDevToolsOpened()) {
+        selectPanel();
+    } else {
+        webContents.once('devtools-opened', selectPanel);
+    }
+}
+
+function canStoreRecentlyClosedUrl(rawUrl) {
+    const displayUrl = toDisplayUrl(rawUrl);
+    const resolvedUrl = resolveInternalPageUrl(displayUrl);
+    if (!resolvedUrl || resolvedUrl.startsWith('data:')) return false;
+    return isAllowedTabNavigationUrl(resolvedUrl);
+}
+
+function pushRecentlyClosedTab(entry) {
+    if (!entry || !canStoreRecentlyClosedUrl(entry.url)) return;
+    const normalizedEntry = {
+        title: (entry.title || '').trim(),
+        url: toDisplayUrl(entry.url),
+        closedAt: Date.now(),
+    };
+
+    const previousEntry = recentlyClosedTabs[0];
+    if (previousEntry && previousEntry.url === normalizedEntry.url && previousEntry.title === normalizedEntry.title) {
+        return;
+    }
+
+    recentlyClosedTabs.unshift(normalizedEntry);
+    if (recentlyClosedTabs.length > MAX_RECENTLY_CLOSED_TABS) {
+        recentlyClosedTabs.length = MAX_RECENTLY_CLOSED_TABS;
+    }
+    rebuildApplicationMenu();
+}
+
+function restoreRecentlyClosedTab(closedAt) {
+    const targetIndex = recentlyClosedTabs.findIndex(entry => entry.closedAt === closedAt);
+    if (targetIndex < 0) return;
+    const [entry] = recentlyClosedTabs.splice(targetIndex, 1);
+    rebuildApplicationMenu();
+    if (!entry?.url) return;
+    openUrlInNewTab(entry.url, { background: false });
+}
+
+function buildRecentlyClosedMenuItems() {
+    if (recentlyClosedTabs.length === 0) {
+        return [{ label: 'No recently closed tabs', enabled: false }];
+    }
+
+    return recentlyClosedTabs.map(entry => ({
+        label: truncateMenuLabel(entry.title || entry.url),
+        toolTip: entry.url,
+        click: () => restoreRecentlyClosedTab(entry.closedAt),
+    }));
+}
+
+function buildApplicationMenu() {
+    return Menu.buildFromTemplate([
+        {
+            label: 'File',
+            submenu: [
+                {
+                    label: 'New Tab',
+                    accelerator: 'CmdOrCtrl+T',
+                    click: () => mainWindow.webContents.send('shortcut-new-tab')
+                },
+                {
+                    label: 'New Stealth Tab',
+                    accelerator: 'CmdOrCtrl+Shift+T',
+                    click: () => mainWindow.webContents.send('shortcut-new-stealth-tab')
+                },
+                {
+                    label: 'Close Tab',
+                    accelerator: 'CmdOrCtrl+W',
+                    click: () => mainWindow.webContents.send('shortcut-close-tab')
+                },
+                { type: 'separator' },
+                { role: 'quit' }
+            ]
+        },
+        {
+            label: 'View',
+            submenu: [
+                {
+                    label: 'Reload',
+                    accelerator: 'CmdOrCtrl+R',
+                    click: () => mainWindow.webContents.send('shortcut-reload')
+                },
+                { type: 'separator' },
+                {
+                    label: 'Settings page',
+                    accelerator: 'CmdOrCtrl+,',
+                    click: () => openOrActivateSettingsTab(),
+                },
+                {
+                    label: 'Developer',
+                    submenu: [
+                        {
+                            label: 'View Source',
+                            click: () => openViewSourceForActiveTab(),
+                        },
+                        {
+                            label: 'Inspect Elements',
+                            click: () => openDevToolsForActiveTab('elements'),
+                        },
+                        {
+                            label: 'JavaScript Console',
+                            click: () => openDevToolsForActiveTab('console'),
+                        },
+                    ],
+                },
+                { type: 'separator' },
+                { role: 'togglefullscreen' }
+            ]
+        },
+        {
+            label: 'History',
+            submenu: [
+                { label: 'Home', click: () => navigateActiveTabHome() },
+                { label: 'Back', click: () => goBackInActiveTab() },
+                { label: 'Forward', click: () => goForwardInActiveTab() },
+                { type: 'separator' },
+                { label: 'Recently Closed', enabled: false },
+                ...buildRecentlyClosedMenuItems(),
+            ]
+        },
+        {
+            label: 'Edit',
+            submenu: [
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
+                { role: 'selectAll' }
+            ]
+        }
+    ]);
+}
+
+function rebuildApplicationMenu() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    Menu.setApplicationMenu(buildApplicationMenu());
 }
 
 
@@ -480,6 +690,33 @@ function handleShortcuts(event, input) {
     }
 }
 
+function buildDevToolsTypographyCss() {
+    let monoStack;
+    if (process.platform === 'darwin') {
+        monoStack = "ui-monospace, 'SF Mono', Menlo, Monaco, 'Courier New', monospace";
+    } else if (process.platform === 'win32') {
+        monoStack = "'Cascadia Mono', 'Cascadia Code', Consolas, 'Courier New', monospace";
+    } else {
+        monoStack = "'Liberation Mono', 'DejaVu Sans Mono', 'Ubuntu Mono', monospace";
+    }
+    return `:root {
+  --monospace-font-family: ${monoStack} !important;
+  --source-code-font-family: ${monoStack} !important;
+}
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}`;
+}
+
+function installDevToolsTypographyOnOpen(webContents) {
+    webContents.on('devtools-opened', () => {
+        const devTools = webContents.devToolsWebContents;
+        if (!devTools || devTools.isDestroyed()) return;
+        devTools.insertCSS(buildDevToolsTypographyCss(), { cssOrigin: 'user' }).catch(() => {});
+    });
+}
+
 // Logic to create a new Tab View
 function createTab(id, url = "https://www.google.com", isStealth = false, options = {}) {
     const shouldActivate = options.activate !== false;
@@ -506,6 +743,7 @@ function createTab(id, url = "https://www.google.com", isStealth = false, option
     view.webContents.setUserAgent(getBrowserLikeUserAgent());
     view.webContents.session.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
     installSessionNetworkGuards(view.webContents.session);
+    installDevToolsTypographyOnOpen(view.webContents);
 
     // Initial bounds set
     const { width, height } = mainWindow.getContentBounds();
@@ -702,15 +940,10 @@ function createTab(id, url = "https://www.google.com", isStealth = false, option
                     configurable: true
                 });
             } catch (_) {}
-        `).catch(() => {});
+        `).catch(() => { });
     });
 
-    const getDisplayUrl = (rawUrl) => {
-        if (!rawUrl) return '';
-        if (rawUrl.startsWith('app://') && rawUrl.includes('history')) return 'stealth://history';
-        if (rawUrl.startsWith('app://') && rawUrl.includes('settings')) return 'stealth://settings';
-        return rawUrl;
-    };
+    const getDisplayUrl = toDisplayUrl;
 
     view.webContents.on('page-title-updated', (e, title) => {
         mainWindow.webContents.send('tab-update', { id, title, url: getDisplayUrl(view.webContents.getURL()) });
@@ -1335,14 +1568,7 @@ ipcMain.handle('tab:get-info', async (e, { id }) => {
 ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
     if (!isSenderTrusted(e)) return;
 
-    // Resolve internal stealth:// URLs the same way the navigate handler does,
-    // so that session-restored history tabs load correctly.
-    let resolvedUrl = url || 'https://www.google.com';
-    if (resolvedUrl.toLowerCase() === 'stealth://history') {
-        resolvedUrl = 'app://localhost/dist/history.html';
-    } else if (resolvedUrl.toLowerCase() === 'stealth://settings') {
-        resolvedUrl = 'app://localhost/dist/settings.html';
-    }
+    const resolvedUrl = resolveInternalPageUrl(url || 'https://www.google.com');
 
     createTab(id, resolvedUrl, isStealth);
 
@@ -1354,30 +1580,26 @@ ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
 
 ipcMain.on('switch-tab', (e, { id }) => {
     if (!isSenderTrusted(e)) return;
-
-    // Wake a sleeping tab on first activation: create its WebContentsView now
-    // and notify the renderer so the isSleeping flag is cleared in Redux state.
-    if (!tabs[id] && sleepingTabs[id]) {
-        let resolvedUrl = sleepingTabs[id].url;
-        if (resolvedUrl.toLowerCase() === 'stealth://history') {
-            resolvedUrl = 'app://localhost/dist/history.html';
-        } else if (resolvedUrl.toLowerCase() === 'stealth://settings') {
-            resolvedUrl = 'app://localhost/dist/settings.html';
-        }
-        delete sleepingTabs[id];
-        createTab(id, resolvedUrl, false);
-
-        if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-            mainWindow.webContents.send('tab:awoken', { id });
-        }
-    }
-
-    if (!tabs[id]) return; // Truly unknown tab — don't blank the window
-    activateTab(id);
+    if (!tabs[id] && !sleepingTabs[id]) return; // Truly unknown tab — don't blank the window
+    activateOrWakeTab(id);
 });
 
 ipcMain.on('close-tab', (e, { id }) => {
     if (!isSenderTrusted(e)) return;
+
+    let recentlyClosedCandidate = null;
+    if (sleepingTabs[id]) {
+        recentlyClosedCandidate = {
+            title: sleepingTabs[id].url,
+            url: sleepingTabs[id].url,
+        };
+    } else if (tabs[id] && !tabs[id].webContents.isDestroyed()) {
+        recentlyClosedCandidate = {
+            title: tabs[id].webContents.getTitle(),
+            url: tabs[id].webContents.getURL(),
+        };
+    }
+
     // Clean up sleeping metadata regardless of whether a view was ever created.
     delete sleepingTabs[id];
     if (tabs[id]) {
@@ -1388,6 +1610,7 @@ ipcMain.on('close-tab', (e, { id }) => {
     }
     lastRecordedByTab.delete(id);
     compatDiagnostics.clear(id);
+    pushRecentlyClosedTab(recentlyClosedCandidate);
 });
 
 ipcMain.on('go-back', (e, { id }) => {
@@ -1418,12 +1641,9 @@ ipcMain.on('navigate', (e, { id, url }) => {
     let formattedUrl = url.trim();
 
     // Internal stealth:// pages
-    if (formattedUrl.toLowerCase() === 'stealth://history') {
-        tabs[targetId]?.webContents.loadURL('app://localhost/dist/history.html');
-        return;
-    }
-    if (formattedUrl.toLowerCase() === 'stealth://settings') {
-        tabs[targetId]?.webContents.loadURL('app://localhost/dist/settings.html');
+    const resolvedInternalUrl = resolveInternalPageUrl(formattedUrl);
+    if (resolvedInternalUrl !== formattedUrl) {
+        tabs[targetId]?.webContents.loadURL(resolvedInternalUrl);
         return;
     }
 
