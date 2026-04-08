@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onShortcutTabPin: (callback) => ipcRenderer.on('shortcut-tab-pin', () => callback()),
     onShortcutTabCloseOthers: (callback) => ipcRenderer.on('shortcut-tab-close-others', () => callback()),
     onShortcutTabCloseRight: (callback) => ipcRenderer.on('shortcut-tab-close-right', () => callback()),
+    onShortcutTabMoveNewWindow: (callback) => ipcRenderer.on('shortcut-tab-move-new-window', () => callback()),
     onShortcutTabSearch: (callback) => ipcRenderer.on('shortcut-tab-search', () => callback()),
     onShortcutCommandPalette: (callback) => ipcRenderer.on('shortcut-command-palette', () => callback()),
 
@@ -33,6 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     tabSetAudioMuted: (id, muted) => ipcRenderer.send('tab:set-audio-muted', { id, muted }),
     tabMenuSyncLabels: (payload) => ipcRenderer.send('tab-menu:sync-labels', payload),
+    tabMoveToNewWindow: (id, fallbackTabId) => ipcRenderer.invoke('tab:move-to-new-window', { id, fallbackTabId }),
 
     // Bookmarks
     bookmarksGet: () => ipcRenderer.invoke('bookmarks:get'),

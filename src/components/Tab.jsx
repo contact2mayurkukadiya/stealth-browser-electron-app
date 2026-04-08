@@ -19,6 +19,7 @@ export default function Tab({
   id, tab, isActive,
   onClose, onSwitch, onDragEnd,
   onHoverEnter, onHoverLeave, onHideTooltip,
+  onContextMenu,
   pinnedTabCount = 0,
 }) {
   const { url, title, favicon, isNewTab, isStealth, isLoading, isPinned } = tab || {};
@@ -58,6 +59,12 @@ export default function Tab({
     if (e.button === 1) { e.preventDefault(); onHideTooltip(); onClose(); }
   };
 
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    onHideTooltip();
+    if (onContextMenu) onContextMenu(e, id);
+  };
+
   const className = ['tab', isActive ? 'active' : '', isStealth ? 'stealth-tab' : '', isPinned ? 'tab--pinned' : ''].filter(Boolean).join(' ');
 
   return (
@@ -68,6 +75,7 @@ export default function Tab({
       onMouseEnter={handleHoverEnter}
       onMouseLeave={onHoverLeave}
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
     >
       {/* Icon / Spinner */}
       <div className="icon-container">

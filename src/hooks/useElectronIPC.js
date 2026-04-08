@@ -23,6 +23,7 @@ export function useElectronIPC({
   onTabPin,
   onTabCloseOthers,
   onTabCloseRight,
+  onTabMoveNewWindow,
   onTabSearch,
   onCommandPalette,
 }) {
@@ -68,6 +69,7 @@ export function useElectronIPC({
     if (api.onShortcutTabPin) api.onShortcutTabPin(() => onTabPin?.());
     if (api.onShortcutTabCloseOthers) api.onShortcutTabCloseOthers(() => onTabCloseOthers?.());
     if (api.onShortcutTabCloseRight) api.onShortcutTabCloseRight(() => onTabCloseRight?.());
+    if (api.onShortcutTabMoveNewWindow) api.onShortcutTabMoveNewWindow(() => onTabMoveNewWindow?.());
     if (api.onShortcutTabSearch) api.onShortcutTabSearch(() => onTabSearch?.());
     if (api.onShortcutCommandPalette) api.onShortcutCommandPalette(() => onCommandPalette?.());
 

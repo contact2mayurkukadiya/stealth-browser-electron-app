@@ -675,12 +675,25 @@ body {
 .bk-context-menu {
     position: fixed;
     z-index: 1000;
-    min-width: 160px;
+    min-width: 200px;
     background: #2D3E45;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
     padding: 4px 0;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.bk-context-separator {
+    height: 1px;
+    margin: 4px 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    padding: 0;
+}
+
+.bk-context-item:disabled {
+    opacity: 0.45;
+    cursor: default;
 }
 
 .bk-context-item {

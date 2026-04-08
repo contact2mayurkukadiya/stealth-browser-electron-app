@@ -17,13 +17,24 @@ export default function ContextMenu({ items, x, y, onClose }) {
         onMouseDown={e => e.stopPropagation()}
       >
         {items.map((item, i) => (
-          <button
-            key={i}
-            className={`bk-context-item${item.danger ? ' danger' : ''}`}
-            onClick={() => { item.action(); onClose(); }}
-          >
-            {item.label}
-          </button>
+          item.type === 'separator' ? (
+            <div key={i} className="bk-context-separator" role="separator" />
+          ) : (
+            <button
+              key={i}
+              type="button"
+              className={`bk-context-item${item.danger ? ' danger' : ''}`}
+              disabled={item.disabled}
+              onClick={() => {
+                if (!item.disabled && item.action) {
+                  item.action();
+                  onClose();
+                }
+              }}
+            >
+              {item.label}
+            </button>
+          )
         ))}
       </div>
     </>,

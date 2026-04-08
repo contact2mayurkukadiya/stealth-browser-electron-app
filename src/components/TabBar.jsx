@@ -1,6 +1,7 @@
-import React, { useRef, useCallback, useMemo } from 'react';
+import React, { useRef, useCallback, useMemo, useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import Tab from './Tab';
+import ContextMenu from './ContextMenu';
 
 const ADD_ICON = (
   <svg width={15} height={15} viewBox="0 0 640 640">
@@ -8,10 +9,12 @@ const ADD_ICON = (
   </svg>
 );
 
-export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd }) {
+export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, getTabContextMenuItems }) {
   const tabOrder = useSelector(s => s.browser.tabOrder);
   const tabs = useSelector(s => s.browser.tabs);
   const currentTabId = useSelector(s => s.browser.currentTabId);
+
+  const [tabContextMenu, setTabContextMenu] = useState(null);
 
   const hoverTimeoutRef = useRef(null);
 
@@ -53,6 +56,31 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd })
     [tabOrder, tabs],
   );
 
+  const handleTabContextMenuOpen = useCallback(async (e, tabId) => {
+    if (!getTabContextMenuItems) return;
+    const menuApproxHeight = 320;
+    const menuApproxWidth = 220;
+    let x = e.clientX;
+    let y = e.clientY;
+    x = Math.max(8, Math.min(x, window.innerWidth - menuApproxWidth - 8));
+    y = Math.max(8, Math.min(y, window.innerHeight - menuApproxHeight - 8));
+    // WebContentsViews stack above this HTML shell; hide the active tab so the menu paints on top.
+    await window.electronAPI.tabHideActive?.();
+    setTabContextMenu({ tabId, x, y });
+  }, [getTabContextMenuItems]);
+
+  useEffect(() => {
+    if (!tabContextMenu) return undefined;
+    return () => {
+      window.electronAPI.tabRestoreActive?.();
+    };
+  }, [tabContextMenu]);
+
+  const tabContextMenuItems = useMemo(() => {
+    if (!tabContextMenu?.tabId || !getTabContextMenuItems) return [];
+    return getTabContextMenuItems(tabContextMenu.tabId);
+  }, [tabContextMenu, getTabContextMenuItems]);
+
   return (
     <div className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}`}>
       {tabOrder.map(id => (
@@ -68,11 +96,20 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd })
           onHoverEnter={handleTabHoverEnter}
           onHoverLeave={hideTooltip}
           onHideTooltip={hideTooltip}
+          onContextMenu={getTabContextMenuItems ? handleTabContextMenuOpen : undefined}
         />
       ))}
       <button id="add-tab" className="btn" onClick={() => onNewTab(false)}>
         {ADD_ICON}
       </button>
+      {tabContextMenu && (
+        <ContextMenu
+          items={tabContextMenuItems}
+          x={tabContextMenu.x}
+          y={tabContextMenu.y}
+          onClose={() => setTabContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

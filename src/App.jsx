@@ -212,6 +212,131 @@ export default function App() {
     toClose.forEach((id) => closeTab(id));
   }, [closeTab]);
 
+  const newTabToTheRightOf = useCallback((afterId) => {
+    if (!afterId) return;
+    const id = `tab-${Date.now()}`;
+    dispatch(insertTabAfter({ afterId, id, isStealth: false, initialUrl: null }));
+    window.electronAPI.newTab(id, false, null);
+    window.electronAPI.switchTab(id);
+  }, [dispatch]);
+
+  const duplicateTabFrom = useCallback((sourceId) => {
+    const t = stateRef.current.tabs[sourceId];
+    if (!t) return;
+    const url = t.url || 'https://www.google.com/';
+    const isStealth = !!t.isStealth;
+    const newId = `tab-${Date.now()}`;
+    dispatch(insertTabAfter({ afterId: sourceId, id: newId, isStealth, initialUrl: url }));
+    window.electronAPI.newTab(newId, isStealth, url);
+    window.electronAPI.switchTab(newId);
+  }, [dispatch]);
+
+  const muteSiteForTab = useCallback((anchorTabId) => {
+    const { tabs: tmap, tabOrder: order } = stateRef.current;
+    const anchor = tmap[anchorTabId];
+    if (!anchor) return;
+    const host = hostnameFromUrl(anchor.url);
+    if (!host) return;
+    const matching = order.filter((tid) => hostnameFromUrl(tmap[tid]?.url) === host);
+    const anyUnmuted = matching.some((tid) => !tmap[tid]?.isAudioMuted);
+    const muted = anyUnmuted;
+    matching.forEach((tid) => {
+      dispatch(setTabAudioMuted({ id: tid, muted }));
+      if (!tmap[tid]?.isSleeping && window.electronAPI.tabSetAudioMuted) {
+        window.electronAPI.tabSetAudioMuted(tid, muted);
+      }
+    });
+  }, [dispatch]);
+
+  const togglePinForTab = useCallback((tabId) => {
+    const t = stateRef.current.tabs[tabId];
+    if (!t) return;
+    dispatch(setTabPinned({ id: tabId, pinned: !t.isPinned }));
+  }, [dispatch]);
+
+  const closeOtherTabsThan = useCallback((keepId) => {
+    const { tabOrder: order } = stateRef.current;
+    order.filter((id) => id !== keepId).forEach((id) => closeTab(id));
+  }, [closeTab]);
+
+  const closeTabsToTheRightOf = useCallback((boundaryId) => {
+    const { tabOrder: order } = stateRef.current;
+    const idx = order.indexOf(boundaryId);
+    if (idx === -1) return;
+    order.slice(idx + 1).forEach((id) => closeTab(id));
+  }, [closeTab]);
+
+  const moveTabToNewWindowFor = useCallback(async (tabId) => {
+    const { tabOrder, currentTabId } = stateRef.current;
+    const wasActive = currentTabId === tabId;
+    let fallbackTabId = null;
+    if (wasActive) {
+      const idx = tabOrder.indexOf(tabId);
+      const remaining = tabOrder.filter((tid) => tid !== tabId);
+      fallbackTabId = remaining[idx] ?? remaining[idx - 1] ?? null;
+    }
+    const move = window.electronAPI.tabMoveToNewWindow;
+    if (!move) return;
+    const result = await move(tabId, fallbackTabId);
+    if (!result?.ok) return;
+    dispatch(removeTab(tabId));
+    if (wasActive) {
+      if (fallbackTabId) {
+        dispatch(setCurrentTab(fallbackTabId));
+      } else {
+        setTimeout(() => createTab(false), 0);
+      }
+    }
+  }, [dispatch, createTab]);
+
+  const handleTabMoveNewWindowShortcut = useCallback(() => {
+    const id = stateRef.current.currentTabId;
+    if (id) moveTabToNewWindowFor(id);
+  }, [moveTabToNewWindowFor]);
+
+  const getTabContextMenuItems = useCallback((targetId) => {
+    const { tabs: tmap, tabOrder: order } = stateRef.current;
+    const t = tmap[targetId];
+    if (!t) return [];
+
+    const host = hostnameFromUrl(t.url);
+    let muteLabel = 'Mute Site';
+    if (host) {
+      const match = order.filter((tid) => hostnameFromUrl(tmap[tid]?.url) === host);
+      if (match.length > 0 && match.every((tid) => tmap[tid]?.isAudioMuted)) {
+        muteLabel = 'Unmute Site';
+      }
+    }
+    const pinLabel = t.isPinned ? 'Unpin' : 'Pin';
+
+    return [
+      { label: 'New Tab to the Right', action: () => newTabToTheRightOf(targetId) },
+      { label: 'Move Tab to New Window', action: () => { moveTabToNewWindowFor(targetId); } },
+      { type: 'separator' },
+      {
+        label: 'Reload',
+        action: () => window.electronAPI.reload(targetId),
+        disabled: !!t.isSleeping,
+      },
+      { label: 'Duplicate', action: () => duplicateTabFrom(targetId) },
+      { label: pinLabel, action: () => togglePinForTab(targetId) },
+      { label: muteLabel, action: () => muteSiteForTab(targetId), disabled: !host },
+      { type: 'separator' },
+      { label: 'Close', action: () => closeTab(targetId), danger: true },
+      { label: 'Close Other Tabs', action: () => closeOtherTabsThan(targetId) },
+      { label: 'Close Tabs to the Right', action: () => closeTabsToTheRightOf(targetId) },
+    ];
+  }, [
+    newTabToTheRightOf,
+    moveTabToNewWindowFor,
+    duplicateTabFrom,
+    togglePinForTab,
+    muteSiteForTab,
+    closeTab,
+    closeOtherTabsThan,
+    closeTabsToTheRightOf,
+  ]);
+
   /**
    * Opens an internal stealth:// page as a singleton tab.
    * If a tab with the given URL is already open, switches to it instead
@@ -329,6 +454,7 @@ export default function App() {
     onTabPin: togglePinTab,
     onTabCloseOthers: closeOtherTabs,
     onTabCloseRight: closeTabsToTheRight,
+    onTabMoveNewWindow: handleTabMoveNewWindowShortcut,
     onTabSearch: () => {
       setCommandPaletteOpen(false);
       setSearchTabsOpen(true);
@@ -407,6 +533,7 @@ export default function App() {
         onCloseTab={closeTab}
         onSwitchTab={switchTab}
         onDragEnd={handleDragEnd}
+        getTabContextMenuItems={getTabContextMenuItems}
       />
       <NavBar currentTabId={currentTabId} onOpenSettings={handleOpenSettings} />
       <BookmarkBar currentTabId={currentTabId} />

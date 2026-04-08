@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem, dialog, protocol, net, clipboard, webContents } = require('electron');
+const { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, Menu, MenuItem, dialog, protocol, net, clipboard, webContents } = require('electron');
 const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs');
@@ -11,7 +11,8 @@ process.on('uncaughtException', (error) => {
 });
 
 let mainWindow;
-let isHTMLFullscreen = false;
+/** When set, that tab's web content is in document fullscreen (HTML5) layout. */
+let htmlFullscreenTabId = null;
 /** Tab menu labels synced from renderer (active tab / site mute state). */
 let tabMenuMuteSiteShowsUnmute = false;
 let tabMenuPinShowsUnpin = false;
@@ -29,6 +30,14 @@ const sleepingTabs = {};
 
 // Map Electron webContents.id → tab id (for webRequest diagnostics on shared sessions).
 const webContentsIdToTabId = new Map();
+
+// Tabs moved out of the main shell into their own window (WebContentsView reparented).
+/** @type {Map<string, import('electron').BaseWindow>} */
+const detachedTabWindows = new Map();
+
+function getHostWindowForTabId(tabId) {
+    return detachedTabWindows.get(tabId) || mainWindow;
+}
 
 // Reduce obvious automation fingerprints and align with Chromium browser signals.
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
@@ -309,15 +318,18 @@ function createWindow() {
     // Global Shortcut Interception (for Ctrl+Tab, which is not easy in menu)
     mainWindow.webContents.on('before-input-event', handleShortcuts);
 
-    // Single resize listener for all tabs
+    // Resize the visible tab view in the main shell (only one tab view is attached at a time).
     mainWindow.on('resize', () => {
+        if (!activeTabId || detachedTabWindows.has(activeTabId)) return;
+        const view = tabs[activeTabId];
+        if (!view) return;
         const { width, height } = mainWindow.getContentBounds();
-        Object.values(tabs).forEach(view => {
-            if (isHTMLFullscreen) {
-                view.setBounds({ x: 0, y: 0, width, height });
-            } else {
-                view.setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
-            }
+        const fs = htmlFullscreenTabId === activeTabId;
+        view.setBounds({
+            x: 0,
+            y: fs ? 0 : UI_HEIGHT,
+            width,
+            height: fs ? height : height - UI_HEIGHT,
         });
     });
 
@@ -358,16 +370,132 @@ function isAllowedTabNavigationUrl(targetUrl) {
 
 function activateTab(id) {
     if (!tabs[id]) return false;
-    Object.values(tabs).forEach(v => mainWindow.contentView.removeChildView(v));
+    if (detachedTabWindows.has(id)) {
+        const w = detachedTabWindows.get(id);
+        if (w && !w.isDestroyed()) {
+            w.show();
+            w.focus();
+        }
+        return true;
+    }
+    for (const tid of Object.keys(tabs)) {
+        if (detachedTabWindows.has(tid)) continue;
+        try {
+            mainWindow.contentView.removeChildView(tabs[tid]);
+        } catch (_) {
+            // View may already be detached from the shell.
+        }
+    }
     mainWindow.contentView.addChildView(tabs[id]);
     const { width, height } = mainWindow.getContentBounds();
-    tabs[id].setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+    const fs = htmlFullscreenTabId === id;
+    tabs[id].setBounds({
+        x: 0,
+        y: fs ? 0 : UI_HEIGHT,
+        width,
+        height: fs ? height : height - UI_HEIGHT,
+    });
     tabs[id].webContents.focus();
     activeTabId = id;
     if (mainWindow && !mainWindow.webContents.isDestroyed()) {
         mainWindow.webContents.send('tab-switched', { id });
     }
     return true;
+}
+
+function layoutDetachedTabView(tabId) {
+    const view = tabs[tabId];
+    const win = detachedTabWindows.get(tabId);
+    if (!view || view.webContents.isDestroyed() || !win || win.isDestroyed()) return;
+    const { width, height } = win.getContentBounds();
+    view.setBounds({ x: 0, y: 0, width, height });
+}
+
+function moveTabToDetachedWindow(id, fallbackTabId) {
+    activateOrWakeTab(id);
+    if (!tabs[id] || detachedTabWindows.has(id)) {
+        return { ok: false };
+    }
+
+    if (activeTabId === id) {
+        const next =
+            fallbackTabId && tabs[fallbackTabId] && !detachedTabWindows.has(fallbackTabId)
+                ? fallbackTabId
+                : Object.keys(tabs).find((tid) => tid !== id && !detachedTabWindows.has(tid));
+        if (next) {
+            activateTab(next);
+        } else {
+            activeTabId = null;
+        }
+    }
+
+    const view = tabs[id];
+    try {
+        mainWindow.contentView.removeChildView(view);
+    } catch (_) {
+        // Not attached (e.g. inactive tab) — reparenting still works.
+    }
+
+    const isMac = process.platform === 'darwin';
+    const auxWindow = new BaseWindow({
+        width: 1000,
+        height: 700,
+        titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+        ...(isMac
+            ? { trafficLightPosition: { x: 15, y: 15 } }
+            : {
+                titleBarOverlay: {
+                    color: '#1a1a1a',
+                    symbolColor: '#ffffff',
+                    height: 45,
+                },
+            }),
+    });
+
+    detachedTabWindows.set(id, auxWindow);
+    auxWindow.contentView.addChildView(view);
+
+    const syncTitle = () => {
+        try {
+            auxWindow.setTitle(view.webContents.getTitle() || 'Stealth Browser');
+        } catch (_) {
+            /* ignore */
+        }
+    };
+    view.webContents.on('page-title-updated', syncTitle);
+    syncTitle();
+
+    layoutDetachedTabView(id);
+    auxWindow.on('resize', () => layoutDetachedTabView(id));
+    auxWindow.on('closed', () => {
+        detachedTabWindows.delete(id);
+        let recentlyClosedCandidate = null;
+        if (tabs[id] && !tabs[id].webContents.isDestroyed()) {
+            try {
+                recentlyClosedCandidate = {
+                    title: tabs[id].webContents.getTitle(),
+                    url: tabs[id].webContents.getURL(),
+                };
+            } catch (_) {
+                /* ignore */
+            }
+            try {
+                tabs[id].webContents.destroy();
+            } catch (_) {
+                /* ignore */
+            }
+            delete tabs[id];
+        }
+        if (activeTabId === id) activeTabId = null;
+        lastRecordedByTab.delete(id);
+        compatDiagnostics.clear(id);
+        pushRecentlyClosedTab(recentlyClosedCandidate);
+    });
+
+    auxWindow.show();
+    view.webContents.focus();
+
+    return { ok: true };
 }
 
 function openUrlInNewTab(targetUrl, options = {}) {
@@ -695,7 +823,7 @@ function buildApplicationMenu() {
                 { type: 'separator' },
                 {
                     label: 'Move Tab to New Window',
-                    enabled: false,
+                    click: () => mainWindow.webContents.send('shortcut-tab-move-new-window'),
                 },
                 {
                     label: 'Search Tabs…',
@@ -890,7 +1018,13 @@ function createTab(id, url = "https://www.google.com", isStealth = false, option
     // Initial bounds set
     const { width, height } = mainWindow.getContentBounds();
     if (shouldActivate) {
-        view.setBounds({ x: 0, y: isHTMLFullscreen ? 0 : UI_HEIGHT, width, height: isHTMLFullscreen ? height : height - UI_HEIGHT });
+        const fsInit = htmlFullscreenTabId === id;
+        view.setBounds({
+            x: 0,
+            y: fsInit ? 0 : UI_HEIGHT,
+            width,
+            height: fsInit ? height : height - UI_HEIGHT,
+        });
         view.webContents.focus();
     } else {
         view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
@@ -964,17 +1098,24 @@ function createTab(id, url = "https://www.google.com", isStealth = false, option
 
     // Fullscreen handling
     view.webContents.on('enter-html-full-screen', () => {
-        isHTMLFullscreen = true;
-        mainWindow.setFullScreen(true);
-        const { width, height } = mainWindow.getContentBounds();
+        htmlFullscreenTabId = id;
+        const host = getHostWindowForTabId(id);
+        host.setFullScreen(true);
+        const { width, height } = host.getContentBounds();
         view.setBounds({ x: 0, y: 0, width, height });
     });
 
     view.webContents.on('leave-html-full-screen', () => {
-        isHTMLFullscreen = false;
-        mainWindow.setFullScreen(false);
-        const { width, height } = mainWindow.getContentBounds();
-        view.setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+        htmlFullscreenTabId = null;
+        const host = getHostWindowForTabId(id);
+        host.setFullScreen(false);
+        const { width, height } = host.getContentBounds();
+        const detached = detachedTabWindows.has(id);
+        view.setBounds(
+            detached
+                ? { x: 0, y: 0, width, height }
+                : { x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT },
+        );
     });
 
     // --- SYNCING METADATA TO UI ---
@@ -1657,16 +1798,33 @@ ipcMain.on('tab:sleep-register', (e, { id, url }) => {
 // let a React-rendered modal show above the tab content.
 ipcMain.handle('tab:hide-active', (e) => {
     if (!isSenderTrusted(e)) return;
-    if (activeTabId && tabs[activeTabId]) {
+    if (activeTabId && tabs[activeTabId] && !detachedTabWindows.has(activeTabId)) {
         tabs[activeTabId].setBounds({ x: 0, y: 0, width: 0, height: 0 });
     }
 });
 
 ipcMain.handle('tab:restore-active', (e) => {
     if (!isSenderTrusted(e)) return;
-    if (activeTabId && tabs[activeTabId]) {
+    if (activeTabId && tabs[activeTabId] && !detachedTabWindows.has(activeTabId)) {
         const { width, height } = mainWindow.getContentBounds();
-        tabs[activeTabId].setBounds({ x: 0, y: UI_HEIGHT, width, height: height - UI_HEIGHT });
+        const fs = htmlFullscreenTabId === activeTabId;
+        tabs[activeTabId].setBounds({
+            x: 0,
+            y: fs ? 0 : UI_HEIGHT,
+            width,
+            height: fs ? height : height - UI_HEIGHT,
+        });
+    }
+});
+
+ipcMain.handle('tab:move-to-new-window', async (e, { id, fallbackTabId }) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    if (!id || typeof id !== 'string') return { ok: false };
+    try {
+        return moveTabToDetachedWindow(id, fallbackTabId);
+    } catch (err) {
+        console.error('tab:move-to-new-window', err);
+        return { ok: false };
     }
 });
 
@@ -1764,8 +1922,21 @@ ipcMain.on('close-tab', (e, { id }) => {
 
     // Clean up sleeping metadata regardless of whether a view was ever created.
     delete sleepingTabs[id];
+
+    if (detachedTabWindows.has(id)) {
+        const w = detachedTabWindows.get(id);
+        if (w && !w.isDestroyed()) {
+            w.close();
+        }
+        return;
+    }
+
     if (tabs[id]) {
-        mainWindow.contentView.removeChildView(tabs[id]);
+        try {
+            mainWindow.contentView.removeChildView(tabs[id]);
+        } catch (_) {
+            /* view may not be attached to the main shell */
+        }
         tabs[id].webContents.destroy();
         delete tabs[id];
         if (activeTabId === id) activeTabId = null;
