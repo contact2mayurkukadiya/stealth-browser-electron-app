@@ -24,11 +24,30 @@
 }
 
 body {
+    position: relative;
     margin: 0;
-    background: #253035;
+    background-color: #253035;
     color: white;
     font-family: 'StealthUIFont', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     overflow: hidden;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-color: #3a4a50;
+    opacity: 0.45;
+    -webkit-mask-image: url('app://localhost/assets/images/stealth.svg');
+    mask-image: url('app://localhost/assets/images/stealth.svg');
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center center;
+    mask-position: center center;
+    -webkit-mask-size: min(48vw, 380px);
+    mask-size: min(48vw, 380px);
 }
 
 /* ── Header shell ────────────────────────────────────────────────────────── */
