@@ -78,6 +78,30 @@ body {
     -webkit-app-region: no-drag;
 }
 
+.tab+.tab:not(.active)::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 2px;
+    height: 15px;
+    transform: translateY(-50%);
+    background: #4a616b9f;
+    pointer-events: none;
+    z-index: 1;
+    transition: opacity 0.2s ease;
+}
+
+/* Keep the active tab visually merged with neighbors like Chrome. */
+.tab.active+.tab::before {
+    opacity: 0;
+}
+
+.tab:not(.active):hover::before,
+.tab:hover+.tab:not(.active)::before {
+    opacity: 0;
+}
+
 .tab:not(.active):hover {
     background-color: rgba(255, 255, 255, 0.1);
 }
