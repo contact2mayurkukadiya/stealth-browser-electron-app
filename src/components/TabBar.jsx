@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useState, useEffect } from 'react';
+import React, { useRef, useCallback, useMemo, useState, useEffect, useLayoutEffect } from 'react';
 import { useSelector } from 'react-redux';
 import Tab from './Tab';
 import ContextMenu from './ContextMenu';
@@ -15,6 +15,7 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
   const currentTabId = useSelector(s => s.browser.currentTabId);
 
   const [tabContextMenu, setTabContextMenu] = useState(null);
+  const tabBarRef = useRef(null);
 
   const hoverTimeoutRef = useRef(null);
 
@@ -81,8 +82,44 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
     return getTabContextMenuItems(tabContextMenu.tabId);
   }, [tabContextMenu, getTabContextMenuItems]);
 
+  useLayoutEffect(() => {
+    const tabBarEl = tabBarRef.current;
+    if (!tabBarEl) return undefined;
+
+    const syncActiveSlider = () => {
+      const activeTabEl = tabBarEl.querySelector('.tab.active');
+      if (!activeTabEl) {
+        tabBarEl.style.setProperty('--active-width', '0px');
+        return;
+      }
+
+      tabBarEl.style.setProperty('--active-left', `${activeTabEl.offsetLeft}px`);
+      tabBarEl.style.setProperty('--active-width', `${activeTabEl.offsetWidth}px`);
+    };
+
+    syncActiveSlider();
+
+    const resizeObserver = new ResizeObserver(syncActiveSlider);
+    resizeObserver.observe(tabBarEl);
+    tabBarEl.querySelectorAll('.tab').forEach((tabEl) => resizeObserver.observe(tabEl));
+
+    window.addEventListener('resize', syncActiveSlider);
+    // Tab drag updates can finish before React paints; one extra frame keeps alignment stable.
+    const rafId = window.requestAnimationFrame(syncActiveSlider);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', syncActiveSlider);
+      resizeObserver.disconnect();
+    };
+  }, [tabOrder, tabs, currentTabId]);
+
   return (
-    <div className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}`}>
+    <div
+      ref={tabBarRef}
+      className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}`}
+    >
+      <div className="tab-active-slider" aria-hidden />
       {tabOrder.map(id => (
         <Tab
           key={id}
