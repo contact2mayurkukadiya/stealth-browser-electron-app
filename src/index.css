@@ -879,18 +879,18 @@ body {
 
 /* ── Close button ─────────────────────────────────────────────────────────── */
 .close-btn {
-    opacity: 0;
-    font-size: 14px;
+    opacity: 1;
+    font-size: 12px;
     width: 18px;
     height: 18px;
+    padding: 2px;
+    box-sizing: border-box;
+    line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-}
-
-.tab:hover .close-btn {
-    opacity: 1;
+    transition: background-color 0.15s ease;
 }
 
 .close-btn:hover {
@@ -917,10 +917,6 @@ body {
 }
 
 .tab.tab--pinned .close-btn {
-    opacity: 0;
-}
-
-.tab.tab--pinned:hover .close-btn {
     opacity: 1;
 }
 
