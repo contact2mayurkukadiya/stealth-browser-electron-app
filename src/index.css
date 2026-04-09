@@ -149,6 +149,14 @@ body {
     z-index: 2;
 }
 
+.tab-bar.tab-bar--dragging .tab {
+    transition: none !important;
+}
+
+.tab-bar.tab-bar--dragging .tab::before {
+    transition: none !important;
+}
+
 .tab+.tab:not(.active)::before {
     content: "";
     position: absolute;

@@ -62,6 +62,8 @@ export function useTabDrag({
           draggingIndex = originalTabs.indexOf(tabEl);
           finalTargetIndex = draggingIndex;
           bar.classList.add('tab-bar--dragging');
+          // Disable tab transitions during drag/drop to avoid jitter on cleanup.
+          originalTabs.forEach((t) => { t.style.transition = 'none'; });
 
           const rect = originalRects[draggingIndex];
           offsetX = me.clientX - rect.left;
@@ -126,14 +128,26 @@ export function useTabDrag({
         document.removeEventListener('pointerup', onUp);
 
         if (dragStarted) {
-          // Clear all inline transforms before React re-orders the DOM
-          originalTabs.forEach(t => { t.style.transform = ''; t.style.zIndex = ''; });
-          const barEl = tabEl.closest('.tab-bar');
-          if (barEl && tabEl.classList.contains('active')) {
+          const didReorder = finalTargetIndex !== -1 && finalTargetIndex !== draggingIndex;
+          const clearTransformsOnly = () => {
+            originalTabs.forEach((t) => {
+              t.style.transform = '';
+              t.style.zIndex = '';
+            });
+          };
+          const syncSliderToActiveTabSlot = () => {
+            const barEl = tabEl.closest('.tab-bar');
+            if (!barEl || !tabEl.classList.contains('active')) return;
             barEl.style.setProperty('--active-left', `${tabEl.offsetLeft}px`);
             barEl.style.setProperty('--active-width', `${tabEl.offsetWidth}px`);
-            barEl.classList.remove('tab-bar--dragging');
-          }
+          };
+          const restoreTransitionsLater = () => {
+            window.requestAnimationFrame(() => {
+              originalTabs.forEach((t) => {
+                t.style.transition = '';
+              });
+            });
+          };
 
           if (finalTargetIndex !== -1 && finalTargetIndex !== draggingIndex) {
             // Build new id order and hand off to Redux
@@ -147,12 +161,36 @@ export function useTabDrag({
             ids.splice(dropIndex, 0, moved);
             cbRef.current.onDragEnd(ids);
           }
+
+          if (!didReorder) {
+            syncSliderToActiveTabSlot();
+            clearTransformsOnly();
+            restoreTransitionsLater();
+          } else {
+            // Preserve visual positions through React reorder, then clear transforms.
+            window.requestAnimationFrame(() => {
+              window.requestAnimationFrame(() => {
+                // After DOM reorder snaps to insertion slot, align slider to active tab.
+                syncSliderToActiveTabSlot();
+                clearTransformsOnly();
+                restoreTransitionsLater();
+              });
+            });
+          }
         }
 
         tabEl.classList.remove('tab-dragging');
         tabEl.style.backgroundColor = '';
         const barEl = tabEl.closest('.tab-bar');
-        if (barEl) barEl.classList.remove('tab-bar--dragging');
+        if (barEl) {
+          // Keep slider transition disabled until post-drop layout settles,
+          // preventing a visual jump from the pre-drop slot.
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              barEl.classList.remove('tab-bar--dragging');
+            });
+          });
+        }
         window._draggingTabId = null;
       };
 
