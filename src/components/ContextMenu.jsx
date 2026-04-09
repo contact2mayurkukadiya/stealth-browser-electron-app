@@ -1,8 +1,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 
-export default function ContextMenu({ items, x, y, onClose }) {
+export default function ContextMenu({ items, x, y, onClose, variant = 'default' }) {
   if (!items || items.length === 0) return null;
+  const isTabVariant = variant === 'tab';
+  const menuClassName = `bk-context-menu${isTabVariant ? ' bk-context-menu--tab' : ''}`;
+  const separatorClassName = `bk-context-separator${isTabVariant ? ' bk-context-separator--tab' : ''}`;
+  const itemClassBase = `bk-context-item${isTabVariant ? ' bk-context-item--tab' : ''}`;
 
   return ReactDOM.createPortal(
     <>
@@ -12,18 +16,18 @@ export default function ContextMenu({ items, x, y, onClose }) {
         onMouseDown={onClose}
       />
       <div
-        className="bk-context-menu"
+        className={menuClassName}
         style={{ left: x, top: y, zIndex: 1000 }}
         onMouseDown={e => e.stopPropagation()}
       >
         {items.map((item, i) => (
           item.type === 'separator' ? (
-            <div key={i} className="bk-context-separator" role="separator" />
+            <div key={i} className={separatorClassName} role="separator" />
           ) : (
             <button
               key={i}
               type="button"
-              className={`bk-context-item${item.danger ? ' danger' : ''}`}
+              className={`${itemClassBase}${item.danger ? ' danger' : ''}`}
               disabled={item.disabled}
               onClick={() => {
                 if (!item.disabled && item.action) {

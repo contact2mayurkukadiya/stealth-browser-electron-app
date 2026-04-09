@@ -31,6 +31,7 @@ export default function App() {
   const tabs = useSelector(s => s.browser.tabs);
   const tabOrder = useSelector(s => s.browser.tabOrder);
   const currentTabId = useSelector(s => s.browser.currentTabId);
+  const isStealthActive = !!tabs[currentTabId]?.isStealth;
 
   const [searchTabsOpen, setSearchTabsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -510,7 +511,7 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="header">
+    <div className={`header${isStealthActive ? ' header--stealth-active' : ''}`}>
       <CommandPaletteModal
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}

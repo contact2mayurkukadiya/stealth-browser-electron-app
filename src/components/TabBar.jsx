@@ -51,6 +51,7 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
   const platform = window.electronAPI?.platform;
   const isMac = platform === 'darwin';
   const isWin = platform === 'win32';
+  const isActiveTabStealth = !!tabs[currentTabId]?.isStealth;
 
   const pinnedTabCount = useMemo(
     () => tabOrder.filter((tid) => tabs[tid]?.isPinned).length,
@@ -117,7 +118,7 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
   return (
     <div
       ref={tabBarRef}
-      className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}`}
+      className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}${isActiveTabStealth ? ' tab-bar--active-stealth' : ''}`}
     >
       <div className="tab-active-slider" aria-hidden />
       {tabOrder.map(id => (
@@ -144,6 +145,7 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
           items={tabContextMenuItems}
           x={tabContextMenu.x}
           y={tabContextMenu.y}
+          variant="tab"
           onClose={() => setTabContextMenu(null)}
         />
       )}
