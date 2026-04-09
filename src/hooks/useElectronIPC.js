@@ -31,6 +31,13 @@ export function useElectronIPC({
 
   useEffect(() => {
     const api = window.electronAPI;
+    const notifyShortcutInvoked = () => {
+      window.dispatchEvent(new CustomEvent('electron-shortcut-invoked'));
+    };
+    const withShortcutNotify = (handler) => (...args) => {
+      notifyShortcutInvoked();
+      handler?.(...args);
+    };
 
     // ── Tab metadata pushed from main process ────────────────────────────
     api.onTabUpdate((data) => {
@@ -55,23 +62,23 @@ export function useElectronIPC({
     }
 
     // ── Keyboard shortcut IPC ────────────────────────────────────────────
-    api.onShortcutNewTab(() => onNewTab(false));
-    api.onShortcutNewStealthTab(() => onNewTab(true));
-    api.onShortcutHistory(onHistory);
-    if (api.onShortcutSettings) api.onShortcutSettings(onSettings);
-    api.onShortcutCloseTab(onCloseTab);
-    api.onShortcutReload(onReload);
-    api.onShortcutSwitchTab(({ direction }) => onSwitchTabDir(direction));
+    api.onShortcutNewTab(withShortcutNotify(() => onNewTab(false)));
+    api.onShortcutNewStealthTab(withShortcutNotify(() => onNewTab(true)));
+    api.onShortcutHistory(withShortcutNotify(onHistory));
+    if (api.onShortcutSettings) api.onShortcutSettings(withShortcutNotify(onSettings));
+    api.onShortcutCloseTab(withShortcutNotify(onCloseTab));
+    api.onShortcutReload(withShortcutNotify(onReload));
+    api.onShortcutSwitchTab(withShortcutNotify(({ direction }) => onSwitchTabDir(direction)));
 
-    if (api.onShortcutTabNewToRight) api.onShortcutTabNewToRight(() => onTabNewToRight?.());
-    if (api.onShortcutTabDuplicate) api.onShortcutTabDuplicate(() => onTabDuplicate?.());
-    if (api.onShortcutTabMuteSite) api.onShortcutTabMuteSite(() => onTabMuteSite?.());
-    if (api.onShortcutTabPin) api.onShortcutTabPin(() => onTabPin?.());
-    if (api.onShortcutTabCloseOthers) api.onShortcutTabCloseOthers(() => onTabCloseOthers?.());
-    if (api.onShortcutTabCloseRight) api.onShortcutTabCloseRight(() => onTabCloseRight?.());
-    if (api.onShortcutTabMoveNewWindow) api.onShortcutTabMoveNewWindow(() => onTabMoveNewWindow?.());
-    if (api.onShortcutTabSearch) api.onShortcutTabSearch(() => onTabSearch?.());
-    if (api.onShortcutCommandPalette) api.onShortcutCommandPalette(() => onCommandPalette?.());
+    if (api.onShortcutTabNewToRight) api.onShortcutTabNewToRight(withShortcutNotify(() => onTabNewToRight?.()));
+    if (api.onShortcutTabDuplicate) api.onShortcutTabDuplicate(withShortcutNotify(() => onTabDuplicate?.()));
+    if (api.onShortcutTabMuteSite) api.onShortcutTabMuteSite(withShortcutNotify(() => onTabMuteSite?.()));
+    if (api.onShortcutTabPin) api.onShortcutTabPin(withShortcutNotify(() => onTabPin?.()));
+    if (api.onShortcutTabCloseOthers) api.onShortcutTabCloseOthers(withShortcutNotify(() => onTabCloseOthers?.()));
+    if (api.onShortcutTabCloseRight) api.onShortcutTabCloseRight(withShortcutNotify(() => onTabCloseRight?.()));
+    if (api.onShortcutTabMoveNewWindow) api.onShortcutTabMoveNewWindow(withShortcutNotify(() => onTabMoveNewWindow?.()));
+    if (api.onShortcutTabSearch) api.onShortcutTabSearch(withShortcutNotify(() => onTabSearch?.()));
+    if (api.onShortcutCommandPalette) api.onShortcutCommandPalette(withShortcutNotify(() => onCommandPalette?.()));
 
     // Listeners registered once; no cleanup needed (Electron IPC listeners
     // persist for the renderer lifetime and ipcRenderer has no removeListener

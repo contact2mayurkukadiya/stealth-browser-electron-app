@@ -18,6 +18,7 @@ let tabMenuMuteSiteShowsUnmute = false;
 let tabMenuPinShowsUnpin = false;
 let tabs = {}; // Store views by ID (only fully-loaded tabs)
 let activeTabId = null; // Track currently visible tab
+let isActiveTabTemporarilyHidden = false; // True while a renderer overlay (e.g. tab menu) is open.
 const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
 let generatedTabCounter = 0;
 const MAX_RECENTLY_CLOSED_TABS = 25;
@@ -323,6 +324,10 @@ function createWindow() {
         if (!activeTabId || detachedTabWindows.has(activeTabId)) return;
         const view = tabs[activeTabId];
         if (!view) return;
+        if (isActiveTabTemporarilyHidden) {
+            view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+            return;
+        }
         const { width, height } = mainWindow.getContentBounds();
         const fs = htmlFullscreenTabId === activeTabId;
         view.setBounds({
@@ -1812,6 +1817,7 @@ ipcMain.on('tab:sleep-register', (e, { id, url }) => {
 ipcMain.handle('tab:hide-active', (e) => {
     if (!isSenderTrusted(e)) return;
     if (activeTabId && tabs[activeTabId] && !detachedTabWindows.has(activeTabId)) {
+        isActiveTabTemporarilyHidden = true;
         tabs[activeTabId].setBounds({ x: 0, y: 0, width: 0, height: 0 });
     }
 });
@@ -1819,6 +1825,7 @@ ipcMain.handle('tab:hide-active', (e) => {
 ipcMain.handle('tab:restore-active', (e) => {
     if (!isSenderTrusted(e)) return;
     if (activeTabId && tabs[activeTabId] && !detachedTabWindows.has(activeTabId)) {
+        isActiveTabTemporarilyHidden = false;
         const { width, height } = mainWindow.getContentBounds();
         const fs = htmlFullscreenTabId === activeTabId;
         tabs[activeTabId].setBounds({

@@ -73,10 +73,35 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
 
   useEffect(() => {
     if (!tabContextMenu) return undefined;
+    const closeMenu = () => setTabContextMenu(null);
+    const closeMenuOnShortcut = (event) => {
+      const pressedModifier = event.metaKey || event.ctrlKey || event.altKey;
+      const pressedOnlyModifier = ['Meta', 'Control', 'Alt', 'Shift'].includes(event.key);
+      if (pressedModifier && !pressedOnlyModifier) {
+        closeMenu();
+      }
+    };
+
+    // Keep menu behavior stable: resizing or losing focus should close it,
+    // which also restores the hidden active WebContentsView.
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('blur', closeMenu);
+    window.addEventListener('keydown', closeMenuOnShortcut, true);
+    window.addEventListener('electron-shortcut-invoked', closeMenu);
+
     return () => {
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('blur', closeMenu);
+      window.removeEventListener('keydown', closeMenuOnShortcut, true);
+      window.removeEventListener('electron-shortcut-invoked', closeMenu);
       window.electronAPI.tabRestoreActive?.();
     };
   }, [tabContextMenu]);
+
+  useEffect(() => {
+    if (!tabContextMenu) return;
+    setTabContextMenu(null);
+  }, [currentTabId, tabOrder.length]); // Close menu on tab switch/create/close changes.
 
   const tabContextMenuItems = useMemo(() => {
     if (!tabContextMenu?.tabId || !getTabContextMenuItems) return [];
