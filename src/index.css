@@ -43,10 +43,11 @@ body {
 /* ── Tab bar ─────────────────────────────────────────────────────────────── */
 .tab-bar {
     display: flex;
-    padding: 5px 10px 0 10px;
+    padding: 5px 10px 5px 10px;
     gap: 5px;
     height: 45px;
-    align-items: flex-end;
+    /* align-items: flex-end; */
+    align-items: center;
 }
 
 /* macOS — reserve space for the traffic-light buttons on the left */
@@ -104,6 +105,7 @@ body {
 
 .tab:not(.active):hover {
     background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 10px 10px 10px 10px;
 }
 
 /* Stealth Tab styling */
@@ -117,6 +119,7 @@ body {
 .stealth-tab:not(.active):hover {
     background: #4a1c1c;
     /* Lighter red on hover */
+    border-radius: 10px 10px 0 0;
 }
 
 .stealth-tab.active {
@@ -785,13 +788,14 @@ body {
     z-index: 10;
     position: relative;
     overflow: visible;
+    box-shadow: 0 6px 1px 0 #394D55;
 }
 
 .tab.active::after {
     content: "";
     position: absolute;
     right: -24px;
-    bottom: -1px;
+    bottom: -6px;
     --r: 0px;
     --s: 15px;
     --x: 9px;
@@ -817,7 +821,7 @@ body {
     content: "";
     position: absolute;
     left: -24px;
-    bottom: -1px;
+    bottom: -6px;
     --r: 0px;
     --s: 15px;
     --x: 9px;
