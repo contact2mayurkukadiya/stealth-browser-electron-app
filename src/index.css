@@ -66,6 +66,10 @@ body {
     transition: left 0.28s ease, width 0.28s ease;
 }
 
+.tab-bar.tab-bar--dragging .tab-active-slider {
+    transition: none;
+}
+
 .tab-active-slider::before,
 .tab-active-slider::after {
     content: "";
@@ -900,6 +904,7 @@ body {
 /* ── Tab drag-and-drop ─────────────────────────────────────────────────────── */
 .tab.tab-dragging {
     transition: none !important;
+    background-color: inherit;
 }
 
 /* ── Pinned tab (narrow) ─────────────────────────────────────────────────── */

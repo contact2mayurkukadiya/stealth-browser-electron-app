@@ -49,6 +49,7 @@ export function useTabDrag({
       let originalRects = [];
       let draggingIndex = -1;
       let finalTargetIndex = -1;
+      let dragBackgroundColor = '';
 
       const onMove = (me) => {
         if (!dragStarted) {
@@ -60,10 +61,17 @@ export function useTabDrag({
           originalRects = originalTabs.map(t => t.getBoundingClientRect());
           draggingIndex = originalTabs.indexOf(tabEl);
           finalTargetIndex = draggingIndex;
+          bar.classList.add('tab-bar--dragging');
 
           const rect = originalRects[draggingIndex];
           offsetX = me.clientX - rect.left;
           tabEl.classList.add('tab-dragging');
+          dragBackgroundColor = window.getComputedStyle(tabEl).backgroundColor;
+          if (!dragBackgroundColor || dragBackgroundColor === 'rgba(0, 0, 0, 0)' || dragBackgroundColor === 'transparent') {
+            // Fallback for tabs that are visually transparent because of the active slider.
+            dragBackgroundColor = 'rgba(57, 77, 85, 0.95)';
+          }
+          tabEl.style.backgroundColor = dragBackgroundColor;
           // Flag used by tooltip hover guard
           window._draggingTabId = id;
         }
@@ -90,6 +98,13 @@ export function useTabDrag({
 
         // ── Animate via transform (no DOM reorder during drag) ───────────
         const draggedWidthWithGap = originalRects[draggingIndex].width + 5;
+        const activeSliderLeft = tabEl.offsetLeft + dragDx;
+        const activeSliderWidth = tabEl.offsetWidth;
+        const barEl = tabEl.closest('.tab-bar');
+        if (barEl && tabEl.classList.contains('active')) {
+          barEl.style.setProperty('--active-left', `${activeSliderLeft}px`);
+          barEl.style.setProperty('--active-width', `${activeSliderWidth}px`);
+        }
         originalTabs.forEach((t, i) => {
           if (i === draggingIndex) {
             t.style.transform = `translateX(${dragDx}px)`;
@@ -113,6 +128,12 @@ export function useTabDrag({
         if (dragStarted) {
           // Clear all inline transforms before React re-orders the DOM
           originalTabs.forEach(t => { t.style.transform = ''; t.style.zIndex = ''; });
+          const barEl = tabEl.closest('.tab-bar');
+          if (barEl && tabEl.classList.contains('active')) {
+            barEl.style.setProperty('--active-left', `${tabEl.offsetLeft}px`);
+            barEl.style.setProperty('--active-width', `${tabEl.offsetWidth}px`);
+            barEl.classList.remove('tab-bar--dragging');
+          }
 
           if (finalTargetIndex !== -1 && finalTargetIndex !== draggingIndex) {
             // Build new id order and hand off to Redux
@@ -129,6 +150,9 @@ export function useTabDrag({
         }
 
         tabEl.classList.remove('tab-dragging');
+        tabEl.style.backgroundColor = '';
+        const barEl = tabEl.closest('.tab-bar');
+        if (barEl) barEl.classList.remove('tab-bar--dragging');
         window._draggingTabId = null;
       };
 

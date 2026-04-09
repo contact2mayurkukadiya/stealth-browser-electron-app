@@ -767,6 +767,12 @@ function buildApplicationMenu() {
         {
             label: 'History',
             submenu: [
+                {
+                    label: 'Show History',
+                    accelerator: 'CmdOrCtrl+Y',
+                    click: () => mainWindow.webContents.send('shortcut-history'),
+                },
+                { type: 'separator' },
                 { label: 'Home', click: () => navigateActiveTabHome() },
                 { label: 'Back', click: () => goBackInActiveTab() },
                 { label: 'Forward', click: () => goForwardInActiveTab() },
@@ -952,6 +958,13 @@ function handleShortcuts(event, input) {
     if (input.type !== 'keyDown') return;
 
     const key = input.key.toLowerCase();
+    const isCommandOrControlPressed = input.control || input.meta;
+
+    if (isCommandOrControlPressed && key === 'y') {
+        event.preventDefault();
+        mainWindow.webContents.send('shortcut-history');
+        return;
+    }
 
     // Only handle Ctrl+Tab here, as others are handled by the Menu
     if (input.control && input.key === 'Tab') {
