@@ -1,7 +1,7 @@
 /* ── Base ─────────────────────────────────────────────────────────────────── */
 @font-face {
     font-family: 'StealthUIFont';
-    src: url('app://localhost/assets/fonts/static/Roboto-Regular.ttf') format('truetype');
+    src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Regular.ttf') format('truetype');
     font-weight: 400;
     font-style: normal;
     font-display: swap;
@@ -9,7 +9,7 @@
 
 @font-face {
     font-family: 'StealthUIFont';
-    src: url('app://localhost/assets/fonts/static/Roboto-Medium.ttf') format('truetype');
+    src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Medium.ttf') format('truetype');
     font-weight: 500;
     font-style: normal;
     font-display: swap;
@@ -17,7 +17,7 @@
 
 @font-face {
     font-family: 'StealthUIFont';
-    src: url('app://localhost/assets/fonts/static/Roboto-Bold.ttf') format('truetype');
+    src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Bold.ttf') format('truetype');
     font-weight: 700;
     font-style: normal;
     font-display: swap;

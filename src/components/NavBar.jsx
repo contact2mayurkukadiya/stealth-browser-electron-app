@@ -1,7 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import UrlBar from './UrlBar';
 import BookmarkEditPopup from './BookmarkEditPopup';
+import ProfileMenuButton from './ProfileMenuButton';
+import ProfileEditorModal from './ProfileEditorModal';
 
 const BACK_ICON = (
   <svg width={25} height={25} viewBox="0 0 640 640">
@@ -78,6 +80,31 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
   // ── Edit popup state ──────────────────────────────────────────────────────
   // null = closed; { data } = open
   const [editPopup, setEditPopup] = useState(null);
+  const [profiles, setProfiles] = useState([]);
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false);
+  const [profileEditorMode, setProfileEditorMode] = useState('create');
+
+  const loadProfiles = useCallback(async () => {
+    const [allProfiles, activeProfile] = await Promise.all([
+      window.electronAPI.profileList?.() || [],
+      window.electronAPI.profileGetCurrent?.(),
+    ]);
+    setProfiles(Array.isArray(allProfiles) ? allProfiles : []);
+    setCurrentProfile(activeProfile || null);
+  }, []);
+
+  useEffect(() => {
+    loadProfiles();
+  }, [loadProfiles]);
+
+  useEffect(() => {
+    if (!profileEditorOpen) return undefined;
+    window.electronAPI.tabHideActive?.();
+    return () => {
+      window.electronAPI.tabRestoreActive?.();
+    };
+  }, [profileEditorOpen]);
 
   const handleBack = () => window.electronAPI.goBack(currentTabId);
   const handleForward = () => window.electronAPI.goForward(currentTabId);
@@ -123,6 +150,33 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
     setEditPopup({ data: bookmarkData });
   }, [canBookmark, editPopup, existingBookmark, bookmarksData.bar, tab, currentUrl]);
 
+  const handleAddProfile = useCallback(() => {
+    setProfileEditorMode('create');
+    setProfileEditorOpen(true);
+  }, []);
+
+  const handleEditCurrentProfile = useCallback(() => {
+    if (!currentProfile) return;
+    setProfileEditorMode('edit');
+    setProfileEditorOpen(true);
+  }, [currentProfile]);
+
+  const handleProfileEditorSaved = useCallback(
+    async ({ mode, profile }) => {
+      await loadProfiles();
+      if (mode === 'create' && profile?.profileId) {
+        await window.electronAPI.profileOpenWindow?.(profile.profileId);
+      }
+      setProfileEditorOpen(false);
+    },
+    [loadProfiles],
+  );
+
+  const handleOpenProfileWindow = useCallback(async (profileId) => {
+    if (!profileId) return;
+    await window.electronAPI.profileOpenWindow?.(profileId);
+  }, []);
+
   return (
     <div className="nav-bar">
       <button id="back-btn" className="btn" onClick={handleBack}>{BACK_ICON}</button>
@@ -148,6 +202,23 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
       >
         {MORE_ICON}
       </button>
+
+      <ProfileMenuButton
+        profiles={profiles}
+        activeProfile={currentProfile}
+        onOpenProfile={handleOpenProfileWindow}
+        onAddProfile={handleAddProfile}
+        onEditProfile={handleEditCurrentProfile}
+        triggerTitle={`Profiles (${currentProfile?.displayName || 'Profile'})`}
+      />
+
+      <ProfileEditorModal
+        open={profileEditorOpen}
+        mode={profileEditorMode}
+        initialProfile={profileEditorMode === 'edit' ? currentProfile : null}
+        onClose={() => setProfileEditorOpen(false)}
+        onSaved={handleProfileEditorSaved}
+      />
 
       {editPopup && (
         <BookmarkEditPopup

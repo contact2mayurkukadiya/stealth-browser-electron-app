@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onShortcutCommandPalette: (callback) => ipcRenderer.on('shortcut-command-palette', () => callback()),
 
     runMenuCommand: (commandId) => ipcRenderer.invoke('app:run-menu-command', commandId),
+    createWindow: (profileId) => ipcRenderer.invoke('window:create', { profileId }),
+    windowGetBootstrap: () => ipcRenderer.invoke('window:get-bootstrap'),
 
     tabSetAudioMuted: (id, muted) => ipcRenderer.send('tab:set-audio-muted', { id, muted }),
     tabMenuSyncLabels: (payload) => ipcRenderer.send('tab-menu:sync-labels', payload),
@@ -49,6 +51,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     historyGet: () => ipcRenderer.invoke('history:get'),
     historyRemoveItems: (timestamps) => ipcRenderer.invoke('history:remove-items', timestamps),
     historyClear: () => ipcRenderer.invoke('history:clear'),
+
+    // Profiles
+    profileList: () => ipcRenderer.invoke('profile:list'),
+    profileGetCurrent: () => ipcRenderer.invoke('profile:get-current'),
+    profileCreate: (displayName) => ipcRenderer.invoke('profile:create', { displayName }),
+    profileUpdate: (payload) => ipcRenderer.invoke('profile:update', payload),
+    profileSetAvatarData: (payload) => ipcRenderer.invoke('profile:setAvatarData', payload),
+    profileSetAvatarFromPresetPng: (payload) => ipcRenderer.invoke('profile:setAvatarFromPresetPng', payload),
+    profileValidateAvatarData: (dataUrl) => ipcRenderer.invoke('profile:validateAvatarData', { dataUrl }),
+    profileListPresetAvatarPngs: () => ipcRenderer.invoke('profile:list-preset-avatar-pngs'),
+    profileClearAvatar: (profileId) => ipcRenderer.invoke('profile:clearAvatar', { profileId }),
+    profileGetAvatarDataUrl: (profileId) => ipcRenderer.invoke('profile:getAvatarDataUrl', { profileId }),
+    profileDelete: (profileId) => ipcRenderer.invoke('profile:delete', { profileId }),
+    profileOpenWindow: (profileId, options = {}) =>
+        ipcRenderer.invoke('profile:open-window', {
+            profileId,
+            closeProfilePicker: options.closeProfilePicker === true,
+        }),
 
     // Session
     sessionSave: (data) => ipcRenderer.invoke('session:save', data),

@@ -24,7 +24,7 @@ function rollupOutput() {
   };
 }
 
-// Build mode: 'index' (default), 'history', or 'settings' (set via env VITE_ENTRY)
+// Build mode: 'index' (default), 'history', 'settings', or 'profile-picker' (set via env VITE_ENTRY)
 const entry = process.env.VITE_ENTRY || 'index';
 
 const configs = {
@@ -69,6 +69,21 @@ const configs = {
       target: 'esnext',
       rollupOptions: {
         input: path.resolve(__dirname, 'src', 'settings.html'),
+        output: rollupOutput(),
+      },
+    },
+  },
+  'profile-picker': {
+    root: 'src',
+    base: './',
+    plugins: sharedPlugins,
+    build: {
+      outDir: path.resolve(__dirname, 'renderer', 'dist'),
+      emptyOutDir: false,
+      assetsDir: 'assets',
+      target: 'esnext',
+      rollupOptions: {
+        input: path.resolve(__dirname, 'src', 'profile-picker.html'),
         output: rollupOutput(),
       },
     },

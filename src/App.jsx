@@ -473,6 +473,14 @@ export default function App() {
       const bkData = await window.electronAPI.bookmarksGet();
       dispatch(setBookmarks(bkData));
 
+      // 1.5 Bootstrap payload for windows created from "Move Tab to New Window".
+      const bootstrap = await window.electronAPI.windowGetBootstrap?.();
+      if (bootstrap?.movedTab?.url) {
+        const movedTabId = `tab-${Date.now()}`;
+        createTabWithUrl(movedTabId, !!bootstrap.movedTab.isStealth, bootstrap.movedTab.url);
+        return;
+      }
+
       // 2. Restore session
       let session = null;
       if (window.electronAPI.sessionLoad) {
@@ -508,7 +516,7 @@ export default function App() {
       }
     }
     init();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dispatch, createTab, createTabWithUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={`header${isStealthActive ? ' header--stealth-active' : ''}`}>
