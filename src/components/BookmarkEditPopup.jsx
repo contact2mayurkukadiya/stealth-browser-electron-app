@@ -21,8 +21,8 @@ function collectFolders(list, prefix = '') {
  * Centered modal dialog for adding / editing / removing a bookmark.
  *
  * Rendered via React portal so it mounts at document.body.
- * The parent component is responsible for calling tabHideActive() before
- * mounting and tabRestoreActive() after unmounting (via onClose).
+ * The parent (NavBar) uses TabOverlayContext: beginOverlay before mount and
+ * endOverlay in onClose so the tab snapshot + hide stay paired.
  *
  * Closing triggers:
  *   - Click on the semi-transparent backdrop.

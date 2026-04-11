@@ -16,6 +16,7 @@ import BookmarkBar from './components/BookmarkBar';
 import SearchTabsModal from './components/SearchTabsModal';
 import CommandPaletteModal from './components/CommandPaletteModal';
 import { buildCommandPaletteCommands } from './commandPaletteCommands';
+import { TabOverlayProvider } from './context/TabOverlayContext';
 
 function hostnameFromUrl(url) {
   if (!url || typeof url !== 'string') return '';
@@ -26,7 +27,7 @@ function hostnameFromUrl(url) {
   }
 }
 
-export default function App() {
+function AppShell() {
   const dispatch = useDispatch();
   const tabs = useSelector(s => s.browser.tabs);
   const tabOrder = useSelector(s => s.browser.tabOrder);
@@ -547,5 +548,13 @@ export default function App() {
       <NavBar currentTabId={currentTabId} onOpenSettings={handleOpenSettings} />
       <BookmarkBar currentTabId={currentTabId} />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <TabOverlayProvider>
+      <AppShell />
+    </TabOverlayProvider>
   );
 }

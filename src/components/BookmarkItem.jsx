@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
+import { useTabOverlay } from '../context/TabOverlayContext';
 import { setBookmarks } from '../store/bookmarksSlice';
 import ContextMenu from './ContextMenu';
 import FolderDropdown from './FolderDropdown';
@@ -27,6 +28,7 @@ export default function BookmarkItem({
   onNavigate,
 }) {
   const dispatch = useDispatch();
+  const { beginOverlay, endOverlay } = useTabOverlay();
   const [contextMenu, setContextMenu] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
   // true when the folder modal is open, null/false when closed.
@@ -92,24 +94,21 @@ export default function BookmarkItem({
     dispatch(setBookmarks(updated));
   };
 
-  // ── Folder close — restores the active tab view ──────────────────────────
   const handleFolderClose = useCallback(() => {
     setFolderOpen(false);
-    window.electronAPI.tabRestoreActive?.();
-  }, []);
+    endOverlay();
+  }, [endOverlay]);
 
   // ── Click ────────────────────────────────────────────────────────────────
   const handleClick = useCallback(async (e) => {
     e.stopPropagation();
     if (isFolder) {
-      // Hide the active WebContentsView so the React modal appears above it,
-      // then open the folder modal.
-      await window.electronAPI.tabHideActive?.();
+      await beginOverlay();
       setFolderOpen(true);
     } else {
       onNavigate(item.url);
     }
-  }, [isFolder, onNavigate, item.url]);
+  }, [isFolder, onNavigate, item.url, beginOverlay]);
 
   // ── Delete ───────────────────────────────────────────────────────────────
   const handleDelete = async (e) => {

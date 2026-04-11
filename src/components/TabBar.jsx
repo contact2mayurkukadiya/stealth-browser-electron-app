@@ -1,5 +1,6 @@
 import React, { useRef, useCallback, useMemo, useState, useEffect, useLayoutEffect } from 'react';
 import { useSelector } from 'react-redux';
+import { useTabOverlay } from '../context/TabOverlayContext';
 import Tab from './Tab';
 import ContextMenu from './ContextMenu';
 
@@ -10,6 +11,7 @@ const ADD_ICON = (
 );
 
 export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, getTabContextMenuItems }) {
+  const { beginOverlay, endOverlay } = useTabOverlay();
   const tabOrder = useSelector(s => s.browser.tabOrder);
   const tabs = useSelector(s => s.browser.tabs);
   const currentTabId = useSelector(s => s.browser.currentTabId);
@@ -66,10 +68,9 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
     let y = e.clientY;
     x = Math.max(8, Math.min(x, window.innerWidth - menuApproxWidth - 8));
     y = Math.max(8, Math.min(y, window.innerHeight - menuApproxHeight - 8));
-    // WebContentsViews stack above this HTML shell; hide the active tab so the menu paints on top.
-    await window.electronAPI.tabHideActive?.();
+    await beginOverlay();
     setTabContextMenu({ tabId, x, y });
-  }, [getTabContextMenuItems]);
+  }, [getTabContextMenuItems, beginOverlay]);
 
   useEffect(() => {
     if (!tabContextMenu) return undefined;
@@ -94,9 +95,9 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
       window.removeEventListener('blur', closeMenu);
       window.removeEventListener('keydown', closeMenuOnShortcut, true);
       window.removeEventListener('electron-shortcut-invoked', closeMenu);
-      window.electronAPI.tabRestoreActive?.();
+      endOverlay();
     };
-  }, [tabContextMenu]);
+  }, [tabContextMenu, endOverlay]);
 
   useEffect(() => {
     if (!tabContextMenu) return;

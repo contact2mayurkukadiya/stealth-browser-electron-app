@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getTabInfo: (id) => ipcRenderer.invoke('tab:get-info', { id }),
     tabHideActive: () => ipcRenderer.invoke('tab:hide-active'),
     tabRestoreActive: () => ipcRenderer.invoke('tab:restore-active'),
+    tabCaptureActiveSnapshot: () => ipcRenderer.invoke('tab:capture-active-snapshot'),
 
     // Lazy tab loading: register a tab as sleeping (no WebContentsView created yet)
     tabSleepRegister: (id, url) => ipcRenderer.send('tab:sleep-register', { id, url }),

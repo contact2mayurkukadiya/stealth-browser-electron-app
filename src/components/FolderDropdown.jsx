@@ -15,8 +15,8 @@ const FOLDER_ICON = (
  * Modal dialog that shows a bookmark folder's children.
  *
  * Rendered via React portal so it mounts at document.body.
- * The parent component is responsible for calling tabHideActive() before
- * mounting and tabRestoreActive() after unmounting (via onClose).
+ * The parent (BookmarkItem) uses TabOverlayContext: beginOverlay before open and
+ * endOverlay when the folder UI closes.
  *
  * Closing triggers:
  *   - Click on the semi-transparent backdrop.

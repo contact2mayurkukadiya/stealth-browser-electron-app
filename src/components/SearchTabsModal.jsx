@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTabOverlay } from '../context/TabOverlayContext';
 
 function getHostname(url) {
   if (!url || typeof url !== 'string') return '';
@@ -37,6 +38,7 @@ export default function SearchTabsModal({
   onSelectTab,
   onCloseTab,
 }) {
+  const { beginOverlay, endOverlay } = useTabOverlay();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);
@@ -60,19 +62,22 @@ export default function SearchTabsModal({
   }, [query, open]);
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) {
+      endOverlay();
+      return undefined;
+    }
     setQuery('');
     setSelectedIndex(0);
     let cancelled = false;
     (async () => {
-      await window.electronAPI.tabHideActive?.();
+      await beginOverlay();
       if (!cancelled) inputRef.current?.focus();
     })();
     return () => {
       cancelled = true;
-      window.electronAPI.tabRestoreActive?.();
+      endOverlay();
     };
-  }, [open]);
+  }, [open, beginOverlay, endOverlay]);
 
   const safeSelect = useCallback(
     (index) => {

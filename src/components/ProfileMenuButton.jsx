@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTabOverlay } from '../context/TabOverlayContext';
 import ProfileAvatar from './ProfileAvatar';
 import './ProfileMenuButton.css';
 
@@ -21,10 +22,24 @@ export default function ProfileMenuButton({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
+  const { beginOverlay, endOverlay } = useTabOverlay();
 
   const buttonProfile = activeProfile || profiles[0] || null;
 
   const close = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (!open) {
+      endOverlay();
+      return undefined;
+    }
+    (async () => {
+      await beginOverlay();
+    })();
+    return () => {
+      endOverlay();
+    };
+  }, [open, beginOverlay, endOverlay]);
 
   useEffect(() => {
     if (!open) return undefined;

@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useSelector } from 'react-redux';
+import { useTabOverlay } from '../context/TabOverlayContext';
 import UrlBar from './UrlBar';
 import BookmarkEditPopup from './BookmarkEditPopup';
 import ProfileMenuButton from './ProfileMenuButton';
@@ -66,6 +67,7 @@ function findBookmarkByUrl(url, list) {
 }
 
 export default function NavBar({ currentTabId, onOpenSettings }) {
+  const { beginOverlay, endOverlay } = useTabOverlay();
   const tabs = useSelector(s => s.browser.tabs);
   const bookmarksData = useSelector(s => s.bookmarks.data);
   const tab = tabs[currentTabId];
@@ -100,11 +102,13 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
 
   useEffect(() => {
     if (!profileEditorOpen) return undefined;
-    window.electronAPI.tabHideActive?.();
+    (async () => {
+      await beginOverlay();
+    })();
     return () => {
-      window.electronAPI.tabRestoreActive?.();
+      endOverlay();
     };
-  }, [profileEditorOpen]);
+  }, [profileEditorOpen, beginOverlay, endOverlay]);
 
   const handleBack = () => window.electronAPI.goBack(currentTabId);
   const handleForward = () => window.electronAPI.goForward(currentTabId);
@@ -113,8 +117,8 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
   // Restore the active tab view when the edit modal closes.
   const handleEditClose = useCallback(() => {
     setEditPopup(null);
-    window.electronAPI.tabRestoreActive?.();
-  }, []);
+    endOverlay();
+  }, [endOverlay]);
 
   const handleBookmark = useCallback(async (e) => {
     if (!canBookmark) return;
@@ -129,7 +133,7 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
     // Toggle: clicking star while modal is open closes it and restores the tab
     if (editPopup) {
       setEditPopup(null);
-      window.electronAPI.tabRestoreActive?.();
+      endOverlay();
       return;
     }
 
@@ -145,10 +149,9 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
           folderId: 'root',
         };
 
-    // Hide the active WebContentsView so the React modal appears above it
-    await window.electronAPI.tabHideActive?.();
+    await beginOverlay();
     setEditPopup({ data: bookmarkData });
-  }, [canBookmark, editPopup, existingBookmark, bookmarksData.bar, tab, currentUrl]);
+  }, [canBookmark, editPopup, existingBookmark, bookmarksData.bar, tab, currentUrl, beginOverlay, endOverlay]);
 
   const handleAddProfile = useCallback(() => {
     setProfileEditorMode('create');

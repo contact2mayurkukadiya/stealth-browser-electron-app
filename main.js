@@ -2490,6 +2490,26 @@ ipcMain.handle('tab:restore-active', (e) => {
     }
 });
 
+/** JPEG snapshot of the active tab for shell overlay (profile menu freeze). */
+ipcMain.handle('tab:capture-active-snapshot', async (e) => {
+    if (!isSenderTrusted(e)) return { dataUrl: null };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context) return { dataUrl: null };
+    const id = context.activeTabId;
+    if (!id || detachedTabWindows.has(id)) return { dataUrl: null };
+    const view = context.tabs[id];
+    if (!view || view.webContents.isDestroyed()) return { dataUrl: null };
+    try {
+        const image = await view.webContents.capturePage();
+        if (!image || image.isEmpty()) return { dataUrl: null };
+        const buf = image.toJPEG(85);
+        return { dataUrl: `data:image/jpeg;base64,${buf.toString('base64')}` };
+    } catch (err) {
+        console.error('tab:capture-active-snapshot', err);
+        return { dataUrl: null };
+    }
+});
+
 ipcMain.handle('tab:move-to-new-window', async (e, { id, fallbackTabId }) => {
     if (!isSenderTrusted(e)) return { ok: false };
     if (!id || typeof id !== 'string') return { ok: false };
