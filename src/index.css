@@ -254,6 +254,13 @@ body.tab-snapshot-active::before {
     color: #fff;
 }
 
+.tab-title .tab-stealth-icon {
+    margin-right: 4px;
+    flex-shrink: 0;
+    vertical-align: middle;
+    display: inline-block;
+}
+
 .tab-title {
     flex: 1;
     overflow: hidden;
@@ -985,9 +992,9 @@ body.tab-snapshot-active::before {
 .close-btn {
     opacity: 1;
     font-size: 12px;
-    width: 18px;
-    height: 18px;
-    padding: 2px;
+    width: 20px;
+    height: 20px;
+    padding: 4px;
     box-sizing: border-box;
     line-height: 1;
     display: flex;
@@ -995,6 +1002,17 @@ body.tab-snapshot-active::before {
     justify-content: center;
     border-radius: 50%;
     transition: background-color 0.15s ease;
+}
+
+.close-btn .tab-close-icon {
+    display: block;
+    width: 12px;
+    height: 12px;
+}
+
+.nav-bar .btn img {
+    display: block;
+    pointer-events: none;
 }
 
 .close-btn:hover {

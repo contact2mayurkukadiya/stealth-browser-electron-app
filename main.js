@@ -1889,11 +1889,7 @@ function createTab(context, id, url = "https://www.google.com", isStealth = fals
             <!DOCTYPE html>
             <html style="background: #253035; color: white; font-family: sans-serif; height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0;">
                 <div style="text-align: center; max-width: 500px; padding: 20px;">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 20px;">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                    </svg>
+                    <img src="app://localhost/assets/images/error-page-alert.svg" width="64" height="64" alt="" style="margin-bottom: 20px;" />
                     <h1 style="margin: 0 0 10px 0; font-size: 24px;">${errorMeta.title}</h1>
                     <p style="color: #aaa; margin: 0 0 10px 0;">${errorMeta.details}</p>
                     <p style="color: #9fc6d8; margin: 0 0 20px 0;">${errorMeta.suggestion}</p>

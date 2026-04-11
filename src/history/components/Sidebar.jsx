@@ -1,4 +1,5 @@
 import React from 'react';
+import { historyGoogleLogoSvg } from '../../constants/appAssetUrls';
 
 const CLOCK_ICON = (
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -24,18 +25,11 @@ const EXT_LINK_ICON = (
   </svg>
 );
 
-const GOOGLE_HISTORY_LOGO = (
-  <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
-    <circle cx="24" cy="24" r="24" fill="#4285F4" />
-    <path d="M24 13a11 11 0 1 0 0 22 11 11 0 0 0 0-22zm.5 5v7l5.25 3.15-.75 1.23L23 25V18h1.5z" fill="#fff" />
-  </svg>
-);
-
 export default function Sidebar({ activeItem, onDeleteBrowsingData, onRefresh }) {
   return (
     <aside className="h-sidebar" aria-label="History navigation">
       <div className="h-sidebar-brand">
-        {GOOGLE_HISTORY_LOGO}
+        <img src={historyGoogleLogoSvg} width={20} height={20} alt="" aria-hidden />
         History
       </div>
 

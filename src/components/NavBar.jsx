@@ -5,32 +5,22 @@ import UrlBar from './UrlBar';
 import BookmarkEditPopup from './BookmarkEditPopup';
 import ProfileMenuButton from './ProfileMenuButton';
 import ProfileEditorModal from './ProfileEditorModal';
+import {
+  bookmarkStarFilledSvg,
+  navBackSvg,
+  navForwardSvg,
+  navReloadSvg,
+} from '../constants/appAssetUrls';
 
-const BACK_ICON = (
-  <svg width={25} height={25} viewBox="0 0 640 640">
-    <path fill="white" d="M201.4 297.4C188.9 309.9 188.9 330.2 201.4 342.7L361.4 502.7C373.9 515.2 394.2 515.2 406.7 502.7C419.2 490.2 419.2 469.9 406.7 457.4L269.3 320L406.6 182.6C419.1 170.1 419.1 149.8 406.6 137.3C394.1 124.8 373.8 124.8 361.3 137.3L201.3 297.3z" />
-  </svg>
-);
-const FORWARD_ICON = (
-  <svg width={25} height={25} viewBox="0 0 640 640">
-    <path fill="white" d="M439.1 297.4C451.6 309.9 451.6 330.2 439.1 342.7L279.1 502.7C266.6 515.2 246.3 515.2 233.8 502.7C221.3 490.2 221.3 469.9 233.8 457.4L371.2 320L233.9 182.6C221.4 170.1 221.4 149.8 233.9 137.3C246.4 124.8 266.7 124.8 279.2 137.3L439.2 297.3z" />
-  </svg>
-);
-const RELOAD_ICON = (
-  <svg width={15} height={15} viewBox="0 0 640 640">
-    <path fill="white" d="M500.7 138.7L512 149.4L512 96C512 78.3 526.3 64 544 64C561.7 64 576 78.3 576 96L576 224C576 241.7 561.7 256 544 256L416 256C398.3 256 384 241.7 384 224C384 206.3 398.3 192 416 192L463.9 192L456.3 184.8C456.1 184.6 455.9 184.4 455.7 184.2C380.7 109.2 259.2 109.2 184.2 184.2C109.2 259.2 109.2 380.7 184.2 455.7C259.2 530.7 380.7 530.7 455.7 455.7C463.9 447.5 471.2 438.8 477.6 429.6C487.7 415.1 507.7 411.6 522.2 421.7C536.7 431.8 540.2 451.8 530.1 466.3C521.6 478.5 511.9 490.1 501 501C401 601 238.9 601 139 501C39.1 401 39 239 139 139C238.9 39.1 400.7 39 500.7 138.7z" />
-  </svg>
-);
+const BACK_ICON = <img src={navBackSvg} width={25} height={25} alt="" />;
+const FORWARD_ICON = <img src={navForwardSvg} width={25} height={25} alt="" />;
+const RELOAD_ICON = <img src={navReloadSvg} width={15} height={15} alt="" />;
 const STAR_EMPTY = (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 );
-const STAR_FILLED = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="#FFB430" stroke="#FFB430" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-  </svg>
-);
+const STAR_FILLED = <img src={bookmarkStarFilledSvg} width={18} height={18} alt="" />;
 const MORE_ICON = (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
     <circle cx="12" cy="5" r="1.5" />

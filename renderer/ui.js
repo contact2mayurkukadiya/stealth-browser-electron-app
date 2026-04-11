@@ -32,7 +32,7 @@ function requestSessionSave() {
     }, 700);
 }
 
-const STEALTH_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" width="15" height="15"><path fill="white" d="M320 128C96 128 32 224 32 336C32 448 112 512 208 512L216.4 512C240.6 512 262.8 498.3 273.6 476.6L296.8 430.3C301.2 421.5 310.1 416 320 416C329.9 416 338.8 421.5 343.2 430.3L366.4 476.6C377.2 498.3 399.4 512 423.6 512L432 512C528 512 608 448 608 336C608 224 544 128 320 128zM128 320C128 284.7 156.7 256 192 256C227.3 256 256 284.7 256 320C256 355.3 227.3 384 192 384C156.7 384 128 355.3 128 320zM448 256C483.3 256 512 284.7 512 320C512 355.3 483.3 384 448 384C412.7 384 384 355.3 384 320C384 284.7 412.7 256 448 256z"/></svg>&nbsp;';
+const STEALTH_ICON_SVG = '<img src="app://localhost/assets/images/tab-stealth.svg" width="15" height="15" alt="" style="vertical-align:middle;margin-right:4px"/>&nbsp;';
 
 function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -114,7 +114,7 @@ function createTabUI(id, isStealth = false, initialUrl = null) {
         <div class="icon-container"><img src="${defaultFavicon}" class="tab-icon"></div>
         <div class="tab-title">${titlePrefix}New Tab</div>
         <div class="close-btn">
-        <svg width=20 height=20 viewBox="0 0 640 640"><path fill="white" d="M183.1 137.4C170.6 124.9 150.3 124.9 137.8 137.4C125.3 149.9 125.3 170.2 137.8 182.7L275.2 320L137.9 457.4C125.4 469.9 125.4 490.2 137.9 502.7C150.4 515.2 170.7 515.2 183.2 502.7L320.5 365.3L457.9 502.6C470.4 515.1 490.7 515.1 503.2 502.6C515.7 490.1 515.7 469.8 503.2 457.3L365.8 320L503.1 182.6C515.6 170.1 515.6 149.8 503.1 137.3C490.6 124.8 470.3 124.8 457.8 137.3L320.5 274.7L183.1 137.4z"/></svg>
+        <img src="app://localhost/assets/images/tab-close.svg" width="12" height="12" alt="">
         </div>
     `;
 
