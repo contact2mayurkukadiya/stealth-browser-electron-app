@@ -18,6 +18,7 @@ const net = electron.net || electronMain.net;
 const clipboard = electron.clipboard;
 const webContents = electron.webContents;
 const session = electron.session || electronMain.session;
+const screen = electron.screen;
 const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs');
@@ -561,14 +562,34 @@ if (!app.isPackaged) {
     }
 }
 
-function createWindow({ profileId = null, windowId = null } = {}) {
+/** Usable screen rectangle (excludes dock/taskbar); keeps custom title bar — not OS fullscreen. */
+function getPrimaryWorkAreaBounds() {
+    try {
+        if (!screen || typeof screen.getPrimaryDisplay !== 'function') return null;
+        const wa = screen.getPrimaryDisplay().workArea;
+        if (!wa || wa.width < 320 || wa.height < 240) return null;
+        return { x: wa.x, y: wa.y, width: wa.width, height: wa.height };
+    } catch {
+        return null;
+    }
+}
+
+function createWindow({ profileId = null, windowId = null, fillWorkArea = true } = {}) {
     const resolvedProfileId = profileId || defaultProfileId || `profile-${crypto.randomUUID()}`;
     ensureProfile(resolvedProfileId);
     const partition = `persist:profile-${resolvedProfileId}`;
     registerAppProtocolForSession(session.fromPartition(partition), partition);
     const isMac = process.platform === 'darwin';
+    const workArea = fillWorkArea ? getPrimaryWorkAreaBounds() : null;
     const window = new BrowserWindow({
-        width: 1200, height: 800,
+        ...(workArea
+            ? {
+                  x: workArea.x,
+                  y: workArea.y,
+                  width: workArea.width,
+                  height: workArea.height,
+              }
+            : { width: 1200, height: 800 }),
         // macOS: 'hiddenInset' keeps traffic lights visible inside the window frame.
         // Windows/Linux: 'hidden' removes the default title bar; titleBarOverlay
         // re-adds the native caption buttons (minimize/maximize/close) on the right.
