@@ -25,6 +25,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const encryption = require('./encryption');
 const compatDiagnostics = require('./compatibilityDiagnostics');
+const authPolicy = require('./authPolicy'); // <--- ADD THIS
 
 process.on('uncaughtException', (error) => {
     const message = error?.stack || error?.message || String(error);
@@ -346,23 +347,38 @@ function getProfileAvatarDataUrl(profileId) {
     return `data:${mime};base64,${buf.toString('base64')}`;
 }
 
+app.name = 'Google Chrome'; // Mimics OS execution signature matching processes exactly.
+
+
+function getBrowserLikeUserAgent() {
+    // const chromeVersion = process.versions.chrome || '120.0.0.0';
+    const chromeMajor = process.versions.chrome.split('.')[0] || '120';
+    const reducedVersion = `${chromeMajor}.0.0.0`;
+
+
+    const platform = process.platform;
+    if (platform === 'darwin') {
+        return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
+    }
+    if (platform === 'win32') {
+        return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
+    }
+    return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
+}
+
+
 // Reduce obvious automation fingerprints and align with Chromium browser signals.
 if (app?.commandLine) {
+    app.commandLine.removeSwitch('enable-automation');
+
     app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+    // app.commandLine.appendSwitch('disable-features', 'UserAgentClientHint');
+
+    app.commandLine.appendSwitch('disable-site-isolation-trials');
     app.commandLine.appendSwitch('lang', 'en-US,en');
 }
 
-function getBrowserLikeUserAgent() {
-    const chromeVersion = process.versions.chrome || '120.0.0.0';
-    const platform = process.platform;
-    if (platform === 'darwin') {
-        return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
-    }
-    if (platform === 'win32') {
-        return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
-    }
-    return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
-}
+app.userAgentFallback = getBrowserLikeUserAgent();
 
 function classifyNavigationError(errorCode, errorDescription) {
     const code = Number(errorCode);
@@ -491,14 +507,39 @@ function installSessionNetworkGuards(session) {
     sessionNetworkGuardsInstalled.add(session);
 
     // Keep request headers consistently browser-like across all resources.
-    session.webRequest.onBeforeSendHeaders((details, callback) => {
-        const headers = { ...details.requestHeaders };
-        headers['User-Agent'] = getBrowserLikeUserAgent();
-        headers['Accept-Language'] = 'en-US,en;q=0.9';
-        callback({ requestHeaders: headers });
-    });
+    const chromeVer = process.versions.chrome.split('.')[0];
+    const nativeCHUA = `"Google Chrome";v="${chromeVer}", "Chromium";v="${chromeVer}", "Not_A Brand";v="99"`;
+
+
+    // session.webRequest.onBeforeSendHeaders((details, callback) => {
+    //     const { requestHeaders } = details;
+    //     let finalHeaders = {};
+
+    //     // Loop seamlessly to keep structural header parity for HTTP2
+    //     for (const [key, value] of Object.entries(requestHeaders)) {
+    //         const loweredKey = key.toLowerCase();
+
+    //         // Rewrite the internal network user-agent to the unified version.
+    //         if (loweredKey === 'user-agent') {
+    //             finalHeaders[key] = getBrowserLikeUserAgent();
+    //         }
+    //         // Aggressively map 'Electron' completely out of Client Hints
+    //         else if (loweredKey === 'sec-ch-ua') {
+    //             finalHeaders[key] = nativeCHUA;
+    //         }
+    //         else if (loweredKey === 'sec-ch-ua-mobile') {
+    //             finalHeaders[key] = '?0';
+    //         }
+    //         else {
+    //             finalHeaders[key] = value;
+    //         }
+    //     }
+
+    //     callback({ requestHeaders: finalHeaders });
+    // });
 
     // Network-layer redirect/loop guard (more robust than will-redirect alone).
+
     session.webRequest.onBeforeRequest((details, callback) => {
         if (details.resourceType !== 'mainFrame') {
             callback({});
@@ -578,17 +619,20 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
     const resolvedProfileId = profileId || defaultProfileId || `profile-${crypto.randomUUID()}`;
     ensureProfile(resolvedProfileId);
     const partition = `persist:profile-${resolvedProfileId}`;
-    registerAppProtocolForSession(session.fromPartition(partition), partition);
+    const mappedSession = session.fromPartition(partition);
+    // mappedSession.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
+    registerAppProtocolForSession(mappedSession, partition);
+    authPolicy.applyGoogleAuthPolicy(mappedSession); // Force auth checks for the profile session
     const isMac = process.platform === 'darwin';
     const workArea = fillWorkArea ? getPrimaryWorkAreaBounds() : null;
     const window = new BrowserWindow({
         ...(workArea
             ? {
-                  x: workArea.x,
-                  y: workArea.y,
-                  width: workArea.width,
-                  height: workArea.height,
-              }
+                x: workArea.x,
+                y: workArea.y,
+                width: workArea.width,
+                height: workArea.height,
+            }
             : { width: 1200, height: 800 }),
         // macOS: 'hiddenInset' keeps traffic lights visible inside the window frame.
         // Windows/Linux: 'hidden' removes the default title bar; titleBarOverlay
@@ -1565,7 +1609,7 @@ function installDevToolsTypographyOnOpen(webContents) {
     webContents.on('devtools-opened', () => {
         const devTools = webContents.devToolsWebContents;
         if (!devTools || devTools.isDestroyed()) return;
-        devTools.insertCSS(buildDevToolsTypographyCss(), { cssOrigin: 'user' }).catch(() => {});
+        devTools.insertCSS(buildDevToolsTypographyCss(), { cssOrigin: 'user' }).catch(() => { });
     });
 }
 
@@ -1596,7 +1640,7 @@ function createTab(context, id, url = "https://www.google.com", isStealth = fals
 
     // Make tab requests look like a regular Chrome browser, not Electron.
     view.webContents.setUserAgent(getBrowserLikeUserAgent());
-    view.webContents.session.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
+    // view.webContents.session.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
     installSessionNetworkGuards(view.webContents.session);
     installDevToolsTypographyOnOpen(view.webContents);
 
@@ -1800,16 +1844,16 @@ function createTab(context, id, url = "https://www.google.com", isStealth = fals
 
     // A subset of anti-automation checks look at navigator.webdriver.
     // This mirrors mainstream browser behavior for regular tabs.
-    view.webContents.on('dom-ready', () => {
-        view.webContents.executeJavaScript(`
-            try {
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined,
-                    configurable: true
-                });
-            } catch (_) {}
-        `).catch(() => { });
-    });
+    // view.webContents.on('dom-ready', () => {
+    //     view.webContents.executeJavaScript(`
+    //         try {
+    //             Object.defineProperty(navigator, 'webdriver', {
+    //                 get: () => undefined,
+    //                 configurable: true
+    //             });
+    //         } catch (_) {}
+    //     `).catch(() => { });
+    // });
 
     const getDisplayUrl = toDisplayUrl;
 
@@ -2147,7 +2191,7 @@ ipcMain.handle('session:save', (e, data) => {
                         doc.windowsById = {};
                     }
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
         doc.windowsById[context.windowId] = {
             profileId: context.profileId,
@@ -2619,7 +2663,7 @@ ipcMain.on('tab:set-audio-muted', (e, { id, muted }) => {
     if (!context.tabs[id] || context.tabs[id].webContents.isDestroyed()) return;
     try {
         context.tabs[id].webContents.setAudioMuted(muted);
-    } catch (_) {}
+    } catch (_) { }
 });
 
 ipcMain.on('close-tab', (e, { id }) => {
@@ -2732,6 +2776,8 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(() => {
     registerAppProtocolForSession(session.defaultSession, 'default');
+    authPolicy.applyGoogleAuthPolicy(session.defaultSession); // Force auth checks for the default session
+
     const existingProfiles = loadProfiles();
     if (existingProfiles.length > 0) {
         for (const profile of existingProfiles) {
