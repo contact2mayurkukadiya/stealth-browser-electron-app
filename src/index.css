@@ -990,7 +990,7 @@ body.tab-snapshot-active::before {
 
 /* ── Close button ─────────────────────────────────────────────────────────── */
 .close-btn {
-    opacity: 1;
+    opacity: 0;
     font-size: 12px;
     width: 20px;
     height: 20px;
@@ -1001,7 +1001,11 @@ body.tab-snapshot-active::before {
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    transition: background-color 0.15s ease;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.tab:hover .close-btn {
+    opacity: 1;
 }
 
 .close-btn .tab-close-icon {
