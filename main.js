@@ -1641,6 +1641,8 @@ function createTab(context, id, url = "https://www.google.com", isStealth = fals
     // Make tab requests look like a regular Chrome browser, not Electron.
     view.webContents.setUserAgent(getBrowserLikeUserAgent());
     // view.webContents.session.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
+    authPolicy.setupTabForGoogleAuth(view.webContents, getBrowserLikeUserAgent);
+
     installSessionNetworkGuards(view.webContents.session);
     installDevToolsTypographyOnOpen(view.webContents);
 
