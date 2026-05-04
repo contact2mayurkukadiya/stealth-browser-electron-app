@@ -269,12 +269,24 @@ body.tab-snapshot-active::before {
 
 .tab-title {
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     white-space: nowrap;
-    /* Instead of ellipsis, use a fade-out mask like modern browsers */
+    /* Default: fade near tab edge when close button is hidden. */
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
+    pointer-events: none;
+}
+
+.tab:hover .tab-title {
+    /* On hover: reserve fade space starting where close icon area begins. */
     -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
-    pointer-events: none;
+}
+
+.tab.active .tab-title {
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
 }
 
 /* ── Nav bar ──────────────────────────────────────────────────────────────── */
@@ -998,20 +1010,30 @@ body.tab-snapshot-active::before {
 .close-btn {
     opacity: 0;
     font-size: 12px;
-    width: 20px;
+    width: 0;
     height: 20px;
-    padding: 4px;
+    padding: 0;
     box-sizing: border-box;
     line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    transition: opacity 0.15s ease, background-color 0.15s ease;
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: width 0.15s ease, padding 0.15s ease, opacity 0.15s ease, background-color 0.15s ease;
 }
 
 .tab:hover .close-btn {
     opacity: 1;
+    width: 20px;
+    padding: 4px;
+}
+
+.tab.active .close-btn {
+    opacity: 1;
+    width: 20px;
+    padding: 4px;
 }
 
 .close-btn .tab-close-icon {
@@ -1055,6 +1077,8 @@ body.tab-snapshot-active::before {
 
 .tab.tab--pinned .close-btn {
     opacity: 1;
+    width: 20px;
+    padding: 4px;
 }
 
 /* ── Search Tabs modal ───────────────────────────────────────────────────── */
