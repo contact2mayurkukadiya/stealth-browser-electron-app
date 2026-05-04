@@ -99,6 +99,12 @@ body.tab-snapshot-active::before {
     align-items: center;
 }
 
+/* Keep a draggable strip at the right edge of the title bar. */
+.tab-bar #add-tab {
+    margin-right: 60px;
+    flex-shrink: 0;
+}
+
 .tab-active-slider {
     position: absolute;
     left: var(--active-left);
