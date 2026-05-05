@@ -102,10 +102,10 @@ export function useTabDrag({
         const draggedWidthWithGap = originalRects[draggingIndex].width + 5;
         const activeSliderLeft = tabEl.offsetLeft + dragDx;
         const activeSliderWidth = tabEl.offsetWidth;
-        const barEl = tabEl.closest('.tab-bar');
-        if (barEl && tabEl.classList.contains('active')) {
-          barEl.style.setProperty('--active-left', `${activeSliderLeft}px`);
-          barEl.style.setProperty('--active-width', `${activeSliderWidth}px`);
+        const trackEl = tabEl.closest('.tab-track');
+        if (trackEl && tabEl.classList.contains('active')) {
+          trackEl.style.setProperty('--active-left', `${activeSliderLeft}px`);
+          trackEl.style.setProperty('--active-width', `${activeSliderWidth}px`);
         }
         originalTabs.forEach((t, i) => {
           if (i === draggingIndex) {
@@ -136,10 +136,10 @@ export function useTabDrag({
             });
           };
           const syncSliderToActiveTabSlot = () => {
-            const barEl = tabEl.closest('.tab-bar');
-            if (!barEl || !tabEl.classList.contains('active')) return;
-            barEl.style.setProperty('--active-left', `${tabEl.offsetLeft}px`);
-            barEl.style.setProperty('--active-width', `${tabEl.offsetWidth}px`);
+            const trackEl = tabEl.closest('.tab-track');
+            if (!trackEl || !tabEl.classList.contains('active')) return;
+            trackEl.style.setProperty('--active-left', `${tabEl.offsetLeft}px`);
+            trackEl.style.setProperty('--active-width', `${tabEl.offsetWidth}px`);
           };
           const restoreTransitionsLater = () => {
             window.requestAnimationFrame(() => {

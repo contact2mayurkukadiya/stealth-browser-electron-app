@@ -88,18 +88,39 @@ body.tab-snapshot-active::before {
 
 /* ── Tab bar ─────────────────────────────────────────────────────────────── */
 .tab-bar {
-    --active-left: 0px;
-    --active-width: 0px;
     display: flex;
     position: relative;
-    padding: 5px 10px 5px 10px;
+    padding: 5px 0px 0px 0px;
     gap: 5px;
     height: 45px;
-    /* align-items: flex-end; */
     align-items: center;
+    border: 1px solid red;
 }
 
-/* Keep a draggable strip at the right edge of the title bar. */
+.tab-container {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
+    /* border: 1px solid blue; */
+    padding: 0px 10px 3px;
+    /* border: 1px solid green; */
+}
+
+.tab-track {
+    --active-left: 0px;
+    --active-width: 0px;
+    position: relative;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    gap: 5px;
+    /* border: 1px solid blue; */
+}
+
+/* Reserve a 60px draggable strip at the right edge of the title bar. */
 .tab-bar #add-tab {
     margin-right: 60px;
     flex-shrink: 0;
@@ -108,9 +129,9 @@ body.tab-snapshot-active::before {
 .tab-active-slider {
     position: absolute;
     left: var(--active-left);
-    top: 5px;
+    top: 4px;
     width: var(--active-width);
-    height: calc(100% - 5px);
+    height: calc(100% - 2px);
     background: #394D55;
     border-radius: 10px 10px 0 0;
     pointer-events: none;
@@ -189,11 +210,10 @@ body.tab-snapshot-active::before {
 
 .tab {
     position: relative;
-    /* background: #253035; */
-    padding: 8px 12px;
+    padding: 5px 12px;
     border-radius: 10px 10px 0 0;
     flex: 1 1 200px;
-    min-width: 50px;
+    min-width: 20px;
     max-width: 240px;
     transition: all 0.3s ease;
     user-select: none;

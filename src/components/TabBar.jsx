@@ -14,7 +14,7 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
   const currentTabId = useSelector(s => s.browser.currentTabId);
 
   const [tabContextMenu, setTabContextMenu] = useState(null);
-  const tabBarRef = useRef(null);
+  const tabTrackRef = useRef(null);
 
   const hoverTimeoutRef = useRef(null);
 
@@ -107,25 +107,25 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
   }, [tabContextMenu, getTabContextMenuItems]);
 
   useLayoutEffect(() => {
-    const tabBarEl = tabBarRef.current;
-    if (!tabBarEl) return undefined;
+    const tabTrackEl = tabTrackRef.current;
+    if (!tabTrackEl) return undefined;
 
     const syncActiveSlider = () => {
-      const activeTabEl = tabBarEl.querySelector('.tab.active');
+      const activeTabEl = tabTrackEl.querySelector('.tab.active');
       if (!activeTabEl) {
-        tabBarEl.style.setProperty('--active-width', '0px');
+        tabTrackEl.style.setProperty('--active-width', '0px');
         return;
       }
 
-      tabBarEl.style.setProperty('--active-left', `${activeTabEl.offsetLeft}px`);
-      tabBarEl.style.setProperty('--active-width', `${activeTabEl.offsetWidth}px`);
+      tabTrackEl.style.setProperty('--active-left', `${activeTabEl.offsetLeft}px`);
+      tabTrackEl.style.setProperty('--active-width', `${activeTabEl.offsetWidth}px`);
     };
 
     syncActiveSlider();
 
     const resizeObserver = new ResizeObserver(syncActiveSlider);
-    resizeObserver.observe(tabBarEl);
-    tabBarEl.querySelectorAll('.tab').forEach((tabEl) => resizeObserver.observe(tabEl));
+    resizeObserver.observe(tabTrackEl);
+    tabTrackEl.querySelectorAll('.tab').forEach((tabEl) => resizeObserver.observe(tabEl));
 
     window.addEventListener('resize', syncActiveSlider);
     // Tab drag updates can finish before React paints; one extra frame keeps alignment stable.
@@ -140,26 +140,29 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
 
   return (
     <div
-      ref={tabBarRef}
       className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}${isActiveTabStealth ? ' tab-bar--active-stealth' : ''}`}
     >
-      <div className="tab-active-slider" aria-hidden />
-      {tabOrder.map(id => (
-        <Tab
-          key={id}
-          id={id}
-          tab={tabs[id]}
-          isActive={id === currentTabId}
-          pinnedTabCount={pinnedTabCount}
-          onClose={() => onCloseTab(id)}
-          onSwitch={onSwitchTab}
-          onDragEnd={onDragEnd}
-          onHoverEnter={handleTabHoverEnter}
-          onHoverLeave={hideTooltip}
-          onHideTooltip={hideTooltip}
-          onContextMenu={getTabContextMenuItems ? handleTabContextMenuOpen : undefined}
-        />
-      ))}
+      <div className="tab-container">
+        <div ref={tabTrackRef} className="tab-track">
+          <div className="tab-active-slider" aria-hidden />
+          {tabOrder.map(id => (
+            <Tab
+              key={id}
+              id={id}
+              tab={tabs[id]}
+              isActive={id === currentTabId}
+              pinnedTabCount={pinnedTabCount}
+              onClose={() => onCloseTab(id)}
+              onSwitch={onSwitchTab}
+              onDragEnd={onDragEnd}
+              onHoverEnter={handleTabHoverEnter}
+              onHoverLeave={hideTooltip}
+              onHideTooltip={hideTooltip}
+              onContextMenu={getTabContextMenuItems ? handleTabContextMenuOpen : undefined}
+            />
+          ))}
+        </div>
+      </div>
       <button id="add-tab" className="btn" onClick={() => onNewTab(false)}>
         {ADD_ICON}
       </button>
