@@ -594,12 +594,42 @@ function installSessionNetworkGuards(session) {
 
 if (!app.isPackaged) {
     try {
-        require("electron-reloader")(module, {
-            debug: true,
-            watchRenderer: true
+        require('electron-reloader')(module, {
+            debug: false,
+            // Only main-process module graph — cwd-wide watch + ignore was unreliable for renderer/dist (e.g. CSS).
+            watchRenderer: false,
         });
     } catch (err) {
-        console.error("Hot reload error:", err);
+        console.error('Hot reload error:', err);
+    }
+    try {
+        const chokidar = require('chokidar');
+
+        let preloadRelaunchScheduled = false;
+        chokidar
+            .watch(path.join(__dirname, 'preload.js'), { ignoreInitial: true })
+            .on('change', () => {
+                if (preloadRelaunchScheduled) return;
+                preloadRelaunchScheduled = true;
+                app.relaunch();
+                app.exit(0);
+            });
+
+        // One reload after all four Vite steps finish (see scripts/renderer-build-all.cjs).
+        const rendererReloadStamp = path.join(__dirname, '.stealth-renderer-reload');
+        if (!fs.existsSync(rendererReloadStamp)) {
+            fs.writeFileSync(rendererReloadStamp, '');
+        }
+        chokidar
+            .watch(rendererReloadStamp, { ignoreInitial: true })
+            .on('change', () => {
+                for (const win of BrowserWindow.getAllWindows()) {
+                    if (win.isDestroyed()) continue;
+                    win.webContents.reloadIgnoringCache();
+                }
+            });
+    } catch (err) {
+        console.error('Dev file watch error:', err);
     }
 }
 
