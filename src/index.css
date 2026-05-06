@@ -1139,6 +1139,9 @@ body.tab-snapshot-active::before {
     gap: 0;
     padding-left: 0;
     padding-right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .tab--mode-extreme-overflow .tab-title {
@@ -1147,19 +1150,12 @@ body.tab-snapshot-active::before {
 
 .tab--mode-extreme-overflow .icon-container {
     display: flex;
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
     width: 10px;
     height: 16px;
-    flex-basis: 10px;
 }
 
 .tab--mode-extreme-overflow .close-btn {
     display: none;
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
     opacity: 0;
     width: 0;
     height: 16px;
