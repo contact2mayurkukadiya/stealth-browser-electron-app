@@ -229,6 +229,17 @@ body.tab-snapshot-active::before {
     z-index: 2;
 }
 
+.icon-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    min-width: 0;
+    overflow: hidden;
+}
+
 .tab-bar.tab-bar--dragging .tab {
     transition: none !important;
 }
@@ -298,17 +309,6 @@ body.tab-snapshot-active::before {
     -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
     pointer-events: none;
-}
-
-.tab:hover .tab-title {
-    /* On hover: reserve fade space starting where close icon area begins. */
-    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
-    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
-}
-
-.tab.active .tab-title {
-    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
-    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
 }
 
 /* ── Nav bar ──────────────────────────────────────────────────────────────── */
@@ -1046,18 +1046,6 @@ body.tab-snapshot-active::before {
     transition: width 0.15s ease, padding 0.15s ease, opacity 0.15s ease, background-color 0.15s ease;
 }
 
-.tab:hover .close-btn {
-    opacity: 1;
-    width: 20px;
-    padding: 4px;
-}
-
-.tab.active .close-btn {
-    opacity: 1;
-    width: 20px;
-    padding: 4px;
-}
-
 .close-btn .tab-close-icon {
     display: block;
     width: 12px;
@@ -1071,6 +1059,137 @@ body.tab-snapshot-active::before {
 
 .close-btn:hover {
     background: rgba(255, 255, 255, 0.1);
+}
+
+.tab--mode-full .tab-title {
+    display: block;
+}
+
+.tab--mode-full .close-btn {
+    opacity: 0;
+    width: 0;
+    padding: 0;
+}
+
+.tab--mode-full:hover .close-btn {
+    opacity: 1;
+    width: 20px;
+    padding: 4px;
+}
+
+.tab--mode-full:hover .tab-title {
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+}
+
+.tab--mode-icon-only {
+    justify-content: center;
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.tab--mode-icon-only .tab-title {
+    display: none;
+}
+
+.tab--mode-icon-only .icon-container,
+.tab--mode-icon-only .close-btn {
+    margin: 0 auto;
+}
+
+.tab--mode-icon-only .icon-container {
+    opacity: 1;
+    display: flex;
+    width: 16px;
+    height: 16px;
+    flex-basis: 16px;
+}
+
+.tab--mode-icon-only .close-btn {
+    display: none;
+    opacity: 0;
+    width: 0;
+    height: 16px;
+    padding: 0;
+}
+
+.tab--mode-icon-only:hover .icon-container {
+    display: none;
+    opacity: 0;
+    width: 0;
+    flex-basis: 0;
+}
+
+.tab--mode-icon-only:hover .close-btn {
+    display: flex;
+    opacity: 1;
+    width: 16px;
+    height: 16px;
+    padding: 2px;
+}
+
+.tab--mode-icon-only .close-btn .tab-close-icon {
+    width: 10px;
+    height: 10px;
+}
+
+.tab--mode-extreme-overflow {
+    justify-content: center;
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.tab--mode-extreme-overflow .tab-title {
+    display: none;
+}
+
+.tab--mode-extreme-overflow .icon-container {
+    display: flex;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 10px;
+    height: 16px;
+    flex-basis: 10px;
+}
+
+.tab--mode-extreme-overflow .close-btn {
+    display: none;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    width: 0;
+    height: 16px;
+    padding: 0;
+}
+
+.tab--mode-extreme-overflow:hover .close-btn {
+    opacity: 0;
+    width: 0;
+    padding: 0;
+}
+
+.tab--mode-extreme-overflow.active .icon-container {
+    display: none;
+    opacity: 0;
+    width: 0;
+    flex-basis: 0;
+}
+
+.tab--mode-extreme-overflow.active .close-btn {
+    display: flex;
+    opacity: 1;
+    width: 16px;
+    height: 16px;
+    padding: 2px;
+}
+
+.tab--mode-extreme-overflow.active .close-btn .tab-close-icon {
+    width: 10px;
+    height: 10px;
 }
 
 /* ── Tab drag-and-drop ─────────────────────────────────────────────────────── */
@@ -1088,19 +1207,9 @@ body.tab-snapshot-active::before {
     flex: 0 0 auto;
     min-width: 36px;
     max-width: 52px;
-    padding-left: 10px;
-    padding-right: 8px;
+    padding-left: 6px;
+    padding-right: 6px;
     cursor: default;
-}
-
-.tab.tab--pinned .tab-title {
-    display: none;
-}
-
-.tab.tab--pinned .close-btn {
-    opacity: 1;
-    width: 20px;
-    padding: 4px;
 }
 
 /* ── Search Tabs modal ───────────────────────────────────────────────────── */

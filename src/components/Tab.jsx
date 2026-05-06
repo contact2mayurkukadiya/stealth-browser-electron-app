@@ -9,6 +9,7 @@ export default function Tab({
   onClose, onSwitch, onDragEnd,
   onHoverEnter, onHoverLeave, onHideTooltip,
   onContextMenu,
+  displayMode = 'full',
   pinnedTabCount = 0,
 }) {
   const { url, title, favicon, isNewTab, isStealth, isLoading, isPinned } = tab || {};
@@ -54,13 +55,20 @@ export default function Tab({
     if (onContextMenu) onContextMenu(e, id);
   };
 
-  const className = ['tab', isActive ? 'active' : '', isStealth ? 'stealth-tab' : '', isPinned ? 'tab--pinned' : ''].filter(Boolean).join(' ');
+  const className = [
+    'tab',
+    isActive ? 'active' : '',
+    isStealth ? 'stealth-tab' : '',
+    isPinned ? 'tab--pinned' : '',
+    `tab--mode-${displayMode}`,
+  ].filter(Boolean).join(' ');
 
   return (
     <div
       id={id}
       ref={tabRef}
       className={className}
+      data-tab-id={id}
       onMouseEnter={handleHoverEnter}
       onMouseLeave={onHoverLeave}
       onMouseDown={handleMouseDown}
