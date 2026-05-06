@@ -94,12 +94,13 @@ body.tab-snapshot-active::before {
     gap: 5px;
     height: 45px;
     align-items: center;
-    border: 1px solid red;
+    /* border: 1px solid red; */
 }
 
 .tab-container {
     flex: 1 1 auto;
     min-width: 0;
+    max-width: calc(100% - 100px);
     height: 100%;
     overflow: hidden;
     /* border: 1px solid blue; */
@@ -120,9 +121,10 @@ body.tab-snapshot-active::before {
     /* border: 1px solid blue; */
 }
 
-/* Reserve a 60px draggable strip at the right edge of the title bar. */
+/* Add-tab sits immediately right of .tab-container. The 60px slack on the
+   right of .tab-container (from its max-width) hosts this button plus the
+   remaining OS drag region. */
 .tab-bar #add-tab {
-    margin-right: 60px;
     flex-shrink: 0;
 }
 
