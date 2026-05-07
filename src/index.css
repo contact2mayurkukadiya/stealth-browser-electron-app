@@ -333,7 +333,7 @@ body.tab-snapshot-active::before {
     background: #2F3C42;
     border-radius: 20px;
     height: 34px;
-    overflow: hidden;
+    overflow: visible;
     box-sizing: border-box;
     transition: border 0.2s;
 }

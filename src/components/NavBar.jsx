@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useTabOverlay } from '../context/TabOverlayContext';
-import UrlBar from './UrlBar';
+import OmniboxInput from './omnibox/OmniboxInput';
 import BookmarkEditPopup from './BookmarkEditPopup';
 import ProfileMenuButton from './ProfileMenuButton';
 import ProfileEditorModal from './ProfileEditorModal';
@@ -176,7 +176,7 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
       <button id="forward-btn" className="btn" onClick={handleForward}>{FORWARD_ICON}</button>
       <button id="reload-btn" className="btn" onClick={handleReload}>{RELOAD_ICON}</button>
 
-      <UrlBar currentTabId={currentTabId} tabsData={tabs} />
+      <OmniboxInput currentTabId={currentTabId} tabsData={tabs} />
 
       <button
         id="bookmark-btn"
