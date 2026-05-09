@@ -4,7 +4,9 @@ import { setBookmarks } from '../store/bookmarksSlice';
 import BookmarkItem from './BookmarkItem';
 import { bookmarkAddFolderSvg } from '../constants/appAssetUrls';
 
-const ADD_FOLDER_ICON = <img src={bookmarkAddFolderSvg} width={16} height={16} alt="" />;
+const ADD_FOLDER_ICON = (
+  <img className="chrome-toolbar-icon-img" src={bookmarkAddFolderSvg} width={16} height={16} alt="" />
+);
 
 export default function BookmarkBar({ currentTabId }) {
   const dispatch = useDispatch();

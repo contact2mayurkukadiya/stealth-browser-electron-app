@@ -93,7 +93,7 @@ export default function Tab({
 
       {/* Close button */}
       <div className="close-btn" onClick={handleClose}>
-        <img src={tabCloseSvg} className="tab-close-icon" width={12} height={12} alt="" />
+        <img src={tabCloseSvg} className="tab-close-icon chrome-toolbar-icon-img" width={12} height={12} alt="" />
       </div>
     </div>
   );

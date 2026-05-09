@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import NtpSearchBox from './NtpSearchBox';
 import { logoPurpleDarkSvg, logoPurpleLightSvg } from '../constants/appAssetUrls';
+import { useChromeTheme } from '../hooks/useChromeTheme';
 import './NewTabApp.css';
 
 // ── Icons (Material-like, inlined for CSP / offline) ────────────────────────
@@ -189,6 +190,7 @@ function useTopSites() {
 // ── NewTabApp ──────────────────────────────────────────────────────────────
 
 export default function NewTabApp() {
+  useChromeTheme();
   const topSites = useTopSites();
 
   return (

@@ -15,7 +15,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onTabSwitched: (callback) => ipcRenderer.on('tab-switched', (event, data) => callback(data)),
     onOmniboxFocus: (callback) => ipcRenderer.on('omnibox:focus', (event, data) => callback(data)),
     onShortcutNewTab: (callback) => ipcRenderer.on('shortcut-new-tab', () => callback()),
-    onShortcutNewPrivateTab: (callback) => ipcRenderer.on('shortcut-new-private-tab', () => callback()),
     onShortcutHistory: (callback) => ipcRenderer.on('shortcut-history', () => callback()),
     onShortcutSettings: (callback) => ipcRenderer.on('shortcut-settings', () => callback()),
     onShortcutCloseTab: (callback) => ipcRenderer.on('shortcut-close-tab', () => callback()),
@@ -33,6 +32,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     runMenuCommand: (commandId) => ipcRenderer.invoke('app:run-menu-command', commandId),
     createWindow: (profileId) => ipcRenderer.invoke('window:create', { profileId }),
+    createStealthWindow: () => ipcRenderer.invoke('window:create-stealth'),
     windowGetBootstrap: () => ipcRenderer.invoke('window:get-bootstrap'),
 
     tabSetAudioMuted: (id, muted) => ipcRenderer.send('tab:set-audio-muted', { id, muted }),
@@ -90,6 +90,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     settingsGet: () => ipcRenderer.invoke('settings:get'),
     settingsSave: (data) => ipcRenderer.invoke('settings:save', data),
     appRelaunch: () => ipcRenderer.invoke('app:relaunch'),
+
+    /** Subscribe to accent/theme updates broadcast from main (all windows). */
+    onThemeApply: (callback) => {
+        const handler = (_event, payload) => callback(payload);
+        ipcRenderer.on('theme:apply', handler);
+        return () => ipcRenderer.removeListener('theme:apply', handler);
+    },
 
     compatDiagGetReport: (payload) => ipcRenderer.invoke('compatDiag:getReport', payload),
     compatDiagClear: (payload) => ipcRenderer.invoke('compatDiag:clear', payload),

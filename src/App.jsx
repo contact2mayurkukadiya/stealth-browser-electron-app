@@ -10,6 +10,7 @@ import {
 } from './store/browserSlice';
 import { setBookmarks } from './store/bookmarksSlice';
 import { useElectronIPC } from './hooks/useElectronIPC';
+import { useChromeTheme } from './hooks/useChromeTheme';
 import TabBar from './components/TabBar';
 import NavBar from './components/NavBar';
 import BookmarkBar from './components/BookmarkBar';
@@ -28,11 +29,14 @@ function hostnameFromUrl(url) {
 }
 
 function AppShell() {
+  useChromeTheme();
   const dispatch = useDispatch();
   const tabs = useSelector(s => s.browser.tabs);
   const tabOrder = useSelector(s => s.browser.tabOrder);
   const currentTabId = useSelector(s => s.browser.currentTabId);
-  const isStealthActive = !!tabs[currentTabId]?.isStealth;
+  /** True for dedicated stealth (incognito) windows — all tabs are private; chrome is fixed dark InvSurf. */
+  const stealthWindowRef = useRef(!!(typeof window !== 'undefined' && window.__INVISURF_STEALTH_WINDOW__));
+  const isStealthShell = stealthWindowRef.current;
 
   const [searchTabsOpen, setSearchTabsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -106,16 +110,18 @@ function AppShell() {
     window.electronAPI.switchTab(id);
   }, [dispatch]);
 
-  const createTab = useCallback((isStealth = false) => {
+  const createTab = useCallback(() => {
+    const st = stealthWindowRef.current;
     const id = 'tab-' + Date.now();
-    dispatch(addTab({ id, isStealth, initialUrl: null }));
-    window.electronAPI.newTab(id, isStealth, null);
+    dispatch(addTab({ id, isStealth: st, initialUrl: null }));
+    window.electronAPI.newTab(id, st, null);
     window.electronAPI.switchTab(id);
   }, [dispatch]);
 
   const createTabWithUrl = useCallback((id, isStealth, initialUrl) => {
-    dispatch(addTab({ id, isStealth, initialUrl }));
-    window.electronAPI.newTab(id, isStealth, initialUrl);
+    const st = stealthWindowRef.current || isStealth;
+    dispatch(addTab({ id, isStealth: st, initialUrl }));
+    window.electronAPI.newTab(id, st, initialUrl);
     window.electronAPI.switchTab(id);
   }, [dispatch]);
 
@@ -138,7 +144,7 @@ function AppShell() {
           window.electronAPI.switchTab(nextId);
         }, 0);
       } else {
-        setTimeout(() => createTab(false), 0);
+        setTimeout(() => createTab(), 0);
       }
     }
   }, [dispatch, createTab]);
@@ -160,9 +166,10 @@ function AppShell() {
   const newTabToRight = useCallback(() => {
     const { currentTabId } = stateRef.current;
     if (!currentTabId) return;
+    const st = stealthWindowRef.current;
     const id = `tab-${Date.now()}`;
-    dispatch(insertTabAfter({ afterId: currentTabId, id, isStealth: false, initialUrl: null }));
-    window.electronAPI.newTab(id, false, null);
+    dispatch(insertTabAfter({ afterId: currentTabId, id, isStealth: st, initialUrl: null }));
+    window.electronAPI.newTab(id, st, null);
     window.electronAPI.switchTab(id);
   }, [dispatch]);
 
@@ -218,9 +225,10 @@ function AppShell() {
 
   const newTabToTheRightOf = useCallback((afterId) => {
     if (!afterId) return;
+    const st = stealthWindowRef.current;
     const id = `tab-${Date.now()}`;
-    dispatch(insertTabAfter({ afterId, id, isStealth: false, initialUrl: null }));
-    window.electronAPI.newTab(id, false, null);
+    dispatch(insertTabAfter({ afterId, id, isStealth: st, initialUrl: null }));
+    window.electronAPI.newTab(id, st, null);
     window.electronAPI.switchTab(id);
   }, [dispatch]);
 
@@ -288,7 +296,7 @@ function AppShell() {
       if (fallbackTabId) {
         dispatch(setCurrentTab(fallbackTabId));
       } else {
-        setTimeout(() => createTab(false), 0);
+        setTimeout(() => createTab(), 0);
       }
     }
   }, [dispatch, createTab]);
@@ -357,9 +365,10 @@ function AppShell() {
       window.electronAPI.switchTab(existingId);
       return;
     }
+    const st = stealthWindowRef.current;
     const id = 'tab-' + Date.now();
-    dispatch(addTab({ id, isStealth: false, initialUrl: null }));
-    window.electronAPI.newTab(id, false, null);
+    dispatch(addTab({ id, isStealth: st, initialUrl: null }));
+    window.electronAPI.newTab(id, st, null);
     window.electronAPI.switchTab(id);
     setTimeout(() => window.electronAPI.navigate(id, navigateTo), 50);
   }, [dispatch]);
@@ -394,6 +403,7 @@ function AppShell() {
           setSearchTabsOpen(true);
         },
         runMenuCommand: (id) => window.electronAPI.runMenuCommand(id),
+        createStealthWindow: () => window.electronAPI.createStealthWindow?.(),
       }),
     [
       createTab,
@@ -472,6 +482,11 @@ function AppShell() {
   // ── Initialise: load bookmarks then restore session ──────────────────────
   useEffect(() => {
     async function init() {
+      const bootstrap = typeof window.__APP_BOOTSTRAP !== 'undefined' ? window.__APP_BOOTSTRAP : null;
+      if (bootstrap?.stealthWindow) {
+        stealthWindowRef.current = true;
+      }
+
       // 1. Load bookmarks and settings in parallel
       const [bkData, settingsData] = await Promise.all([
         window.electronAPI.bookmarksGet(),
@@ -480,8 +495,13 @@ function AppShell() {
       dispatch(setBookmarks(bkData));
       if (settingsData?.searchEngine) setSearchEngine(settingsData.searchEngine);
 
-      // 1.5 Bootstrap payload for windows created from "Move Tab to New Window".
-      const bootstrap = await window.electronAPI.windowGetBootstrap?.();
+      // 1.5 Dedicated stealth window: one fresh private tab (session not restored).
+      if (bootstrap?.stealthWindow) {
+        createTab();
+        return;
+      }
+
+      // 1.6 Bootstrap payload for windows created from "Move Tab to New Window".
       if (bootstrap?.movedTab?.url) {
         const movedTabId = `tab-${Date.now()}`;
         createTabWithUrl(movedTabId, !!bootstrap.movedTab.isStealth, bootstrap.movedTab.url);
@@ -519,14 +539,14 @@ function AppShell() {
           window.electronAPI.switchTab(activeId);
         }, 0);
       } else {
-        createTab(false);
+        createTab();
       }
     }
     init();
   }, [dispatch, createTab, createTabWithUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className={`header${isStealthActive ? ' header--stealth-active' : ''}`}>
+    <div className={`header${isStealthShell ? ' header--stealth-window' : ''}`}>
       <CommandPaletteModal
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}

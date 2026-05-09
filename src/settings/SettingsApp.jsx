@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import './SettingsApp.css';
+import { getAccentPresetsForUi, normalizeAccentHex } from '../theme/index.js';
+import { useChromeTheme } from '../hooks/useChromeTheme';
 
 const STARTUP_OPTIONS = [
   {
@@ -42,22 +44,10 @@ const SEARCH_ENGINE_OPTIONS = [
   },
 ];
 
-const COLOR_THEME_OPTIONS = [
-  {
-    value: 'automatic',
-    label: 'Automatic',
-    description: 'Match light or dark appearance with your operating system.',
-  },
-  {
-    value: 'dark',
-    label: 'Dark',
-    description: 'Always use dark appearance for browser windows.',
-  },
-  {
-    value: 'light',
-    label: 'Light',
-    description: 'Always use light appearance for browser windows.',
-  },
+const APPEARANCE_MODE_SEGMENTS = [
+  { value: 'light', label: 'Light', title: 'Always use light appearance' },
+  { value: 'dark', label: 'Dark', title: 'Always use dark appearance' },
+  { value: 'automatic', label: 'Device', title: 'Match your system light or dark mode' },
 ];
 
 function Toggle({ checked, onChange }) {
@@ -93,6 +83,7 @@ function RadioRow({ option, checked, onChange, groupName = 'radio-group' }) {
 }
 
 export default function SettingsApp() {
+  useChromeTheme();
   const [settings, setSettings] = useState(null);
   // Track whether contentProtection was changed since load (to show relaunch hint)
   const [pendingRelaunch, setPendingRelaunch] = useState(false);
@@ -121,6 +112,27 @@ export default function SettingsApp() {
 
   const handleColorThemeChange = useCallback(async (value) => {
     await persist({ ...settings, colorTheme: value });
+  }, [settings, persist]);
+
+  const accentPresets = useMemo(() => getAccentPresetsForUi(), []);
+
+  const customColorValue = useMemo(() => {
+    const raw = settings?.accentCustomHex;
+    const n = raw ? normalizeAccentHex(raw) : null;
+    return n || '#1a73e8';
+  }, [settings?.accentCustomHex]);
+
+  const handleAccentPreset = useCallback(
+    async (accentTheme) => {
+      await persist({ ...settings, accentTheme });
+    },
+    [settings, persist],
+  );
+
+  const handleCustomAccentHex = useCallback(async (hexInput) => {
+    const normalized = normalizeAccentHex(hexInput);
+    if (!normalized) return;
+    await persist({ ...settings, accentTheme: 'custom', accentCustomHex: normalized });
   }, [settings, persist]);
 
   const handleRelaunch = useCallback(() => {
@@ -165,28 +177,111 @@ export default function SettingsApp() {
         {/* ── Appearance ───────────────────────────────────────────────── */}
         <section className="settings-section">
           <h2 className="settings-section__title">Appearance</h2>
-          <div className="settings-card settings-card--theme">
-            <label className="setting-row settings-theme-field" htmlFor="settings-color-theme">
-              <div className="setting-row__text">
-                <span className="setting-row__label">Theme</span>
+          <div className="settings-card settings-card--appearance">
+            <div className="appearance-block">
+              <div className="appearance-block__intro">
+                <span className="setting-row__label">Brightness</span>
                 <span className="setting-row__desc">
-                  Automatic follows your system setting. Choosing Dark or Light overrides it for InviSurf only.
+                  Device follows your system. Light or Dark applies only to InviSurf.
                 </span>
               </div>
-              <select
-                id="settings-color-theme"
-                className="settings-theme-select"
-                aria-label="Theme"
-                value={settings.colorTheme === 'dark' || settings.colorTheme === 'light' ? settings.colorTheme : 'automatic'}
-                onChange={(e) => handleColorThemeChange(e.target.value)}
+              <div
+                className="appearance-mode"
+                role="radiogroup"
+                aria-label="Brightness"
               >
-                {COLOR_THEME_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value} title={opt.description}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                {APPEARANCE_MODE_SEGMENTS.map((seg) => {
+                  const active =
+                    (seg.value === 'automatic' &&
+                      settings.colorTheme !== 'dark' &&
+                      settings.colorTheme !== 'light') ||
+                    settings.colorTheme === seg.value;
+                  return (
+                    <button
+                      key={seg.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      title={seg.title}
+                      className={`appearance-mode__btn${active ? ' appearance-mode__btn--active' : ''}`}
+                      onClick={() => handleColorThemeChange(seg.value)}
+                    >
+                      {seg.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="appearance-block appearance-block--accent">
+              <div className="appearance-block__intro">
+                <span className="setting-row__label">Accent</span>
+                <span className="setting-row__desc">
+                  Colours the tab strip and toolbar. Custom builds a palette from one seed colour.
+                </span>
+              </div>
+              <div className="accent-grid" role="radiogroup" aria-label="Accent colour preset">
+                {accentPresets.map((p) => {
+                  const selected = settings.accentTheme === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-pressed={selected}
+                      className={`accent-swatch${selected ? ' accent-swatch--selected' : ''}`}
+                      onClick={() => handleAccentPreset(p.id)}
+                      title={p.label}
+                    >
+                      <span
+                        className="accent-swatch__preview"
+                        style={{
+                          background: `linear-gradient(135deg, ${p.preview.shell} 0%, ${p.preview.slider} 45%, ${p.preview.urlWell} 100%)`,
+                        }}
+                        aria-hidden
+                      />
+                      <span className="accent-swatch__label">{p.label}</span>
+                      {selected ? (
+                        <span className="accent-swatch__check" aria-hidden>
+                          ✓
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+                <div
+                  role="radio"
+                  aria-checked={settings.accentTheme === 'custom'}
+                  className={`accent-swatch accent-swatch--custom${settings.accentTheme === 'custom' ? ' accent-swatch--selected' : ''}`}
+                  title="Custom — pick a seed colour"
+                >
+                  <input
+                    id="settings-accent-custom"
+                    type="color"
+                    className="accent-swatch__color-input"
+                    value={customColorValue}
+                    onChange={(e) => handleCustomAccentHex(e.target.value)}
+                    aria-label="Custom accent colour"
+                  />
+                  <label htmlFor="settings-accent-custom" className="accent-swatch__custom-hit">
+                    <span
+                      className="accent-swatch__preview accent-swatch__preview--custom"
+                      style={{
+                        background: `linear-gradient(135deg, ${customColorValue} 0%, ${customColorValue} 45%, ${customColorValue} 100%)`,
+                      }}
+                      aria-hidden
+                    />
+                    <span className="accent-swatch__label">Custom</span>
+                    {settings.accentTheme === 'custom' ? (
+                      <span className="accent-swatch__check" aria-hidden>
+                        ✓
+                      </span>
+                    ) : null}
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 

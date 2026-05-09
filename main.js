@@ -27,6 +27,7 @@ const crypto = require('crypto');
 const encryption = require('./encryption');
 const compatDiagnostics = require('./compatibilityDiagnostics');
 const authPolicy = require('./authPolicy'); // <--- ADD THIS
+const chromeTheme = require(path.join(__dirname, 'src', 'theme', 'chromeTheme.cjs'));
 
 process.on('uncaughtException', (error) => {
     const message = error?.stack || error?.message || String(error);
@@ -127,6 +128,12 @@ function getFocusedShellWindow() {
     return null;
 }
 
+function focusedShellWebContents() {
+    const w = getFocusedShellWindow();
+    if (w && !w.isDestroyed()) return w.webContents;
+    return mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+}
+
 function getWindowContextById(windowId) {
     return windowContextsById.get(windowId) || null;
 }
@@ -134,6 +141,16 @@ function getWindowContextById(windowId) {
 function getWindowContextByBrowserWindow(win) {
     if (!win || win.isDestroyed()) return null;
     return getWindowContextById(win.id);
+}
+
+/** Prefer the focused shell window over `mainWindow` when tab-id lookup fails (secondary windows / stealth). */
+function getWindowContextForShellFallback() {
+    const focused = getFocusedShellWindow();
+    if (focused) {
+        const ctx = getWindowContextByBrowserWindow(focused);
+        if (ctx) return ctx;
+    }
+    return getWindowContextByBrowserWindow(mainWindow);
 }
 
 function getWindowContextByEventSender(sender) {
@@ -662,7 +679,7 @@ function getPrimaryWorkAreaBounds() {
     }
 }
 
-function createWindow({ profileId = null, windowId = null, fillWorkArea = true } = {}) {
+function createWindow({ profileId = null, windowId = null, fillWorkArea = true, stealthWindow = false } = {}) {
     const resolvedProfileId = profileId || defaultProfileId || `profile-${crypto.randomUUID()}`;
     ensureProfile(resolvedProfileId);
     const partition = `persist:profile-${resolvedProfileId}`;
@@ -670,8 +687,25 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
     // mappedSession.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
     registerAppProtocolForSession(mappedSession, partition);
     authPolicy.applyGoogleAuthPolicy(mappedSession); // Force auth checks for the profile session
+
+    /** One shared in-memory session per stealth window (all tabs incognito; discarded with the window). */
+    let stealthTabsPartition = null;
+    if (stealthWindow) {
+        stealthTabsPartition = `in-memory:stealth-win-${crypto.randomUUID()}`;
+        const stealthTabSession = session.fromPartition(stealthTabsPartition);
+        registerAppProtocolForSession(stealthTabSession, stealthTabsPartition);
+        authPolicy.applyGoogleAuthPolicy(stealthTabSession);
+    }
+
     const isMac = process.platform === 'darwin';
     const workArea = fillWorkArea ? getPrimaryWorkAreaBounds() : null;
+    const stealthTitleBarOverlay =
+        process.platform !== 'darwin'
+            ? chromeTheme.getTitleBarOverlayFromSettings(
+                  { colorTheme: 'dark', accentTheme: 'default', accentCustomHex: null },
+                  true,
+              )
+            : null;
     const window = new BrowserWindow({
         ...(workArea
             ? {
@@ -688,7 +722,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
         ...(isMac
             ? { trafficLightPosition: { x: 15, y: 15 } }
             : {
-                titleBarOverlay: getTitleBarOverlayOptionsForNativeTheme(),
+                titleBarOverlay: stealthWindow ? stealthTitleBarOverlay : getTitleBarOverlayOptionsForNativeTheme(),
             }
         ),
         webPreferences: {
@@ -754,6 +788,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
         windowId: windowId || `window-${crypto.randomUUID()}`,
         profileId: resolvedProfileId,
         partition,
+        stealthWindow: !!stealthWindow,
+        stealthTabsPartition,
         tabs: {},
         sleepingTabs: {},
         activeTabId: null,
@@ -763,6 +799,11 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
         tooltipView: null,
     };
     windowContextsById.set(window.id, context);
+
+    if (stealthWindow) {
+        window.setTitle('InviSurf — Stealth');
+        windowBootstrapById.set(context.windowId, { stealthWindow: true });
+    }
 
     window.on('resize', () => {
         if (!context.activeTabId || detachedTabWindows.has(context.activeTabId)) return;
@@ -991,7 +1032,7 @@ function activateTabInContext(context, id) {
 }
 
 function activateTab(id) {
-    const context = getWindowContextByTabId(id) || getWindowContextByBrowserWindow(mainWindow);
+    const context = getWindowContextByTabId(id) || getWindowContextForShellFallback();
     return activateTabInContext(context, id);
 }
 
@@ -1006,8 +1047,9 @@ function layoutDetachedTabView(tabId) {
 }
 
 function moveTabToDetachedWindow(id, fallbackTabId) {
-    const context = getWindowContextByTabId(id) || getWindowContextByBrowserWindow(mainWindow);
+    const context = getWindowContextByTabId(id) || getWindowContextForShellFallback();
     if (!context) return { ok: false };
+    if (context.stealthWindow) return { ok: false };
     activateOrWakeTab(id);
     if (!context.tabs[id] || detachedTabWindows.has(id)) {
         return { ok: false };
@@ -1067,10 +1109,11 @@ function openUrlInNewTab(targetUrl, options = {}) {
     if (!isAllowedTabNavigationUrl(resolvedTargetUrl)) return false;
 
     const newTabId = generateTabId();
-    createTab(context, newTabId, resolvedTargetUrl, false, { activate: !openInBackground });
+    const stealthTab = !!context.stealthWindow;
+    createTab(context, newTabId, resolvedTargetUrl, stealthTab, { activate: !openInBackground });
 
     if (context.window && !context.window.webContents.isDestroyed()) {
-        context.window.webContents.send('tab-created', { id: newTabId, isStealth: false, url: resolvedTargetUrl });
+        context.window.webContents.send('tab-created', { id: newTabId, isStealth: stealthTab, url: resolvedTargetUrl });
     }
     if (!openInBackground) {
         activateTabInContext(context, newTabId);
@@ -1090,13 +1133,23 @@ function normalizeInternalSchemeUrl(displayUrl) {
     return displayUrl.trim();
 }
 
+const CANONICAL_NTP_HTML = 'app://localhost/dist/newtab.html';
+
 function resolveInternalPageUrl(rawUrl) {
-    if (!rawUrl || typeof rawUrl !== 'string') return '';
-    const normalizedUrl = rawUrl.trim().toLowerCase();
+    if (rawUrl == null || typeof rawUrl !== 'string') return '';
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return '';
+    const normalizedUrl = trimmed.toLowerCase();
     if (normalizedUrl === 'stealth://history' || normalizedUrl === 'invisurf://history') return 'app://localhost/dist/history.html';
     if (normalizedUrl === 'stealth://settings' || normalizedUrl === 'invisurf://settings') return 'app://localhost/dist/settings.html';
-    if (normalizedUrl === 'app://newtab') return 'app://localhost/dist/newtab.html';
-    return rawUrl;
+    if (normalizedUrl === 'app://newtab') return CANONICAL_NTP_HTML;
+    return trimmed;
+}
+
+/** Always returns a non-empty loadable URL for tab WebContents (never `loadURL('')`). */
+function resolveTabLoadUrl(rawUrl) {
+    const effective = typeof rawUrl === 'string' && rawUrl.trim() ? rawUrl.trim() : 'app://newtab';
+    return resolveInternalPageUrl(effective) || CANONICAL_NTP_HTML;
 }
 
 // A tab qualifies for omnibox autofocus when it has no meaningful page loaded.
@@ -1107,6 +1160,17 @@ function isBlankTab(url) {
     return normalized === 'app://newtab' ||
         normalized.startsWith('app://localhost/dist/newtab') ||
         (normalized.startsWith('https://www.google.com/') && !normalized.includes('/search'));
+}
+
+// After did-finish-load, only re-assert omnibox focus for pages whose scripts steal
+// focus (e.g. Google). Custom NTP refocus causes visible flicker with the shell overlay.
+function shouldReassertOmniboxAfterPageLoad(url) {
+    if (!url || typeof url !== 'string') return false;
+    const u = url.toLowerCase();
+    if (u === 'about:blank' || u === 'app://newtab' || u.startsWith('app://localhost/dist/newtab')) {
+        return false;
+    }
+    return u.startsWith('https://www.google.com/') && !u.includes('/search');
 }
 
 function toDisplayUrl(rawUrl) {
@@ -1149,13 +1213,13 @@ function getTabIdByDisplayUrl(targetDisplayUrl) {
 }
 
 function activateOrWakeTab(id) {
-    const context = getWindowContextByTabId(id) || getWindowContextByBrowserWindow(mainWindow);
+    const context = getWindowContextByTabId(id) || getWindowContextForShellFallback();
     if (!context) return false;
     if (!id) return false;
     if (!context.tabs[id] && context.sleepingTabs[id]) {
-        const resolvedUrl = resolveInternalPageUrl(context.sleepingTabs[id].url);
+        const resolvedUrl = resolveTabLoadUrl(context.sleepingTabs[id].url);
         delete context.sleepingTabs[id];
-        createTab(context, id, resolvedUrl, false);
+        createTab(context, id, resolvedUrl, !!context.stealthWindow);
 
         if (context.window && !context.window.webContents.isDestroyed()) {
             context.window.webContents.send('tab:awoken', { id });
@@ -1302,18 +1366,24 @@ function buildApplicationMenu() {
                 {
                     label: 'New Tab',
                     accelerator: 'CmdOrCtrl+T',
-                    click: () => mainWindow.webContents.send('shortcut-new-tab')
+                    click: () => focusedShellWebContents()?.send('shortcut-new-tab')
                 },
                 {
-                    label: 'New Private Tab',
-                    accelerator: 'CmdOrCtrl+Shift+T',
-                    click: () => mainWindow.webContents.send('shortcut-new-private-tab')
-                },
-                {
-                    label: 'New Window (Current Profile)',
+                    label: 'New Stealth Window',
                     accelerator: 'CmdOrCtrl+Shift+N',
                     click: () => {
-                        const context = getWindowContextByBrowserWindow(mainWindow);
+                        const w = getFocusedShellWindow() || mainWindow;
+                        const context = getWindowContextByBrowserWindow(w);
+                        if (!context) return;
+                        createWindow({ profileId: context.profileId, stealthWindow: true });
+                    },
+                },
+                {
+                    label: 'New Window',
+                    accelerator: 'CmdOrCtrl+N',
+                    click: () => {
+                        const w = getFocusedShellWindow() || mainWindow;
+                        const context = getWindowContextByBrowserWindow(w);
                         if (!context) return;
                         createWindow({ profileId: context.profileId });
                     },
@@ -1321,7 +1391,7 @@ function buildApplicationMenu() {
                 {
                     label: 'Close Tab',
                     accelerator: 'CmdOrCtrl+W',
-                    click: () => mainWindow.webContents.send('shortcut-close-tab')
+                    click: () => focusedShellWebContents()?.send('shortcut-close-tab')
                 },
                 { type: 'separator' },
                 { role: 'quit' }
@@ -1333,7 +1403,7 @@ function buildApplicationMenu() {
                 {
                     label: 'Reload',
                     accelerator: 'CmdOrCtrl+R',
-                    click: () => mainWindow.webContents.send('shortcut-reload')
+                    click: () => focusedShellWebContents()?.send('shortcut-reload')
                 },
                 { type: 'separator' },
                 {
@@ -1380,7 +1450,7 @@ function buildApplicationMenu() {
                 {
                     label: 'Show History',
                     accelerator: 'CmdOrCtrl+Y',
-                    click: () => mainWindow.webContents.send('shortcut-history'),
+                    click: () => focusedShellWebContents()?.send('shortcut-history'),
                 },
                 { type: 'separator' },
                 { label: 'Home', click: () => navigateActiveTabHome() },
@@ -1396,32 +1466,32 @@ function buildApplicationMenu() {
             submenu: [
                 {
                     label: 'New Tab to the Right',
-                    click: () => mainWindow.webContents.send('shortcut-tab-new-to-right'),
+                    click: () => focusedShellWebContents()?.send('shortcut-tab-new-to-right'),
                 },
                 { type: 'separator' },
                 {
                     label: 'Select Next Tab',
                     accelerator: 'Control+Tab',
-                    click: () => mainWindow.webContents.send('shortcut-switch-tab', { direction: 1 }),
+                    click: () => focusedShellWebContents()?.send('shortcut-switch-tab', { direction: 1 }),
                 },
                 {
                     label: 'Select Previous Tab',
                     accelerator: 'Control+Shift+Tab',
-                    click: () => mainWindow.webContents.send('shortcut-switch-tab', { direction: -1 }),
+                    click: () => focusedShellWebContents()?.send('shortcut-switch-tab', { direction: -1 }),
                 },
                 { type: 'separator' },
                 {
                     label: 'Duplicate Tab',
                     accelerator: 'CommandOrControl+Shift+D',
-                    click: () => mainWindow.webContents.send('shortcut-tab-duplicate'),
+                    click: () => focusedShellWebContents()?.send('shortcut-tab-duplicate'),
                 },
                 {
                     label: tabMenuMuteSiteShowsUnmute ? 'Unmute Site' : 'Mute Site',
-                    click: () => mainWindow.webContents.send('shortcut-tab-mute-site'),
+                    click: () => focusedShellWebContents()?.send('shortcut-tab-mute-site'),
                 },
                 {
                     label: tabMenuPinShowsUnpin ? 'Unpin Tab' : 'Pin Tab',
-                    click: () => mainWindow.webContents.send('shortcut-tab-pin'),
+                    click: () => focusedShellWebContents()?.send('shortcut-tab-pin'),
                 },
                 {
                     label: 'Group Tab',
@@ -1430,21 +1500,21 @@ function buildApplicationMenu() {
                 { type: 'separator' },
                 {
                     label: 'Close Other Tabs',
-                    click: () => mainWindow.webContents.send('shortcut-tab-close-others'),
+                    click: () => focusedShellWebContents()?.send('shortcut-tab-close-others'),
                 },
                 {
                     label: 'Close Tabs to the Right',
-                    click: () => mainWindow.webContents.send('shortcut-tab-close-right'),
+                    click: () => focusedShellWebContents()?.send('shortcut-tab-close-right'),
                 },
                 { type: 'separator' },
                 {
                     label: 'Move Tab to New Window',
-                    click: () => mainWindow.webContents.send('shortcut-tab-move-new-window'),
+                    click: () => focusedShellWebContents()?.send('shortcut-tab-move-new-window'),
                 },
                 {
                     label: 'Search Tabs…',
                     accelerator: 'Shift+CommandOrControl+A',
-                    click: () => mainWindow.webContents.send('shortcut-tab-search'),
+                    click: () => focusedShellWebContents()?.send('shortcut-tab-search'),
                 },
             ],
         },
@@ -1454,7 +1524,7 @@ function buildApplicationMenu() {
                 {
                     label: 'Search…',
                     accelerator: 'CommandOrControl+Shift+P',
-                    click: () => mainWindow.webContents.send('shortcut-command-palette'),
+                    click: () => focusedShellWebContents()?.send('shortcut-command-palette'),
                 },
             ],
         },
@@ -1554,6 +1624,16 @@ ipcMain.handle('window:create', (event, payload = {}) => {
     ensureProfile(profileId);
     const created = createWindow({ profileId });
     return { windowId: created.windowId, profileId };
+});
+
+ipcMain.handle('window:create-stealth', (event) => {
+    if (!isSenderTrusted(event)) return { ok: false };
+    const senderContext = getWindowContextByEventSender(event.sender);
+    const profileId = senderContext?.profileId || defaultProfileId;
+    if (!profileId) return { ok: false };
+    ensureProfile(profileId);
+    createWindow({ profileId, stealthWindow: true });
+    return { ok: true };
 });
 
 ipcMain.handle('window:get-bootstrap', (event) => {
@@ -1742,14 +1822,14 @@ function handleShortcuts(event, input) {
 
     if (isCommandOrControlPressed && key === 'y') {
         event.preventDefault();
-        mainWindow.webContents.send('shortcut-history');
+        focusedShellWebContents()?.send('shortcut-history');
         return;
     }
 
     // Only handle Ctrl+Tab here, as others are handled by the Menu
     if (input.control && input.key === 'Tab') {
         event.preventDefault();
-        mainWindow.webContents.send('shortcut-switch-tab', { direction: input.shift ? -1 : 1 });
+        focusedShellWebContents()?.send('shortcut-switch-tab', { direction: input.shift ? -1 : 1 });
     }
 }
 
@@ -1784,7 +1864,9 @@ function installDevToolsTypographyOnOpen(webContents) {
 function createTab(context, id, url = "app://newtab", isStealth = false, options = {}) {
     if (!context) return;
     const shouldActivate = options.activate !== false;
-    const tabPartition = isStealth ? `in-memory:stealth-${id}` : context.partition;
+    /** Stealth windows: one in-memory partition per window (Chrome-like incognito). Normal windows never use per-tab stealth. */
+    const effectiveStealth = !!context.stealthWindow;
+    const tabPartition = context.stealthWindow ? context.stealthTabsPartition : context.partition;
     const view = new WebContentsView({
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -2051,7 +2133,7 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
     // the user's typing is never interrupted on blank/NTP tabs.
     // selectAll is false here because the user may already be mid-query.
     view.webContents.on('did-finish-load', () => {
-        if (!isBlankTab(view.webContents.getURL())) return;
+        if (!shouldReassertOmniboxAfterPageLoad(view.webContents.getURL())) return;
         if (context.activeTabId !== id) return;
         setImmediate(() => {
             if (context.window && !context.window.webContents.isDestroyed()) {
@@ -2066,7 +2148,7 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
         let displayUrl = getDisplayUrl(targetUrl);
         recordCompatEvent(id, { type: 'navigated', url: displayUrl, rawUrl: targetUrl });
         context.window.webContents.send('url-changed', { id, url: displayUrl });
-        if (!isStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
+        if (!effectiveStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
             appendHistory(context.profileId, id, displayUrl, view.webContents.getTitle() || displayUrl);
         }
     });
@@ -2074,7 +2156,7 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
     view.webContents.on('did-navigate-in-page', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
         context.window.webContents.send('url-changed', { id, url: displayUrl });
-        if (!isStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
+        if (!effectiveStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
             appendHistory(context.profileId, id, displayUrl, view.webContents.getTitle() || displayUrl);
         }
     });
@@ -2141,7 +2223,7 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
         });
     });
 
-    view.webContents.loadURL(url);
+    view.webContents.loadURL(resolveTabLoadUrl(url));
 }
 
 // ─── HISTORY STORAGE ───────────────────────────────────────────────────────────
@@ -2181,6 +2263,9 @@ const SETTINGS_DEFAULTS = {
     searchEngine: 'google', // 'google' | 'bing' | 'brave' | 'duckDuckGo'
     /** 'automatic' = follow OS · 'dark' | 'light' = forced appearance (see nativeTheme.themeSource) */
     colorTheme: 'automatic',
+    /** Preset id from chromeTheme.ACCENT_PRESETS, or 'custom' with accentCustomHex */
+    accentTheme: 'default',
+    accentCustomHex: null,
 };
 
 const SEARCH_ENGINES = {
@@ -2218,21 +2303,25 @@ function colorThemeSettingToElectronSource(setting) {
 }
 
 function getTitleBarOverlayOptionsForNativeTheme() {
+    const prefs = loadSettings();
     if (!nativeTheme || typeof nativeTheme.shouldUseDarkColors !== 'boolean') {
-        return { color: '#1a1a1a', symbolColor: '#ffffff', height: 45 };
+        return chromeTheme.getTitleBarOverlayFromSettings(prefs, true);
     }
-    return nativeTheme.shouldUseDarkColors
-        ? { color: '#1a1a1a', symbolColor: '#ffffff', height: 45 }
-        : { color: '#ffffff', symbolColor: '#202124', height: 45 };
+    return chromeTheme.getTitleBarOverlayFromSettings(prefs, nativeTheme.shouldUseDarkColors);
 }
 
 function syncTitleBarOverlaysToNativeTheme() {
     if (process.platform === 'darwin') return;
     const overlayOptions = getTitleBarOverlayOptionsForNativeTheme();
+    const stealthOverlayOptions = chromeTheme.getTitleBarOverlayFromSettings(
+        { colorTheme: 'dark', accentTheme: 'default', accentCustomHex: null },
+        true,
+    );
     for (const win of BrowserWindow.getAllWindows()) {
         if (!win || win.isDestroyed?.()) continue;
         try {
-            win.setTitleBarOverlay(overlayOptions);
+            const ctx = windowContextsById.get(win.id);
+            win.setTitleBarOverlay(ctx?.stealthWindow ? stealthOverlayOptions : overlayOptions);
         } catch (_) {
             // Window uses a standard title bar (e.g. profile picker) — no overlay.
         }
@@ -2243,7 +2332,23 @@ let nativeThemeTitleBarListenersAttached = false;
 function ensureNativeThemeTitleBarListeners() {
     if (nativeThemeTitleBarListenersAttached || !nativeTheme || typeof nativeTheme.on !== 'function') return;
     nativeThemeTitleBarListenersAttached = true;
-    nativeTheme.on('updated', () => syncTitleBarOverlaysToNativeTheme());
+    nativeTheme.on('updated', () => {
+        syncTitleBarOverlaysToNativeTheme();
+        broadcastThemeApply();
+    });
+}
+
+function broadcastThemeApply() {
+    const settings = loadSettings();
+    const payload = { settings };
+    for (const win of BrowserWindow.getAllWindows()) {
+        if (!win || win.isDestroyed?.()) continue;
+        try {
+            win.webContents.send('theme:apply', payload);
+        } catch (_) {
+            /* window may be closing */
+        }
+    }
 }
 
 function applyColorThemeFromSettings() {
@@ -2252,6 +2357,7 @@ function applyColorThemeFromSettings() {
     nativeTheme.themeSource = colorThemeSettingToElectronSource(normalizeColorTheme(prefs.colorTheme));
     syncTitleBarOverlaysToNativeTheme();
     ensureNativeThemeTitleBarListeners();
+    broadcastThemeApply();
 }
 
 function loadSettings() {
@@ -2260,14 +2366,14 @@ function loadSettings() {
         if (fs.existsSync(p)) {
             const merged = { ...SETTINGS_DEFAULTS, ...JSON.parse(fs.readFileSync(p, 'utf-8')) };
             merged.colorTheme = normalizeColorTheme(merged.colorTheme);
-            return merged;
+            return chromeTheme.normalizeAccentFields(merged);
         }
     } catch (e) {
         console.error('Failed to load settings:', e);
     }
     const defaults = { ...SETTINGS_DEFAULTS };
     defaults.colorTheme = normalizeColorTheme(defaults.colorTheme);
-    return defaults;
+    return chromeTheme.normalizeAccentFields(defaults);
 }
 
 function recordCompatEvent(tabId, entry) {
@@ -2297,7 +2403,14 @@ ipcMain.handle('settings:save', (e, data) => {
     if (Object.prototype.hasOwnProperty.call(patch, 'colorTheme')) {
         next.colorTheme = normalizeColorTheme(patch.colorTheme);
     }
-    saveSettings(next);
+    if (Object.prototype.hasOwnProperty.call(patch, 'accentTheme')) {
+        next.accentTheme = chromeTheme.normalizeAccentTheme(patch.accentTheme);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'accentCustomHex')) {
+        const raw = patch.accentCustomHex;
+        next.accentCustomHex = raw == null || raw === '' ? null : chromeTheme.normalizeAccentHex(raw);
+    }
+    saveSettings(chromeTheme.normalizeAccentFields(next));
     applyColorThemeFromSettings();
     return true;
 });
@@ -2376,6 +2489,7 @@ ipcMain.handle('session:load', (e) => {
     if (!isSenderTrusted(e)) return null;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return null;
+    if (context.stealthWindow) return null;
 
     const { startupBehavior } = loadSettings();
 
@@ -2427,6 +2541,8 @@ ipcMain.handle('session:save', (e, data) => {
     if (!isSenderTrusted(e)) return false;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return false;
+    if (context.stealthWindow) return true;
+
     const { startupBehavior } = loadSettings();
 
     // In fresh/clearHistory modes, do not persist tab snapshots.
@@ -2998,13 +3114,14 @@ ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
 
-    const resolvedUrl = resolveInternalPageUrl(url || 'app://newtab');
+    const resolvedUrl = resolveTabLoadUrl(url);
 
-    createTab(context, id, resolvedUrl, isStealth);
+    const stealthTab = !!context.stealthWindow;
+    createTab(context, id, resolvedUrl, stealthTab);
 
     // Notify the main React shell so it can add the tab to its state
     if (context.window && !context.window.webContents.isDestroyed()) {
-        context.window.webContents.send('tab-created', { id, isStealth, url: resolvedUrl });
+        context.window.webContents.send('tab-created', { id, isStealth: stealthTab, url: resolvedUrl });
     }
 
     // Autofocus the omnibox for blank/NTP tabs so the user can type immediately.

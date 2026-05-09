@@ -16,9 +16,9 @@
 }
 
 :root {
-  --pp-text: #202124;
+  --pp-text: var(--chrome-fg, #202124);
   --pp-muted: #5f6368;
-  --pp-bg: #ffffff;
+  --pp-bg: var(--chrome-shell-tint, var(--chrome-body-bg, #ffffff));
   --pp-border: #dadce0;
   --pp-hover: #f8f9fa;
   /* Hero — aligned with new tab page */
@@ -42,11 +42,31 @@ body,
 
 body {
   margin: 0;
-  background: var(--pp-bg);
+  background: var(--chrome-content-bg, var(--pp-bg));
   color: var(--pp-text);
   font-family: 'InviSurfUIFont', 'Segoe UI', Roboto, Arial, sans-serif;
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  scrollbar-color: var(--chrome-scrollbar-thumb, #9aa0a6) var(--chrome-scrollbar-track, #e8eaed);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--chrome-scrollbar-track, #e8eaed);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--chrome-scrollbar-thumb, #9aa0a6);
+  border-radius: 6px;
+  border: 2px solid var(--chrome-scrollbar-track, #e8eaed);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--chrome-scrollbar-thumb-hover, #80868b);
 }
 
 #profile-picker-root {
@@ -159,6 +179,22 @@ body {
 
 .pp-hero__logo--scheme-dark {
   display: none;
+}
+
+html[data-forced-appearance="dark"] .pp-hero__logo--scheme-light {
+  display: none;
+}
+
+html[data-forced-appearance="dark"] .pp-hero__logo--scheme-dark {
+  display: block;
+}
+
+html[data-forced-appearance="light"] .pp-hero__logo--scheme-dark {
+  display: none;
+}
+
+html[data-forced-appearance="light"] .pp-hero__logo--scheme-light {
+  display: block;
 }
 
 .pp-hero__name {
@@ -462,4 +498,28 @@ body {
   .pp-page {
     background-color: var(--pp-bg);
   }
+}
+
+html[data-forced-appearance="dark"] {
+  --pp-text: #e8eaed;
+  --pp-muted: #9aa0a6;
+  --pp-border: #3c4043;
+  --pp-hover: #3c4043;
+  --pp-bg: #202124;
+  --pp-primary: #f8f9ff;
+  --pp-hero-mark-bg: #1c2433;
+  --pp-hero-mark-border: rgba(255, 255, 255, 0.08);
+  --pp-hero-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+html[data-forced-appearance="light"] {
+  --pp-text: var(--chrome-fg, #202124);
+  --pp-muted: #5f6368;
+  --pp-border: #dadce0;
+  --pp-hover: #f8f9fa;
+  --pp-bg: var(--chrome-shell-tint, var(--chrome-body-bg, #ffffff));
+  --pp-primary: #000000;
+  --pp-hero-mark-bg: #ffffff;
+  --pp-hero-mark-border: rgba(118, 119, 125, 0.12);
+  --pp-hero-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
 }

@@ -210,14 +210,32 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     }
 
     controller.query(text, (merged, ghost) => {
-      setSuggestions(merged);
-      setGhostSuffix(ghost || '');
-      setShowDropdown(merged.length > 0);
-      if (!isNavigatingRef.current) {
-        setSelectedIndex(-1);
+      const applyResults = () => {
+        setSuggestions(merged);
+        setGhostSuffix(ghost || '');
+        setShowDropdown(merged.length > 0);
+        if (!isNavigatingRef.current) {
+          setSelectedIndex(-1);
+        }
+      };
+
+      const needsDropdownUi = merged.length > 0 || Boolean(ghost);
+      if (needsDropdownUi && !overlayActiveRef.current) {
+        overlayActiveRef.current = true;
+        beginOverlay()
+          .then(() => {
+            applyResults();
+          })
+          .catch((err) => {
+            overlayActiveRef.current = false;
+            console.warn('[OmniboxInput] beginOverlay failed:', err);
+            applyResults();
+          });
+        return;
       }
+      applyResults();
     });
-  }, [controller]);
+  }, [controller, beginOverlay]);
 
   const closeDropdown = useCallback(() => {
     setShowDropdown(false);
@@ -255,7 +273,9 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     setIsFocused(true);
     didSelectRef.current = false;
 
-    if (!overlayActiveRef.current) {
+    const skipOverlayForBareNewTab = Boolean(tab?.isNewTab && !inputValue.trim());
+
+    if (!overlayActiveRef.current && !skipOverlayForBareNewTab) {
       overlayActiveRef.current = true;
       try {
         await beginOverlay();
@@ -275,7 +295,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     if (inputValue.trim()) {
       runQuery(inputValue);
     }
-  }, [inputValue, runQuery, beginOverlay]);
+  }, [inputValue, runQuery, beginOverlay, tab?.isNewTab]);
 
   const handleMouseUp = useCallback(() => {
     if (isFocused && didSelectRef.current) {

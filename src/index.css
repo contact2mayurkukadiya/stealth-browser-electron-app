@@ -45,18 +45,29 @@
     --chrome-tab-hover-bg: rgba(255, 255, 255, 0.1);
     --chrome-close-hover: rgba(255, 255, 255, 0.1);
     --chrome-star-muted: rgba(255, 255, 255, 0.5);
+    /* Toolbar / tab strip: icons tuned for strip luminance (runtime overrides via injection) */
+    --chrome-toolbar-icon: rgba(255, 255, 255, 0.92);
+    --chrome-toolbar-icon-muted: rgba(255, 255, 255, 0.58);
+    --chrome-toolbar-img-filter: brightness(0) invert(1);
+    --chrome-omnibox-focus-border: #9aa0a6;
+    --chrome-omnibox-selection-bg: rgba(255, 255, 255, 0.22);
+    --chrome-omnibox-selection-fg: #0d0d0d;
 }
 
 @media (prefers-color-scheme: light) {
     :root {
         color-scheme: light;
         --chrome-shell-bg: #ffffff;
+        --chrome-body-bg: #ffffff;
+        --chrome-bg-snapshot: #ffffff;
+        /* Light: tab bar = frame; nav row = white (slider); omnibox = between white & frame */
+        --chrome-header-bg: #ebebeb;
         --chrome-fg: #171b20;
         --chrome-slider: #ffffff;
         --chrome-slider-stealth: #5c2020;
         --chrome-nav-bg: #ffffff;
         --chrome-nav-stealth: #5c2020;
-        --chrome-url-well: #ebecef;
+        --chrome-url-well: #f2f3f3;
         --chrome-url-well-stealth: #5c2020;
         --chrome-domain: #171b20;
         --chrome-url-ghost: rgba(23, 27, 32, 0.45);
@@ -66,7 +77,84 @@
         --chrome-tab-hover-bg: rgba(0, 0, 0, 0.045);
         --chrome-close-hover: rgba(0, 0, 0, 0.07);
         --chrome-star-muted: rgba(23, 27, 32, 0.42);
+        --chrome-toolbar-icon: #3c4043;
+        --chrome-toolbar-icon-muted: rgba(60, 64, 67, 0.72);
+        --chrome-toolbar-img-filter: brightness(0);
+        --chrome-omnibox-focus-border: #3c4043;
+        --chrome-omnibox-selection-bg: rgba(26, 115, 232, 0.28);
+        --chrome-omnibox-selection-fg: #202124;
     }
+}
+
+/*
+ * OS color scheme can disagree with InviSurf “Light / Dark / Device”.
+ * Mirror prefers-color-scheme rules so chrome paints correctly before/without accent injection.
+ */
+html[data-forced-appearance="light"] {
+    color-scheme: light;
+    --chrome-shell-bg: #ffffff;
+    --chrome-body-bg: #ffffff;
+    --chrome-bg-snapshot: #ffffff;
+    --chrome-header-bg: #ebebeb;
+    --chrome-fg: #171b20;
+    --chrome-slider: #ffffff;
+    --chrome-slider-stealth: #5c2020;
+    --chrome-nav-bg: #ffffff;
+    --chrome-nav-stealth: #5c2020;
+    --chrome-url-well: #f2f3f3;
+    --chrome-url-well-stealth: #5c2020;
+    --chrome-domain: #171b20;
+    --chrome-url-ghost: rgba(23, 27, 32, 0.45);
+    --chrome-bookmark-bar: #ffffff;
+    --chrome-bkm-text: rgba(23, 27, 32, 0.88);
+    --chrome-tab-separator: rgba(0, 0, 0, 0.1);
+    --chrome-tab-hover-bg: rgba(0, 0, 0, 0.045);
+    --chrome-close-hover: rgba(0, 0, 0, 0.07);
+    --chrome-star-muted: rgba(23, 27, 32, 0.42);
+    --chrome-toolbar-icon: #3c4043;
+    --chrome-toolbar-icon-muted: rgba(60, 64, 67, 0.72);
+    --chrome-toolbar-img-filter: brightness(0);
+    --chrome-omnibox-focus-border: #3c4043;
+    --chrome-omnibox-selection-bg: rgba(26, 115, 232, 0.28);
+    --chrome-omnibox-selection-fg: #202124;
+}
+
+html[data-forced-appearance="light"] .bk-add-folder {
+    color: var(--chrome-toolbar-icon-muted);
+}
+
+html[data-forced-appearance="light"] .bk-add-folder:hover {
+    background: var(--chrome-tab-hover-bg);
+    color: var(--chrome-toolbar-icon);
+}
+
+html[data-forced-appearance="dark"] {
+    color-scheme: dark;
+    --chrome-shell-bg: #253035;
+    --chrome-body-bg: #253035;
+    --chrome-bg-snapshot: #253035;
+    --chrome-header-bg: #253035;
+    --chrome-fg: rgba(255, 255, 255, 0.95);
+    --chrome-slider: #394d55;
+    --chrome-slider-stealth: #5c2020;
+    --chrome-nav-bg: #394d55;
+    --chrome-nav-stealth: #5c2020;
+    --chrome-url-well: #2f3c42;
+    --chrome-url-well-stealth: #5c2020;
+    --chrome-domain: #ffffff;
+    --chrome-url-ghost: rgba(255, 255, 255, 0.4);
+    --chrome-bookmark-bar: #2d3e45;
+    --chrome-bkm-text: rgba(255, 255, 255, 0.85);
+    --chrome-tab-separator: rgba(74, 97, 107, 0.62);
+    --chrome-tab-hover-bg: rgba(255, 255, 255, 0.1);
+    --chrome-close-hover: rgba(255, 255, 255, 0.1);
+    --chrome-star-muted: rgba(255, 255, 255, 0.5);
+    --chrome-toolbar-icon: rgba(255, 255, 255, 0.92);
+    --chrome-toolbar-icon-muted: rgba(255, 255, 255, 0.58);
+    --chrome-toolbar-img-filter: brightness(0) invert(1);
+    --chrome-omnibox-focus-border: #9aa0a6;
+    --chrome-omnibox-selection-bg: rgba(255, 255, 255, 0.22);
+    --chrome-omnibox-selection-fg: #0d0d0d;
 }
 
 body {
@@ -111,10 +199,7 @@ body {
 }
 
 @media (prefers-color-scheme: light) {
-    .header {
-        border-bottom: 1px solid rgba(23, 27, 32, 0.08);
-        box-sizing: border-box;
-    }
+    /* Seamless tab strip + omnibox row — no divider between them */
 
     .bookmark-bar {
         border-top: 1px solid rgba(23, 27, 32, 0.07);
@@ -175,12 +260,6 @@ body {
     pointer-events: none;
     z-index: 1;
     transition: left 0.28s ease, width 0.28s ease;
-}
-
-.tab-bar--active-stealth .tab-active-slider,
-.tab-bar--active-stealth .tab-active-slider::before,
-.tab-bar--active-stealth .tab-active-slider::after {
-    background: var(--chrome-slider-stealth);
 }
 
 .tab-bar.tab-bar--dragging .tab-active-slider {
@@ -263,6 +342,7 @@ body {
     overflow: hidden;
     -webkit-app-region: no-drag;
     z-index: 2;
+    color: var(--chrome-toolbar-icon);
 }
 
 .icon-container {
@@ -313,22 +393,6 @@ body {
     border-radius: 10px 10px 10px 10px;
 }
 
-/* Private tab styling */
-.stealth-tab {
-    background: transparent;
-    color: #eba1a1;
-}
-
-.stealth-tab:not(.active):hover {
-    background-color: var(--chrome-tab-hover-bg);
-    border-radius: 10px 10px 10px 10px;
-}
-
-.stealth-tab.active {
-    background: transparent;
-    color: var(--chrome-fg);
-}
-
 .tab-title .tab-stealth-icon {
     margin-right: 4px;
     flex-shrink: 0;
@@ -357,10 +421,6 @@ body {
     height: 45px;
 }
 
-.header--stealth-active .nav-bar {
-    background: var(--chrome-nav-stealth);
-}
-
 .url-container {
     position: relative;
     flex-grow: 1;
@@ -372,11 +432,6 @@ body {
     overflow: visible;
     box-sizing: border-box;
     transition: border 0.2s;
-}
-
-.header--stealth-active .url-container {
-    background: var(--chrome-url-well-stealth);
-    border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 #url-input {
@@ -423,7 +478,7 @@ body {
 }
 
 .url-container:focus-within {
-    border: 1px solid #FFB430;
+    border: 1px solid var(--chrome-omnibox-focus-border, #FFB430);
 }
 
 #url-input:focus {
@@ -432,8 +487,8 @@ body {
 }
 
 #url-input::selection {
-    background: #FFB430;
-    color: #000000;
+    background: var(--chrome-omnibox-selection-bg, #FFB430);
+    color: var(--chrome-omnibox-selection-fg, #000000);
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
@@ -455,19 +510,35 @@ body {
     transition: background-color 0.2s ease;
 }
 
+/* Tab bar + omnibox rows: icon colours follow strip contrast (inverted vs page chrome-fg) */
+.tab-bar .btn,
+.nav-bar .btn {
+    color: var(--chrome-toolbar-icon);
+}
+
+.tab-bar .btn img.chrome-toolbar-icon-img,
+.nav-bar .btn img.chrome-toolbar-icon-img,
+.bookmark-bar img.chrome-toolbar-icon-img {
+    filter: var(--chrome-toolbar-img-filter);
+}
+
+.close-btn .chrome-toolbar-icon-img {
+    filter: var(--chrome-toolbar-img-filter);
+}
+
 .btn:hover {
     background: var(--chrome-close-hover);
 }
 
 /* ── Star / Bookmark button ──────────────────────────────────────────────── */
 .star-btn {
-    color: var(--chrome-star-muted);
+    color: var(--chrome-toolbar-icon-muted);
     transition: color 0.2s ease, transform 0.15s ease;
     flex-shrink: 0;
 }
 
 .star-btn:hover {
-    color: var(--chrome-fg);
+    color: var(--chrome-toolbar-icon);
 }
 
 .star-btn.starred {
@@ -476,6 +547,10 @@ body {
 
 .star-btn.starred:hover {
     color: #e8a020;
+}
+
+.star-btn.starred img.chrome-toolbar-icon-img {
+    filter: none;
 }
 
 .star-btn.pop {
@@ -1151,8 +1226,8 @@ body {
 .spinner {
     width: 12px;
     height: 12px;
-    border: 2px solid #ccc;
-    border-top: 2px solid #0078d4;
+    border: 2px solid var(--chrome-toolbar-icon-muted);
+    border-top: 2px solid var(--chrome-toolbar-icon);
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
@@ -1327,10 +1402,6 @@ body {
 .tab.tab-dragging {
     transition: none !important;
     background-color: inherit;
-}
-
-.tab.stealth-tab.tab-dragging {
-    background-color: #5c2020;
 }
 
 /* ── Pinned tab (narrow) ─────────────────────────────────────────────────── */
@@ -1552,12 +1623,12 @@ body {
     }
 
     .bk-add-folder {
-        color: rgba(23, 27, 32, 0.45);
+        color: var(--chrome-toolbar-icon-muted);
     }
 
     .bk-add-folder:hover {
         background: var(--chrome-tab-hover-bg);
-        color: rgba(23, 27, 32, 0.85);
+        color: var(--chrome-toolbar-icon);
     }
 
     .bk-folder-modal {

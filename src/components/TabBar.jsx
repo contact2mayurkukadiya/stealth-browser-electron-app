@@ -5,7 +5,7 @@ import Tab from './Tab';
 import ContextMenu from './ContextMenu';
 import { tabAddSvg } from '../constants/appAssetUrls';
 
-const ADD_ICON = <img src={tabAddSvg} width={15} height={15} alt="" />;
+const ADD_ICON = <img className="chrome-toolbar-icon-img" src={tabAddSvg} width={15} height={15} alt="" />;
 const TAB_DISPLAY_MODE = {
   FULL: 'full',
   ICON_ONLY: 'icon-only',
@@ -67,8 +67,6 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
   const platform = window.electronAPI?.platform;
   const isMac = platform === 'darwin';
   const isWin = platform === 'win32';
-  const isActiveTabStealth = !!tabs[currentTabId]?.isStealth;
-
   const pinnedTabCount = useMemo(
     () => tabOrder.filter((tid) => tabs[tid]?.isPinned).length,
     [tabOrder, tabs],
@@ -170,7 +168,7 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
 
   return (
     <div
-      className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}${isActiveTabStealth ? ' tab-bar--active-stealth' : ''}`}
+      className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}`}
     >
       <div className="tab-container">
         <div ref={tabTrackRef} className="tab-track">
@@ -194,7 +192,7 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
           ))}
         </div>
       </div>
-      <button id="add-tab" className="btn" onClick={() => onNewTab(false)}>
+      <button id="add-tab" className="btn" onClick={() => onNewTab()}>
         {ADD_ICON}
       </button>
       {tabContextMenu && (

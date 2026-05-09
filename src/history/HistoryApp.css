@@ -26,12 +26,12 @@
 :root {
   --blue: #1a73e8;
   --blue-light: #e8f0fe;
-  --text-primary: #202124;
+  --text-primary: var(--chrome-fg, #202124);
   --text-secondary: #5f6368;
   --border: #dadce0;
   --hover: #f1f3f4;
   --white: #ffffff;
-  --bg: #ffffff;
+  --bg: var(--chrome-shell-tint, var(--chrome-body-bg, #ffffff));
   /* Grouped lists inside dialogs (must track theme — not hardcoded light gray) */
   --surface-muted: #f8f9fa;
   --shadow-card: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
@@ -46,12 +46,32 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--chrome-content-bg, var(--bg));
   color: var(--text-primary);
   font-family: 'InviSurfUIFont', 'Google Sans', 'Segoe UI', Roboto, Arial, sans-serif;
   font-size: 14px;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  scrollbar-color: var(--chrome-scrollbar-thumb, #9aa0a6) var(--chrome-scrollbar-track, #e8eaed);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--chrome-scrollbar-track, #e8eaed);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--chrome-scrollbar-thumb, #9aa0a6);
+  border-radius: 6px;
+  border: 2px solid var(--chrome-scrollbar-track, #e8eaed);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--chrome-scrollbar-thumb-hover, #80868b);
 }
 
 /* ── Page layout ────────────────────────────────────────────────────────────── */
@@ -829,6 +849,34 @@ body {
   .h-modal-delete:not(:disabled) {
     color: #ffffff;
   }
+}
+
+html[data-forced-appearance="dark"] {
+  --blue: #8ab4f8;
+  --blue-light: rgba(138, 180, 248, 0.16);
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a6;
+  --border: #3c4043;
+  --hover: #3c4043;
+  --white: #292a2d;
+  --bg: #202124;
+  --surface-muted: #303134;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 3px 1px rgba(0, 0, 0, 0.28);
+  --shadow-menu: 0 1px 2px rgba(0, 0, 0, 0.45), 0 2px 6px 2px rgba(0, 0, 0, 0.32);
+}
+
+html[data-forced-appearance="light"] {
+  --blue: #1a73e8;
+  --blue-light: #e8f0fe;
+  --text-primary: var(--chrome-fg, #202124);
+  --text-secondary: #5f6368;
+  --border: #dadce0;
+  --hover: #f1f3f4;
+  --white: #ffffff;
+  --bg: var(--chrome-shell-tint, var(--chrome-body-bg, #ffffff));
+  --surface-muted: #f8f9fa;
+  --shadow-card: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  --shadow-menu: 0 1px 2px rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
