@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import NtpSearchBox from './NtpSearchBox';
-import { logoPurpleLightSvg } from '../constants/appAssetUrls';
+import { logoPurpleDarkSvg, logoPurpleLightSvg } from '../constants/appAssetUrls';
 import './NewTabApp.css';
 
 // ── Icons (Material-like, inlined for CSP / offline) ────────────────────────
@@ -199,8 +199,15 @@ export default function NewTabApp() {
           <div className="ntp-hero">
             <div className="ntp-hero__mark">
               <img
-                className="ntp-hero__logo"
+                className="ntp-hero__logo ntp-hero__logo--scheme-light"
                 src={logoPurpleLightSvg}
+                alt=""
+                width={80}
+                height={80}
+              />
+              <img
+                className="ntp-hero__logo ntp-hero__logo--scheme-dark"
+                src={logoPurpleDarkSvg}
                 alt=""
                 width={80}
                 height={80}

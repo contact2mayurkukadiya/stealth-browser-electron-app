@@ -131,6 +131,20 @@ body {
   object-fit: contain;
 }
 
+.ntp-hero__logo--scheme-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ntp-hero__logo--scheme-light {
+    display: none;
+  }
+
+  .ntp-hero__logo--scheme-dark {
+    display: block;
+  }
+}
+
 .ntp-hero__name {
   font-size: clamp(2rem, 6vw, 3rem);
   font-weight: 600;

@@ -5,7 +5,10 @@
 const BASE = 'app://localhost/assets/images';
 const ASSETS_BASE = 'app://localhost/assets';
 
+/** Dark-violet artwork for light surfaces */
 export const logoPurpleLightSvg = `${ASSETS_BASE}/logo/purple-light.svg`;
+/** Lavender / light artwork for dark surfaces */
+export const logoPurpleDarkSvg = `${ASSETS_BASE}/logo/purple-dark.svg`;
 
 export const tabStealthSvg = `${BASE}/tab-stealth.svg`;
 export const tabCloseSvg = `${BASE}/tab-close.svg`;
