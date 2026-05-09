@@ -9,13 +9,16 @@
     "dev": "node scripts/renderer-build-all.cjs && concurrently -k \"node scripts/renderer-watch.cjs\" \"electron .\"",
     "dev:renderer": "node scripts/renderer-watch.cjs",
     "dist": "npm run build:renderer && electron-builder --mac",
-    "dist:win": "npm run build:renderer && electron-builder --win --x64"
+    "dist:win": "npm run build:renderer && electron-builder --win --x64",
+    "generate-icons": "node scripts/generate-windows-icon.cjs",
+    "generate-icon-win": "node scripts/generate-windows-icon.cjs"
   },
   "build": {
     "appId": "com.invisurf.browser",
     "productName": "InviSurf",
     "copyright": "Copyright © 2026 Mark Oliver",
     "mac": {
+      "icon": "renderer/assets/logo/icon.png",
       "target": [
         "dmg"
       ],
@@ -23,13 +26,17 @@
       "category": "public.app-category.utilities"
     },
     "win": {
+      "icon": "renderer/assets/logo/icon.ico",
       "target": [
         "nsis"
       ]
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "renderer/assets/logo/icon.ico",
+      "uninstallerIcon": "renderer/assets/logo/icon.ico",
+      "installerHeaderIcon": "renderer/assets/logo/icon.ico"
     }
   },
   "keywords": [],
@@ -47,9 +54,11 @@
     "electron": "^41.0.4",
     "electron-builder": "^26.8.1",
     "electron-reloader": "^1.2.3",
+    "png-to-ico": "^2.1.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-redux": "^9.2.0",
+    "sharp": "^0.34.5",
     "vite": "^6.2.3"
   },
   "dependencies": {

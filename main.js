@@ -19,6 +19,7 @@ const clipboard = electron.clipboard;
 const webContents = electron.webContents;
 const session = electron.session || electronMain.session;
 const screen = electron.screen;
+const nativeTheme = electron.nativeTheme;
 const { pathToFileURL } = require('url');
 const path = require('path');
 const fs = require('fs');
@@ -644,7 +645,7 @@ if (!app.isPackaged) {
 
 app.on('before-quit', () => {
     for (const watcher of devFileWatchers) {
-        try { watcher.close(); } catch (_) {}
+        try { watcher.close(); } catch (_) { }
     }
     devFileWatchers.length = 0;
 });
@@ -789,15 +790,15 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
         // is destroyed causes a native (C++) crash.
         for (const tabId of Object.keys(context.tabs)) {
             const view = context.tabs[tabId];
-            try { context.window.contentView.removeChildView(view); } catch (_) {}
-            try { if (!view.webContents.isDestroyed()) view.webContents.destroy(); } catch (_) {}
+            try { context.window.contentView.removeChildView(view); } catch (_) { }
+            try { if (!view.webContents.isDestroyed()) view.webContents.destroy(); } catch (_) { }
         }
         context.tabs = {};
         context.activeTabId = null;
 
         if (context.tooltipView) {
-            try { context.window.contentView.removeChildView(context.tooltipView); } catch (_) {}
-            try { if (!context.tooltipView.webContents.isDestroyed()) context.tooltipView.webContents.destroy(); } catch (_) {}
+            try { context.window.contentView.removeChildView(context.tooltipView); } catch (_) { }
+            try { if (!context.tooltipView.webContents.isDestroyed()) context.tooltipView.webContents.destroy(); } catch (_) { }
             context.tooltipView = null;
         }
     });
@@ -2125,9 +2126,9 @@ const SETTINGS_DEFAULTS = {
 };
 
 const SEARCH_ENGINES = {
-    google:     'https://www.google.com/search?q=',
-    bing:       'https://www.bing.com/search?q=',
-    brave:      'https://search.brave.com/search?q=',
+    google: 'https://www.google.com/search?q=',
+    bing: 'https://www.bing.com/search?q=',
+    brave: 'https://search.brave.com/search?q=',
     duckDuckGo: 'https://duckduckgo.com/?q=',
 };
 
@@ -3057,9 +3058,30 @@ protocol.registerSchemesAsPrivileged([
     { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false } }
 ]);
 
+function applyDockIconForSystemAppearance() {
+    if (process.platform !== 'darwin' || !app.dock || !nativeTheme) return;
+    // Packaged builds: Dock uses embedded .icns from electron-builder; setIcon(PNG) rescales
+    // slightly vs neighbors. Dev-only override keeps custom icon under `electron .`.
+    if (app.isPackaged) return;
+    const iconFile = nativeTheme.shouldUseDarkColors ? 'icon-dark.png' : 'icon.png';
+    const dockIconPath = path.join(__dirname, 'renderer', 'assets', 'logo', iconFile);
+    if (!fs.existsSync(dockIconPath)) return;
+    try {
+        app.dock.setIcon(dockIconPath);
+    } catch (error) {
+        console.warn('Could not set Dock icon:', error?.message || error);
+    }
+}
+
 app.whenReady().then(() => {
     registerAppProtocolForSession(session.defaultSession, 'default');
     authPolicy.applyGoogleAuthPolicy(session.defaultSession); // Force auth checks for the default session
+
+    // macOS dev only: override Electron Dock tile + light/dark PNGs. Packaged app keeps bundle .icns.
+    if (process.platform === 'darwin' && app.dock && nativeTheme && !app.isPackaged) {
+        applyDockIconForSystemAppearance();
+        nativeTheme.on('updated', applyDockIconForSystemAppearance);
+    }
 
     const existingProfiles = loadProfiles();
     if (existingProfiles.length > 0) {
