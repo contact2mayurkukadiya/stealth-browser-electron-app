@@ -12,6 +12,7 @@ import { useEffect, useRef } from 'react';
  * @param {Function} opts.onHideTooltip
  * @param {boolean}  [opts.isPinned] - pinned tabs cannot be dragged
  * @param {number}   [opts.pinnedTabCount] - unpinned tabs cannot move left of this index
+ * @param {boolean}  [opts.isActive] - if true, pointer tap does not call onSwitchTab (no redundant switch)
  * @returns {React.RefObject} ref – attach to the <div className="tab"> element
  */
 export function useTabDrag({
@@ -21,12 +22,13 @@ export function useTabDrag({
   onHideTooltip,
   isPinned = false,
   pinnedTabCount = 0,
+  isActive = false,
 }) {
   const tabRef = useRef(null);
 
   // Keep stable refs to callbacks so the effect never needs to re-run
   const cbRef = useRef({});
-  cbRef.current = { onSwitchTab, onDragEnd, onHideTooltip, isPinned, pinnedTabCount };
+  cbRef.current = { onSwitchTab, onDragEnd, onHideTooltip, isPinned, pinnedTabCount, isActive };
 
   useEffect(() => {
     const tabEl = tabRef.current;
@@ -36,7 +38,9 @@ export function useTabDrag({
       if (e.button !== 0) return;
       if (e.target.closest('.close-btn')) return;
 
-      cbRef.current.onSwitchTab(id);
+      if (!cbRef.current.isActive) {
+        cbRef.current.onSwitchTab(id);
+      }
       cbRef.current.onHideTooltip();
 
       if (cbRef.current.isPinned) return;
@@ -210,7 +214,7 @@ export function useTabDrag({
       tabEl.removeEventListener('pointerdown', handlePointerDown);
       tabEl.removeEventListener('mousedown', handleMouseDown);
     };
-  }, [id, isPinned, pinnedTabCount]);
+  }, [id, isPinned, pinnedTabCount, isActive]);
 
   return tabRef;
 }

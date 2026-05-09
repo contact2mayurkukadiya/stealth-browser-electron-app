@@ -65,6 +65,12 @@ body {
   min-height: 100%;
 }
 
+/* Logos and favicons: avoid accidental drag into chromed UI / OS */
+.ntp-root img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
 .ntp-bg-gradient {
   position: fixed;
   inset: 0;

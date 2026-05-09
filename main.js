@@ -885,6 +885,15 @@ function isAllowedTabNavigationUrl(targetUrl) {
 
 function activateTabInContext(context, id) {
     if (!context || !context.tabs[id]) return false;
+    // Re-activating the already-visible tab only removes/re-attaches every view and
+    // re-sends omnibox:focus — causes NTP flicker when clicking the active tab repeatedly.
+    if (
+        context.activeTabId === id &&
+        !detachedTabWindows.has(id) &&
+        !context.isActiveTabTemporarilyHidden
+    ) {
+        return true;
+    }
     if (detachedTabWindows.has(id)) {
         const w = detachedTabWindows.get(id);
         if (w && !w.isDestroyed()) {

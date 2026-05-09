@@ -24,6 +24,7 @@ export default function Tab({
     onHideTooltip,
     isPinned: !!isPinned,
     pinnedTabCount,
+    isActive,
   });
 
   // Resolve favicon to display

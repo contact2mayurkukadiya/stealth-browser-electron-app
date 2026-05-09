@@ -122,6 +122,7 @@ function SiteShortcutCard({ site }) {
             className="ntp-shortcut__favicon"
             src={faviconUrl(domain)}
             alt=""
+            draggable={false}
             onError={() => setFaviconFailed(true)}
           />
         )}
@@ -204,6 +205,7 @@ export default function NewTabApp() {
                 alt=""
                 width={80}
                 height={80}
+                draggable={false}
               />
               <img
                 className="ntp-hero__logo ntp-hero__logo--scheme-dark"
@@ -211,6 +213,7 @@ export default function NewTabApp() {
                 alt=""
                 width={80}
                 height={80}
+                draggable={false}
               />
             </div>
             <h1 className="ntp-hero__name">InviSurf</h1>

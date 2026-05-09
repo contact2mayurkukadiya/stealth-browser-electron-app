@@ -101,6 +101,7 @@ function AppShell() {
 
   // ── Tab operations ───────────────────────────────────────────────────────
   const switchTab = useCallback((id) => {
+    if (stateRef.current.currentTabId === id) return;
     dispatch(setCurrentTab(id));
     window.electronAPI.switchTab(id);
   }, [dispatch]);

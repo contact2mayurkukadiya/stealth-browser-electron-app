@@ -102,6 +102,7 @@ function SuggestionRow({ suggestion, query, isSelected, onMouseDown, onMouseEnte
             src={favicon}
             className="omnibox-row__favicon"
             alt=""
+            draggable={false}
             onError={() => setFaviconError(true)}
           />
         ) : (
