@@ -1952,18 +1952,22 @@ function createTab(context, id, url = "https://www.google.com", isStealth = fals
     const getDisplayUrl = toDisplayUrl;
 
     view.webContents.on('page-title-updated', (e, title) => {
+        if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
         context.window.webContents.send('tab-update', { id, title, url: getDisplayUrl(view.webContents.getURL()) });
     });
 
     view.webContents.on('page-favicon-updated', (e, favicons) => {
+        if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
         context.window.webContents.send('tab-update', { id, favicon: favicons[0] || null, url: getDisplayUrl(view.webContents.getURL()) });
     });
 
     view.webContents.on('did-start-loading', () => {
+        if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
         context.window.webContents.send('tab-update', { id, isLoading: true, url: getDisplayUrl(view.webContents.getURL()) });
     });
 
     view.webContents.on('did-stop-loading', () => {
+        if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
         context.window.webContents.send('tab-update', { id, isLoading: false, url: getDisplayUrl(view.webContents.getURL()) });
     });
 
