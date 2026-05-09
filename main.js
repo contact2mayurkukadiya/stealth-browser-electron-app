@@ -592,6 +592,11 @@ function installSessionNetworkGuards(session) {
     });
 }
 
+// Dev-only chokidar watchers tracked so they can be closed before quit.
+// On macOS, leaving fsevents handles alive causes fse_dispatch_event to abort()
+// during node::Environment::CleanupHandles() because the V8 isolate is already torn down.
+const devFileWatchers = [];
+
 if (!app.isPackaged) {
     try {
         require('electron-reloader')(module, {
@@ -606,32 +611,43 @@ if (!app.isPackaged) {
         const chokidar = require('chokidar');
 
         let preloadRelaunchScheduled = false;
-        chokidar
-            .watch(path.join(__dirname, 'preload.js'), { ignoreInitial: true })
-            .on('change', () => {
-                if (preloadRelaunchScheduled) return;
-                preloadRelaunchScheduled = true;
-                app.relaunch();
-                app.exit(0);
-            });
+        devFileWatchers.push(
+            chokidar
+                .watch(path.join(__dirname, 'preload.js'), { ignoreInitial: true })
+                .on('change', () => {
+                    if (preloadRelaunchScheduled) return;
+                    preloadRelaunchScheduled = true;
+                    app.relaunch();
+                    app.exit(0);
+                })
+        );
 
         // One reload after all four Vite steps finish (see scripts/renderer-build-all.cjs).
         const rendererReloadStamp = path.join(__dirname, '.stealth-renderer-reload');
         if (!fs.existsSync(rendererReloadStamp)) {
             fs.writeFileSync(rendererReloadStamp, '');
         }
-        chokidar
-            .watch(rendererReloadStamp, { ignoreInitial: true })
-            .on('change', () => {
-                for (const win of BrowserWindow.getAllWindows()) {
-                    if (win.isDestroyed()) continue;
-                    win.webContents.reloadIgnoringCache();
-                }
-            });
+        devFileWatchers.push(
+            chokidar
+                .watch(rendererReloadStamp, { ignoreInitial: true })
+                .on('change', () => {
+                    for (const win of BrowserWindow.getAllWindows()) {
+                        if (win.isDestroyed()) continue;
+                        win.webContents.reloadIgnoringCache();
+                    }
+                })
+        );
     } catch (err) {
         console.error('Dev file watch error:', err);
     }
 }
+
+app.on('before-quit', () => {
+    for (const watcher of devFileWatchers) {
+        try { watcher.close(); } catch (_) {}
+    }
+    devFileWatchers.length = 0;
+});
 
 /** Usable screen rectangle (excludes dock/taskbar); keeps custom title bar — not OS fullscreen. */
 function getPrimaryWorkAreaBounds() {
@@ -767,9 +783,31 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
         });
     });
 
+    window.on('close', () => {
+        // Destroy all tab WebContentsViews before the parent window is torn down.
+        // On Windows, leaving live child views attached when the native window handle
+        // is destroyed causes a native (C++) crash.
+        for (const tabId of Object.keys(context.tabs)) {
+            const view = context.tabs[tabId];
+            try { context.window.contentView.removeChildView(view); } catch (_) {}
+            try { if (!view.webContents.isDestroyed()) view.webContents.destroy(); } catch (_) {}
+        }
+        context.tabs = {};
+        context.activeTabId = null;
+
+        if (context.tooltipView) {
+            try { context.window.contentView.removeChildView(context.tooltipView); } catch (_) {}
+            try { if (!context.tooltipView.webContents.isDestroyed()) context.tooltipView.webContents.destroy(); } catch (_) {}
+            context.tooltipView = null;
+        }
+    });
+
     window.on('closed', () => {
         windowContextsById.delete(window.id);
         windowBootstrapById.delete(context.windowId);
+        if (mainWindow === window) {
+            mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed()) || null;
+        }
     });
 
     createTooltipOverlay(context);
