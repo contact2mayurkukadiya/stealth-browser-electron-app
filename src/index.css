@@ -23,35 +23,59 @@
     font-display: swap;
 }
 
+/* Chrome tokens · Effective scheme comes from Electron `nativeTheme` (Appearance in Settings) */
+:root {
+    color-scheme: dark light;
+    --chrome-shell-bg: #253035;
+    --chrome-body-bg: var(--chrome-shell-bg);
+    --chrome-bg-snapshot: var(--chrome-shell-bg);
+    --chrome-header-bg: var(--chrome-shell-bg);
+    --chrome-fg: rgba(255, 255, 255, 0.95);
+    --chrome-slider: #394d55;
+    --chrome-slider-stealth: #5c2020;
+    --chrome-nav-bg: #394d55;
+    --chrome-nav-stealth: #5c2020;
+    --chrome-url-well: #2f3c42;
+    --chrome-url-well-stealth: #5c2020;
+    --chrome-domain: #ffffff;
+    --chrome-url-ghost: rgba(255, 255, 255, 0.4);
+    --chrome-bookmark-bar: #2d3e45;
+    --chrome-bkm-text: rgba(255, 255, 255, 0.85);
+    --chrome-tab-separator: rgba(74, 97, 107, 0.62);
+    --chrome-tab-hover-bg: rgba(255, 255, 255, 0.1);
+    --chrome-close-hover: rgba(255, 255, 255, 0.1);
+    --chrome-star-muted: rgba(255, 255, 255, 0.5);
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        color-scheme: light;
+        --chrome-shell-bg: #ffffff;
+        --chrome-fg: #171b20;
+        --chrome-slider: #ffffff;
+        --chrome-slider-stealth: #5c2020;
+        --chrome-nav-bg: #ffffff;
+        --chrome-nav-stealth: #5c2020;
+        --chrome-url-well: #ebecef;
+        --chrome-url-well-stealth: #5c2020;
+        --chrome-domain: #171b20;
+        --chrome-url-ghost: rgba(23, 27, 32, 0.45);
+        --chrome-bookmark-bar: #ffffff;
+        --chrome-bkm-text: rgba(23, 27, 32, 0.88);
+        --chrome-tab-separator: rgba(0, 0, 0, 0.1);
+        --chrome-tab-hover-bg: rgba(0, 0, 0, 0.045);
+        --chrome-close-hover: rgba(0, 0, 0, 0.07);
+        --chrome-star-muted: rgba(23, 27, 32, 0.42);
+    }
+}
+
 body {
     position: relative;
     margin: 0;
-    background-color: #253035;
-    color: white;
+    background-color: var(--chrome-body-bg);
+    color: var(--chrome-fg);
     font-family: 'InviSurfUIFont', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     overflow: hidden;
-}
-
-body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-    background-color: #3a4a50;
-    opacity: 0.45;
-    -webkit-mask-image: url('app://localhost/assets/images/stealth.svg');
-    mask-image: url('app://localhost/assets/images/stealth.svg');
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-position: center center;
-    mask-position: center center;
-    -webkit-mask-size: min(48vw, 380px);
-    mask-size: min(48vw, 380px);
-}
-
-body.tab-snapshot-active::before {
-    opacity: 0;
 }
 
 /* Frozen capture of tab while profile menu hides the WebContentsView */
@@ -64,7 +88,7 @@ body.tab-snapshot-active::before {
     z-index: 0;
     pointer-events: none;
     overflow: hidden;
-    background: #253035;
+    background: var(--chrome-bg-snapshot);
 }
 
 .tab-content-snapshot img {
@@ -80,10 +104,22 @@ body.tab-snapshot-active::before {
     position: relative;
     z-index: 1;
     height: 122px;
-    background: #253035;
+    background: var(--chrome-header-bg);
     display: flex;
     flex-direction: column;
     -webkit-app-region: drag;
+}
+
+@media (prefers-color-scheme: light) {
+    .header {
+        border-bottom: 1px solid rgba(23, 27, 32, 0.08);
+        box-sizing: border-box;
+    }
+
+    .bookmark-bar {
+        border-top: 1px solid rgba(23, 27, 32, 0.07);
+        box-sizing: border-box;
+    }
 }
 
 /* ── Tab bar ─────────────────────────────────────────────────────────────── */
@@ -134,7 +170,7 @@ body.tab-snapshot-active::before {
     top: 4px;
     width: var(--active-width);
     height: calc(100% - 2px);
-    background: #394D55;
+    background: var(--chrome-slider);
     border-radius: 10px 10px 0 0;
     pointer-events: none;
     z-index: 1;
@@ -144,7 +180,7 @@ body.tab-snapshot-active::before {
 .tab-bar--active-stealth .tab-active-slider,
 .tab-bar--active-stealth .tab-active-slider::before,
 .tab-bar--active-stealth .tab-active-slider::after {
-    background: #5c2020;
+    background: var(--chrome-slider-stealth);
 }
 
 .tab-bar.tab-bar--dragging .tab-active-slider {
@@ -158,7 +194,7 @@ body.tab-snapshot-active::before {
     bottom: -1px;
     width: 25px;
     aspect-ratio: 1;
-    background: #394D55;
+    background: var(--chrome-slider);
     z-index: 1;
 }
 
@@ -256,7 +292,7 @@ body.tab-snapshot-active::before {
     width: 2px;
     height: 15px;
     transform: translateY(-50%);
-    background: #4a616b9f;
+    background: var(--chrome-tab-separator);
     pointer-events: none;
     z-index: 1;
     transition: opacity 0.2s ease;
@@ -273,7 +309,7 @@ body.tab-snapshot-active::before {
 }
 
 .tab:not(.active):hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--chrome-tab-hover-bg);
     border-radius: 10px 10px 10px 10px;
 }
 
@@ -284,13 +320,13 @@ body.tab-snapshot-active::before {
 }
 
 .stealth-tab:not(.active):hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--chrome-tab-hover-bg);
     border-radius: 10px 10px 10px 10px;
 }
 
 .stealth-tab.active {
     background: transparent;
-    color: #fff;
+    color: var(--chrome-fg);
 }
 
 .tab-title .tab-stealth-icon {
@@ -317,12 +353,12 @@ body.tab-snapshot-active::before {
     align-items: center;
     padding: 5px 10px;
     gap: 10px;
-    background: #394D55;
+    background: var(--chrome-nav-bg);
     height: 45px;
 }
 
 .header--stealth-active .nav-bar {
-    background: #5c2020;
+    background: var(--chrome-nav-stealth);
 }
 
 .url-container {
@@ -330,7 +366,7 @@ body.tab-snapshot-active::before {
     flex-grow: 1;
     display: flex;
     align-items: center;
-    background: #2F3C42;
+    background: var(--chrome-url-well);
     border-radius: 20px;
     height: 34px;
     overflow: visible;
@@ -339,7 +375,7 @@ body.tab-snapshot-active::before {
 }
 
 .header--stealth-active .url-container {
-    background: #5c2020;
+    background: var(--chrome-url-well-stealth);
     border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
@@ -350,7 +386,7 @@ body.tab-snapshot-active::before {
     height: 100%;
     background: transparent;
     border: none;
-    color: white;
+    color: var(--chrome-fg);
     padding: 0 15px;
     outline: none;
     z-index: 2;
@@ -370,7 +406,7 @@ body.tab-snapshot-active::before {
     align-items: center;
     padding: 0 15px;
     font-size: 14px;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--chrome-url-ghost);
     /* Gray for non-domain */
     pointer-events: none;
     z-index: 1;
@@ -379,8 +415,7 @@ body.tab-snapshot-active::before {
 }
 
 .url-display .domain {
-    color: #FFFFFF;
-    /* White for domain */
+    color: var(--chrome-domain);
 }
 
 #url-input:focus~.url-display {
@@ -407,7 +442,7 @@ body.tab-snapshot-active::before {
     z-index: 15;
     background: transparent;
     border: none;
-    color: white;
+    color: var(--chrome-fg);
     cursor: pointer;
     font-size: 18px;
     -webkit-app-region: no-drag;
@@ -421,18 +456,18 @@ body.tab-snapshot-active::before {
 }
 
 .btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--chrome-close-hover);
 }
 
 /* ── Star / Bookmark button ──────────────────────────────────────────────── */
 .star-btn {
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--chrome-star-muted);
     transition: color 0.2s ease, transform 0.15s ease;
     flex-shrink: 0;
 }
 
 .star-btn:hover {
-    color: white;
+    color: var(--chrome-fg);
 }
 
 .star-btn.starred {
@@ -466,7 +501,7 @@ body.tab-snapshot-active::before {
     align-items: center;
     padding: 0 8px;
     gap: 2px;
-    background: #2D3E45;
+    background: var(--chrome-bookmark-bar);
     height: 32px;
     overflow-x: auto;
     overflow-y: hidden;
@@ -496,7 +531,7 @@ body.tab-snapshot-active::before {
     border-radius: 5px;
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--chrome-bkm-text);
     font-size: 12px;
     cursor: pointer;
     white-space: nowrap;
@@ -509,8 +544,8 @@ body.tab-snapshot-active::before {
 
 .bk-item:hover,
 .bk-folder:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: white;
+    background: var(--chrome-tab-hover-bg);
+    color: var(--chrome-fg);
 }
 
 .bk-del-btn {
@@ -877,6 +912,64 @@ body.tab-snapshot-active::before {
     border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
+@media (prefers-color-scheme: dark) {
+
+    .bk-edit-popup {
+        color-scheme: dark;
+        background: #2d2f31;
+        color: #e8eaed;
+    }
+
+    .bk-edit-label {
+        color: rgba(232, 234, 237, 0.55);
+    }
+
+    .bk-edit-input,
+    .bk-edit-select {
+        border: 1px solid #5f6368;
+        background: #35363a;
+        color: #e8eaed;
+    }
+
+    .bk-edit-input::placeholder {
+        color: rgba(232, 234, 237, 0.45);
+    }
+
+    .bk-edit-input:focus,
+    .bk-edit-select:focus {
+        border-color: #8ab4f8;
+        background: #3c4043;
+    }
+
+    .bk-edit-btn--primary {
+        background: #8ab4f8;
+        color: #202124;
+    }
+
+    .bk-edit-btn--primary:hover {
+        opacity: 0.92;
+    }
+
+    .bk-edit-btn--secondary {
+        background: rgba(255, 255, 255, 0.08);
+        color: #e8eaed;
+    }
+
+    .bk-edit-btn--danger {
+        color: #f28b82;
+    }
+
+    .bk-edit-new-folder-overlay {
+        background: rgba(32, 33, 37, 0.88);
+    }
+
+    .bk-edit-new-folder-dialog {
+        background: #35363a;
+        border: 1px solid #5f6368;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    }
+}
+
 /* ── Context menu ────────────────────────────────────────────────────────── */
 .bk-context-menu {
     position: fixed;
@@ -963,6 +1056,48 @@ body.tab-snapshot-active::before {
 
 .bk-context-item--tab:disabled:hover {
     background: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+
+    /* Tab strip context menu · match dark chrome (electron nativeTheme drives prefers-color-scheme) */
+    .bk-context-menu--tab {
+        background: #35363a;
+        border: 1px solid #5f6368;
+        box-shadow:
+            0 4px 8px rgba(0, 0, 0, 0.4),
+            0 16px 32px rgba(0, 0, 0, 0.45);
+    }
+
+    .bk-context-separator--tab {
+        background: rgba(255, 255, 255, 0.12);
+    }
+
+    .bk-context-item--tab {
+        color: #e8eaed;
+    }
+
+    .bk-context-item--tab:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #fafafa;
+    }
+
+    .bk-context-item--tab:disabled {
+        color: rgba(232, 234, 237, 0.38);
+    }
+
+    .bk-context-item.danger.bk-context-item--tab {
+        color: #f28b82;
+    }
+
+    .bk-context-item.danger.bk-context-item--tab:hover:not(:disabled) {
+        background: rgba(242, 139, 130, 0.16);
+        color: #faa;
+    }
+
+    .bk-context-item--tab:disabled:hover {
+        background: transparent;
+    }
 }
 
 /* ── Folder inline prompt ────────────────────────────────────────────────── */
@@ -1058,7 +1193,7 @@ body.tab-snapshot-active::before {
 }
 
 .close-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--chrome-close-hover);
 }
 
 .tab--mode-full .tab-title {
@@ -1406,4 +1541,78 @@ body.tab-snapshot-active::before {
 .search-tabs-row-close:hover {
     background: rgba(0, 0, 0, 0.08);
     color: #111;
+}
+
+/* ── Light scheme: bookmark bar menus (paired with Electron theme) ───────────── */
+@media (prefers-color-scheme: light) {
+
+    .bk-breadcrumb-sep,
+    .bk-empty-hint {
+        color: rgba(23, 27, 32, 0.35);
+    }
+
+    .bk-add-folder {
+        color: rgba(23, 27, 32, 0.45);
+    }
+
+    .bk-add-folder:hover {
+        background: var(--chrome-tab-hover-bg);
+        color: rgba(23, 27, 32, 0.85);
+    }
+
+    .bk-folder-modal {
+        background: #ffffff;
+        color: rgba(23, 27, 32, 0.9);
+    }
+
+    .bk-folder-modal-header {
+        border-bottom: 1px solid rgba(23, 27, 32, 0.1);
+    }
+
+    .bk-dropdown-item {
+        color: rgba(23, 27, 32, 0.88);
+    }
+
+    .bk-dropdown-item:hover {
+        background: rgba(23, 27, 32, 0.06);
+        color: #171b20;
+    }
+
+    .bk-dropdown-empty {
+        color: rgba(23, 27, 32, 0.42);
+    }
+
+    .bk-context-menu:not(.bk-context-menu--tab) {
+        background: #ffffff;
+        border: 1px solid rgba(23, 27, 32, 0.12);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+    }
+
+    .bk-context-menu:not(.bk-context-menu--tab) .bk-context-separator {
+        background: rgba(23, 27, 32, 0.08);
+    }
+
+    .bk-context-menu:not(.bk-context-menu--tab) .bk-context-item {
+        color: rgba(23, 27, 32, 0.88);
+    }
+
+    .bk-context-menu:not(.bk-context-menu--tab) .bk-context-item:hover {
+        background: rgba(23, 27, 32, 0.06);
+        color: #171b20;
+    }
+
+    .bk-folder-prompt input {
+        background: #ffffff;
+        border: 1px solid #FFB430;
+        color: var(--chrome-fg);
+    }
+
+    .bk-folder-prompt button {
+        background: rgba(23, 27, 32, 0.06);
+        color: var(--chrome-fg);
+    }
+
+    .bk-folder-prompt button:hover {
+        background: rgba(23, 27, 32, 0.1);
+    }
 }

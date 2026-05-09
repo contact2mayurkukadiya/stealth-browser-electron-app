@@ -688,11 +688,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
         ...(isMac
             ? { trafficLightPosition: { x: 15, y: 15 } }
             : {
-                titleBarOverlay: {
-                    color: '#1a1a1a',
-                    symbolColor: '#ffffff',
-                    height: 45,
-                },
+                titleBarOverlay: getTitleBarOverlayOptionsForNativeTheme(),
             }
         ),
         webPreferences: {
@@ -762,6 +758,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
         sleepingTabs: {},
         activeTabId: null,
         isActiveTabTemporarilyHidden: false,
+        /** True while active tab's WebContentsView was removeChildView'd for shell overlays. */
+        activeTabViewRemovedForShellOverlay: false,
         tooltipView: null,
     };
     windowContextsById.set(window.id, context);
@@ -771,7 +769,9 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true }
         const view = context.tabs[context.activeTabId];
         if (!view) return;
         if (context.isActiveTabTemporarilyHidden) {
-            view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+            if (!context.activeTabViewRemovedForShellOverlay) {
+                view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+            }
             return;
         }
         const { width, height } = window.getContentBounds();
@@ -883,6 +883,51 @@ function isAllowedTabNavigationUrl(targetUrl) {
         targetUrl.startsWith('view-source:');
 }
 
+/** Detach active tab native view so shell HTML (portals, omnibox popups) renders above it. */
+function hideActiveTabViewForShellOverlay(context) {
+    if (!context?.activeTabId || detachedTabWindows.has(context.activeTabId)) return;
+    const view = context.tabs[context.activeTabId];
+    if (!view || view.webContents.isDestroyed()) return;
+    context.isActiveTabTemporarilyHidden = true;
+    try {
+        context.window.contentView.removeChildView(view);
+        context.activeTabViewRemovedForShellOverlay = true;
+    } catch (err) {
+        console.error('hideActiveTabViewForShellOverlay removeChildView:', err?.message || err);
+        try {
+            view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        } catch (_) { /* ignore */ }
+    }
+}
+
+/** Re-attach after hideActiveTabViewForShellOverlay and apply current content bounds. */
+function restoreActiveTabViewFromShellOverlay(context) {
+    if (!context?.activeTabId || detachedTabWindows.has(context.activeTabId)) return;
+    const view = context.tabs[context.activeTabId];
+    if (!view || view.webContents.isDestroyed()) return;
+    context.isActiveTabTemporarilyHidden = false;
+    if (context.activeTabViewRemovedForShellOverlay) {
+        try {
+            context.window.contentView.addChildView(view);
+            context.activeTabViewRemovedForShellOverlay = false;
+        } catch (err) {
+            console.error('restoreActiveTabViewFromShellOverlay addChildView:', err?.message || err);
+        }
+    }
+    const { width, height } = context.window.getContentBounds();
+    const fs = htmlFullscreenTabId === context.activeTabId;
+    try {
+        view.setBounds({
+            x: 0,
+            y: fs ? 0 : UI_HEIGHT,
+            width,
+            height: fs ? height : height - UI_HEIGHT,
+        });
+    } catch (err) {
+        console.error('restoreActiveTabViewFromShellOverlay setBounds:', err?.message || err);
+    }
+}
+
 function activateTabInContext(context, id) {
     if (!context || !context.tabs[id]) return false;
     // Re-activating the already-visible tab only removes/re-attaches every view and
@@ -902,6 +947,8 @@ function activateTabInContext(context, id) {
         }
         return true;
     }
+    context.isActiveTabTemporarilyHidden = false;
+    context.activeTabViewRemovedForShellOverlay = false;
     for (const tid of Object.keys(context.tabs)) {
         if (detachedTabWindows.has(tid)) continue;
         try {
@@ -2132,6 +2179,8 @@ const SETTINGS_DEFAULTS = {
     startupBehavior: 'continue', // 'fresh' | 'continue' | 'clearHistory'
     compatibilityDiagnosticsEnabled: false,
     searchEngine: 'google', // 'google' | 'bing' | 'brave' | 'duckDuckGo'
+    /** 'automatic' = follow OS · 'dark' | 'light' = forced appearance (see nativeTheme.themeSource) */
+    colorTheme: 'automatic',
 };
 
 const SEARCH_ENGINES = {
@@ -2157,16 +2206,68 @@ function getSettingsPath() {
     return settingsPath;
 }
 
+function normalizeColorTheme(value) {
+    if (value === 'automatic' || value === 'dark' || value === 'light') return value;
+    return 'automatic';
+}
+
+function colorThemeSettingToElectronSource(setting) {
+    if (setting === 'dark') return 'dark';
+    if (setting === 'light') return 'light';
+    return 'system';
+}
+
+function getTitleBarOverlayOptionsForNativeTheme() {
+    if (!nativeTheme || typeof nativeTheme.shouldUseDarkColors !== 'boolean') {
+        return { color: '#1a1a1a', symbolColor: '#ffffff', height: 45 };
+    }
+    return nativeTheme.shouldUseDarkColors
+        ? { color: '#1a1a1a', symbolColor: '#ffffff', height: 45 }
+        : { color: '#ffffff', symbolColor: '#202124', height: 45 };
+}
+
+function syncTitleBarOverlaysToNativeTheme() {
+    if (process.platform === 'darwin') return;
+    const overlayOptions = getTitleBarOverlayOptionsForNativeTheme();
+    for (const win of BrowserWindow.getAllWindows()) {
+        if (!win || win.isDestroyed?.()) continue;
+        try {
+            win.setTitleBarOverlay(overlayOptions);
+        } catch (_) {
+            // Window uses a standard title bar (e.g. profile picker) — no overlay.
+        }
+    }
+}
+
+let nativeThemeTitleBarListenersAttached = false;
+function ensureNativeThemeTitleBarListeners() {
+    if (nativeThemeTitleBarListenersAttached || !nativeTheme || typeof nativeTheme.on !== 'function') return;
+    nativeThemeTitleBarListenersAttached = true;
+    nativeTheme.on('updated', () => syncTitleBarOverlaysToNativeTheme());
+}
+
+function applyColorThemeFromSettings() {
+    if (!nativeTheme || typeof nativeTheme !== 'object') return;
+    const prefs = loadSettings();
+    nativeTheme.themeSource = colorThemeSettingToElectronSource(normalizeColorTheme(prefs.colorTheme));
+    syncTitleBarOverlaysToNativeTheme();
+    ensureNativeThemeTitleBarListeners();
+}
+
 function loadSettings() {
     try {
         const p = getSettingsPath();
         if (fs.existsSync(p)) {
-            return { ...SETTINGS_DEFAULTS, ...JSON.parse(fs.readFileSync(p, 'utf-8')) };
+            const merged = { ...SETTINGS_DEFAULTS, ...JSON.parse(fs.readFileSync(p, 'utf-8')) };
+            merged.colorTheme = normalizeColorTheme(merged.colorTheme);
+            return merged;
         }
     } catch (e) {
         console.error('Failed to load settings:', e);
     }
-    return { ...SETTINGS_DEFAULTS };
+    const defaults = { ...SETTINGS_DEFAULTS };
+    defaults.colorTheme = normalizeColorTheme(defaults.colorTheme);
+    return defaults;
 }
 
 function recordCompatEvent(tabId, entry) {
@@ -2191,7 +2292,13 @@ ipcMain.handle('settings:get', (e) => {
 ipcMain.handle('settings:save', (e, data) => {
     if (!isSenderTrusted(e)) return false;
     const current = loadSettings();
-    saveSettings({ ...current, ...data });
+    const patch = typeof data === 'object' && data ? data : {};
+    const next = { ...current, ...patch };
+    if (Object.prototype.hasOwnProperty.call(patch, 'colorTheme')) {
+        next.colorTheme = normalizeColorTheme(patch.colorTheme);
+    }
+    saveSettings(next);
+    applyColorThemeFromSettings();
     return true;
 });
 
@@ -2768,34 +2875,21 @@ ipcMain.on('tab:sleep-register', (e, { id, url }) => {
 });
 
 // Hide / restore the active tab view so React modals can appear above it.
-// WebContentsViews are native children that always render on top of the
-// BrowserWindow web content; setting bounds to 0×0 is the only way to
-// let a React-rendered modal show above the tab content.
+// WebContentsViews composite above the BrowserWindow shell HTML; shrinking bounds
+// is not always enough — removeChildView clears the native layer so portaled UIs
+// (tab context menu, bookmark editor, etc.) paint on top.
 ipcMain.handle('tab:hide-active', (e) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
-    if (context.activeTabId && context.tabs[context.activeTabId] && !detachedTabWindows.has(context.activeTabId)) {
-        context.isActiveTabTemporarilyHidden = true;
-        context.tabs[context.activeTabId].setBounds({ x: 0, y: 0, width: 0, height: 0 });
-    }
+    hideActiveTabViewForShellOverlay(context);
 });
 
 ipcMain.handle('tab:restore-active', (e) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
-    if (context.activeTabId && context.tabs[context.activeTabId] && !detachedTabWindows.has(context.activeTabId)) {
-        context.isActiveTabTemporarilyHidden = false;
-        const { width, height } = context.window.getContentBounds();
-        const fs = htmlFullscreenTabId === context.activeTabId;
-        context.tabs[context.activeTabId].setBounds({
-            x: 0,
-            y: fs ? 0 : UI_HEIGHT,
-            width,
-            height: fs ? height : height - UI_HEIGHT,
-        });
-    }
+    restoreActiveTabViewFromShellOverlay(context);
 });
 
 /** JPEG snapshot of the active tab for shell overlay (profile menu freeze). */
@@ -2842,8 +2936,7 @@ ipcMain.handle('tab:prepare-shell-overlay', async (e) => {
         console.error('tab:prepare-shell-overlay capture', err);
     }
     try {
-        context.isActiveTabTemporarilyHidden = true;
-        view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        hideActiveTabViewForShellOverlay(context);
     } catch (err) {
         console.error('tab:prepare-shell-overlay hide', err);
     }
@@ -3085,6 +3178,8 @@ function applyDockIconForSystemAppearance() {
 app.whenReady().then(() => {
     registerAppProtocolForSession(session.defaultSession, 'default');
     authPolicy.applyGoogleAuthPolicy(session.defaultSession); // Force auth checks for the default session
+
+    applyColorThemeFromSettings();
 
     // macOS dev only: override Electron Dock tile + light/dark PNGs. Packaged app keeps bundle .icns.
     if (process.platform === 'darwin' && app.dock && nativeTheme && !app.isPackaged) {

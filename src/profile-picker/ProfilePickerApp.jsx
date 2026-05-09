@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ProfileAvatar from '../components/ProfileAvatar';
 import ProfileEditorModal from '../components/ProfileEditorModal';
+import { logoPurpleDarkSvg, logoPurpleLightSvg } from '../constants/appAssetUrls';
 import './ProfilePickerApp.css';
 
 const ICON_PENCIL = (
@@ -261,8 +262,30 @@ export default function ProfilePickerApp() {
     <div className="pp-page">
       <div className="pp-content">
         <header className="pp-header">
-          <h1 className="pp-title">InviSurf</h1>
-          <p className="pp-subtitle">Who&apos;s using this browser?</p>
+          <div className="pp-hero">
+            <div className="pp-hero__brand">
+              <div className="pp-hero__mark">
+                <img
+                  className="pp-hero__logo pp-hero__logo--scheme-light"
+                  src={logoPurpleLightSvg}
+                  alt=""
+                  width={64}
+                  height={64}
+                  draggable={false}
+                />
+                <img
+                  className="pp-hero__logo pp-hero__logo--scheme-dark"
+                  src={logoPurpleDarkSvg}
+                  alt=""
+                  width={64}
+                  height={64}
+                  draggable={false}
+                />
+              </div>
+              <h1 className="pp-hero__name">InviSurf</h1>
+            </div>
+            <p className="pp-subtitle">Who&apos;s using this browser?</p>
+          </div>
         </header>
 
         {error && (

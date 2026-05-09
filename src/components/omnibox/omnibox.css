@@ -166,3 +166,42 @@
 .omnibox-badge--keyword  { background: rgba(52, 168, 83, 0.18);   color: #81c995; }
 .omnibox-badge--bookmark { background: rgba(251, 188, 4, 0.18);   color: #fdd663; }
 .omnibox-badge--url      { background: rgba(255, 255, 255, 0.08); color: #aaa; }
+
+@media (prefers-color-scheme: light) {
+  .omnibox-dropdown {
+    background: #ffffff;
+    border: 1px solid rgba(23, 27, 32, 0.12);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12), 0 4px 10px rgba(15, 23, 42, 0.08);
+  }
+
+  .omnibox-ghost__suffix {
+    color: rgba(23, 27, 32, 0.35);
+  }
+
+  .omnibox-row:hover,
+  .omnibox-row--selected {
+    background: rgba(23, 27, 32, 0.06);
+  }
+
+  .omnibox-row--selected {
+    background: rgba(255, 152, 0, 0.14);
+  }
+
+  .omnibox-row__text {
+    color: rgba(23, 27, 32, 0.9);
+  }
+
+  .omnibox-row__text strong {
+    color: #111827;
+  }
+
+  .omnibox-row__description {
+    color: rgba(23, 27, 32, 0.45);
+  }
+
+  .omnibox-badge--history  { background: rgba(23, 27, 32, 0.06); color: #616161; }
+  .omnibox-badge--search   { background: rgba(66, 133, 244, 0.15);  color: #1967d2; }
+  .omnibox-badge--keyword  { background: rgba(52, 168, 83, 0.15);   color: #137333; }
+  .omnibox-badge--bookmark { background: rgba(251, 188, 4, 0.22);   color: #b06000; }
+  .omnibox-badge--url      { background: rgba(23, 27, 32, 0.06); color: #616161; }
+}

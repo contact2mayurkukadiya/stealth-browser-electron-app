@@ -62,11 +62,6 @@ export function TabOverlayProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    document.body.classList.toggle('tab-snapshot-active', !!tabSnapshotDataUrl);
-    return () => document.body.classList.remove('tab-snapshot-active');
-  }, [tabSnapshotDataUrl]);
-
-  useEffect(() => {
     const onUnload = () => {
       forceResetOverlay();
     };

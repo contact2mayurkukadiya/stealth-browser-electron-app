@@ -42,6 +42,24 @@ const SEARCH_ENGINE_OPTIONS = [
   },
 ];
 
+const COLOR_THEME_OPTIONS = [
+  {
+    value: 'automatic',
+    label: 'Automatic',
+    description: 'Match light or dark appearance with your operating system.',
+  },
+  {
+    value: 'dark',
+    label: 'Dark',
+    description: 'Always use dark appearance for browser windows.',
+  },
+  {
+    value: 'light',
+    label: 'Light',
+    description: 'Always use light appearance for browser windows.',
+  },
+];
+
 function Toggle({ checked, onChange }) {
   return (
     <button
@@ -101,6 +119,10 @@ export default function SettingsApp() {
     await persist({ ...settings, searchEngine: value });
   }, [settings, persist]);
 
+  const handleColorThemeChange = useCallback(async (value) => {
+    await persist({ ...settings, colorTheme: value });
+  }, [settings, persist]);
+
   const handleRelaunch = useCallback(() => {
     window.electronAPI.appRelaunch();
   }, []);
@@ -140,6 +162,34 @@ export default function SettingsApp() {
       </header>
 
       <div className="settings-content">
+        {/* ── Appearance ───────────────────────────────────────────────── */}
+        <section className="settings-section">
+          <h2 className="settings-section__title">Appearance</h2>
+          <div className="settings-card settings-card--theme">
+            <label className="setting-row settings-theme-field" htmlFor="settings-color-theme">
+              <div className="setting-row__text">
+                <span className="setting-row__label">Theme</span>
+                <span className="setting-row__desc">
+                  Automatic follows your system setting. Choosing Dark or Light overrides it for InviSurf only.
+                </span>
+              </div>
+              <select
+                id="settings-color-theme"
+                className="settings-theme-select"
+                aria-label="Theme"
+                value={settings.colorTheme === 'dark' || settings.colorTheme === 'light' ? settings.colorTheme : 'automatic'}
+                onChange={(e) => handleColorThemeChange(e.target.value)}
+              >
+                {COLOR_THEME_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value} title={opt.description}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </section>
+
         {/* ── Privacy ──────────────────────────────────────────────────── */}
         <section className="settings-section">
           <h2 className="settings-section__title">Privacy</h2>

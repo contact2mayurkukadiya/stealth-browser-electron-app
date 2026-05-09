@@ -32,6 +32,8 @@
   --hover: #f1f3f4;
   --white: #ffffff;
   --bg: #ffffff;
+  /* Grouped lists inside dialogs (must track theme — not hardcoded light gray) */
+  --surface-muted: #f8f9fa;
   --shadow-card: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
   --shadow-menu: 0 1px 2px rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
 }
@@ -637,7 +639,7 @@ body {
 
 /* Data items */
 .h-modal-items {
-  background: #f8f9fa;
+  background: var(--surface-muted);
   border-radius: 8px;
   padding: 4px 16px;
   margin-bottom: 8px;
@@ -722,7 +724,7 @@ body {
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
-  background: #f8f9fa;
+  background: var(--surface-muted);
   border-radius: 8px;
   margin-bottom: 20px;
 }
@@ -802,6 +804,31 @@ body {
 .h-content {
   flex: 1;
   overflow-y: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --blue: #8ab4f8;
+    --blue-light: rgba(138, 180, 248, 0.16);
+    --text-primary: #e8eaed;
+    --text-secondary: #9aa0a6;
+    --border: #3c4043;
+    --hover: #3c4043;
+    --white: #292a2d;
+    --bg: #202124;
+    --surface-muted: #303134;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 3px 1px rgba(0, 0, 0, 0.28);
+    --shadow-menu: 0 1px 2px rgba(0, 0, 0, 0.45), 0 2px 6px 2px rgba(0, 0, 0, 0.32);
+  }
+
+  .h-modal-delete:hover {
+    background: #8ab4f8;
+    color: #202124;
+  }
+
+  .h-modal-delete:not(:disabled) {
+    color: #ffffff;
+  }
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
