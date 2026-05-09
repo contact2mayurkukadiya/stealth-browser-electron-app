@@ -246,6 +246,18 @@ export default function OmniboxInput({ currentTabId, tabsData }) {
     inputRef.current?.blur();
   }, [currentTabId, closeDropdown]);
 
+  // ── Main-process autofocus (new/blank tabs) ────────────────────────────
+  // Listens for the 'omnibox:request-focus' CustomEvent dispatched by
+  // useElectronIPC when the main process sends 'omnibox:focus' over IPC.
+  // Calling .focus() here triggers handleFocus, which already runs select().
+  useEffect(() => {
+    const onRequestFocus = () => {
+      inputRef.current?.focus();
+    };
+    window.addEventListener('omnibox:request-focus', onRequestFocus);
+    return () => window.removeEventListener('omnibox:request-focus', onRequestFocus);
+  }, []);
+
   // ── Focus ──────────────────────────────────────────────────────────────
   const handleFocus = useCallback(() => {
     setIsFocused(true);

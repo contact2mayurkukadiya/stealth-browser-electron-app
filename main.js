@@ -876,6 +876,22 @@ function activateTabInContext(context, id) {
     if (context.window && !context.window.webContents.isDestroyed()) {
         context.window.webContents.send('tab-switched', { id });
     }
+
+    // Autofocus the omnibox when switching to a blank/NTP tab so the user
+    // can type immediately without clicking the address bar.
+    // webContents.focus() on the shell window shifts Electron's native keyboard
+    // ownership away from the tab's WebContentsView back to the chrome renderer,
+    // which is required for a DOM .focus() call in the renderer to take effect.
+    const currentUrl = context.tabs[id]?.webContents.getURL() ?? '';
+    if (isBlankTab(currentUrl)) {
+        setImmediate(() => {
+            if (context.window && !context.window.webContents.isDestroyed()) {
+                context.window.webContents.focus();
+                context.window.webContents.send('omnibox:focus', { tabId: id, selectAll: true });
+            }
+        });
+    }
+
     return true;
 }
 
@@ -973,6 +989,14 @@ function resolveInternalPageUrl(rawUrl) {
     if (normalizedUrl === 'stealth://history') return 'app://localhost/dist/history.html';
     if (normalizedUrl === 'stealth://settings') return 'app://localhost/dist/settings.html';
     return rawUrl;
+}
+
+// A tab qualifies for omnibox autofocus when it has no meaningful page loaded.
+// This covers the default Google homepage NTP, about:blank, and empty URL states.
+function isBlankTab(url) {
+    if (!url || url.trim() === '' || url === 'about:blank') return true;
+    const normalized = url.toLowerCase();
+    return normalized.startsWith('https://www.google.com/') && !normalized.includes('/search');
 }
 
 function toDisplayUrl(rawUrl) {
@@ -1905,6 +1929,21 @@ function createTab(context, id, url = "https://www.google.com", isStealth = fals
         context.window.webContents.send('tab-update', { id, isLoading: false, url: getDisplayUrl(view.webContents.getURL()) });
     });
 
+    // Guard: after the Google homepage finishes loading its JS may attempt to
+    // steal keyboard focus (e.g. to its search box). Re-assert omnibox focus so
+    // the user's typing is never interrupted on blank/NTP tabs.
+    // selectAll is false here because the user may already be mid-query.
+    view.webContents.on('did-finish-load', () => {
+        if (!isBlankTab(view.webContents.getURL())) return;
+        if (context.activeTabId !== id) return;
+        setImmediate(() => {
+            if (context.window && !context.window.webContents.isDestroyed()) {
+                context.window.webContents.focus();
+                context.window.webContents.send('omnibox:focus', { tabId: id, selectAll: false });
+            }
+        });
+    });
+
     // Use these flags to temporarily hold the title until page load completes or URL changes
     view.webContents.on('did-navigate', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
@@ -2665,6 +2704,19 @@ ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
     // Notify the main React shell so it can add the tab to its state
     if (context.window && !context.window.webContents.isDestroyed()) {
         context.window.webContents.send('tab-created', { id, isStealth, url: resolvedUrl });
+    }
+
+    // Autofocus the omnibox for blank/NTP tabs so the user can type immediately.
+    // setImmediate defers until after the tab strip has rendered the new tab.
+    // webContents.focus() shifts Electron's native keyboard ownership back to the
+    // chrome renderer so the subsequent DOM .focus() call in the renderer works.
+    if (isBlankTab(resolvedUrl)) {
+        setImmediate(() => {
+            if (context.window && !context.window.webContents.isDestroyed()) {
+                context.window.webContents.focus();
+                context.window.webContents.send('omnibox:focus', { tabId: id, selectAll: true });
+            }
+        });
     }
 });
 

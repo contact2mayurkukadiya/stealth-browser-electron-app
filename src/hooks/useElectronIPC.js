@@ -80,6 +80,14 @@ export function useElectronIPC({
     if (api.onShortcutTabSearch) api.onShortcutTabSearch(withShortcutNotify(() => onTabSearch?.()));
     if (api.onShortcutCommandPalette) api.onShortcutCommandPalette(withShortcutNotify(() => onCommandPalette?.()));
 
+    // Dispatch a window-level CustomEvent so OmniboxInput can focus itself
+    // without needing a prop chain. Mirrors the electron-shortcut-invoked pattern.
+    if (api.onOmniboxFocus) {
+      api.onOmniboxFocus((data) => {
+        window.dispatchEvent(new CustomEvent('omnibox:request-focus', { detail: data }));
+      });
+    }
+
     // Listeners registered once; no cleanup needed (Electron IPC listeners
     // persist for the renderer lifetime and ipcRenderer has no removeListener
     // in the exposed contextBridge API).
