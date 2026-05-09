@@ -1,6 +1,6 @@
 /* ── Design tokens ─────────────────────────────────────────────────────────── */
 @font-face {
-  font-family: 'StealthUIFont';
+  font-family: 'InviSurfUIFont';
   src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Regular.ttf') format('truetype');
   font-weight: 400;
   font-style: normal;
@@ -8,7 +8,7 @@
 }
 
 @font-face {
-  font-family: 'StealthUIFont';
+  font-family: 'InviSurfUIFont';
   src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Medium.ttf') format('truetype');
   font-weight: 500;
   font-style: normal;
@@ -16,7 +16,7 @@
 }
 
 @font-face {
-  font-family: 'StealthUIFont';
+  font-family: 'InviSurfUIFont';
   src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Bold.ttf') format('truetype');
   font-weight: 700;
   font-style: normal;
@@ -46,7 +46,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text-primary);
-  font-family: 'StealthUIFont', 'Google Sans', 'Segoe UI', Roboto, Arial, sans-serif;
+  font-family: 'InviSurfUIFont', 'Google Sans', 'Segoe UI', Roboto, Arial, sans-serif;
   font-size: 14px;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;

@@ -1,7 +1,7 @@
 {
-  "name": "stealth-browser",
+  "name": "invisurf",
   "version": "1.0.0",
-  "description": "",
+  "description": "InviSurf browser (Electron)",
   "main": "main.js",
   "scripts": {
     "start": "npm run build:renderer && electron .",
@@ -12,8 +12,8 @@
     "dist:win": "npm run build:renderer && electron-builder --win --x64"
   },
   "build": {
-    "appId": "com.stealth.browser",
-    "productName": "StealthBrowser",
+    "appId": "com.invisurf.browser",
+    "productName": "InviSurf",
     "copyright": "Copyright © 2026 Mark Oliver",
     "mac": {
       "target": [

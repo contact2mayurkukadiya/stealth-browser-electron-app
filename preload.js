@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onTabSwitched: (callback) => ipcRenderer.on('tab-switched', (event, data) => callback(data)),
     onOmniboxFocus: (callback) => ipcRenderer.on('omnibox:focus', (event, data) => callback(data)),
     onShortcutNewTab: (callback) => ipcRenderer.on('shortcut-new-tab', () => callback()),
-    onShortcutNewStealthTab: (callback) => ipcRenderer.on('shortcut-new-stealth-tab', () => callback()),
+    onShortcutNewPrivateTab: (callback) => ipcRenderer.on('shortcut-new-private-tab', () => callback()),
     onShortcutHistory: (callback) => ipcRenderer.on('shortcut-history', () => callback()),
     onShortcutSettings: (callback) => ipcRenderer.on('shortcut-settings', () => callback()),
     onShortcutCloseTab: (callback) => ipcRenderer.on('shortcut-close-tab', () => callback()),
@@ -79,6 +79,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tabHideActive: () => ipcRenderer.invoke('tab:hide-active'),
     tabRestoreActive: () => ipcRenderer.invoke('tab:restore-active'),
     tabCaptureActiveSnapshot: () => ipcRenderer.invoke('tab:capture-active-snapshot'),
+    tabPrepareShellOverlay: () => ipcRenderer.invoke('tab:prepare-shell-overlay'),
 
     // Lazy tab loading: register a tab as sleeping (no WebContentsView created yet)
     tabSleepRegister: (id, url) => ipcRenderer.send('tab:sleep-register', { id, url }),

@@ -10,7 +10,7 @@ export function buildCommandPaletteCommands(ctx) {
   const mac = ctx.platform === 'darwin';
   const S = {
     fileNew: mac ? '⌘T' : 'Ctrl+T',
-    fileStealth: mac ? '⌘⇧T' : 'Ctrl+Shift+T',
+    filePrivateTab: mac ? '⌘⇧T' : 'Ctrl+Shift+T',
     fileClose: mac ? '⌘W' : 'Ctrl+W',
     fileQuit: mac ? '⌘Q' : 'Alt+F4',
     viewReload: mac ? '⌘R' : 'Ctrl+R',
@@ -33,9 +33,9 @@ export function buildCommandPaletteCommands(ctx) {
     },
     {
       category: 'File',
-      label: 'New Stealth Tab',
-      shortcut: S.fileStealth,
-      keywords: 'private incognito',
+      label: 'New Private Tab',
+      shortcut: S.filePrivateTab,
+      keywords: 'incognito ephemeral invisurf',
       run: () => ctx.createTab(true),
     },
     {
@@ -147,7 +147,7 @@ export function buildCommandPaletteCommands(ctx) {
     {
       category: 'History',
       label: 'History page',
-      keywords: 'chronicle stealth',
+      keywords: 'chronicle browsing invisurf',
       run: () => ctx.openHistory(),
     },
     {

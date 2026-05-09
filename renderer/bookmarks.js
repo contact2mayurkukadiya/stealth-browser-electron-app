@@ -1,5 +1,5 @@
 /**
- * Bookmark Manager for StealthWindow Browser
+ * Bookmark Manager for InviSurf
  * Handles: star toggle, bookmark bar render, overlay folder navigation, drag-to-reorder
  */
 

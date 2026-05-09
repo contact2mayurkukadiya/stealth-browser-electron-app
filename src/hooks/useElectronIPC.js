@@ -63,7 +63,7 @@ export function useElectronIPC({
 
     // ── Keyboard shortcut IPC ────────────────────────────────────────────
     api.onShortcutNewTab(withShortcutNotify(() => onNewTab(false)));
-    api.onShortcutNewStealthTab(withShortcutNotify(() => onNewTab(true)));
+    api.onShortcutNewPrivateTab(withShortcutNotify(() => onNewTab(true)));
     api.onShortcutHistory(withShortcutNotify(onHistory));
     if (api.onShortcutSettings) api.onShortcutSettings(withShortcutNotify(onSettings));
     api.onShortcutCloseTab(withShortcutNotify(onCloseTab));

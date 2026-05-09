@@ -1,8 +1,11 @@
 /**
- * Static images under renderer/assets/images/, served via app:// (see main.js).
+ * Static assets under renderer/assets/, served via app:// (see main.js).
  * Do not use for SVGs that rely on currentColor or CSS fill/stroke — those must stay inline.
  */
 const BASE = 'app://localhost/assets/images';
+const ASSETS_BASE = 'app://localhost/assets';
+
+export const logoPurpleLightSvg = `${ASSETS_BASE}/logo/purple-light.svg`;
 
 export const tabStealthSvg = `${BASE}/tab-stealth.svg`;
 export const tabCloseSvg = `${BASE}/tab-close.svg`;

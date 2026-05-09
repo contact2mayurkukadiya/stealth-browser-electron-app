@@ -1,6 +1,6 @@
 /* Aligns with history/settings token usage */
 @font-face {
-  font-family: 'StealthUIFont';
+  font-family: 'InviSurfUIFont';
   src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Regular.ttf') format('truetype');
   font-weight: 400;
   font-style: normal;
@@ -8,7 +8,7 @@
 }
 
 @font-face {
-  font-family: 'StealthUIFont';
+  font-family: 'InviSurfUIFont';
   src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Medium.ttf') format('truetype');
   font-weight: 500;
   font-style: normal;
@@ -33,7 +33,7 @@ body {
   margin: 0;
   background: var(--pp-bg);
   color: var(--pp-text);
-  font-family: 'StealthUIFont', 'Segoe UI', Roboto, Arial, sans-serif;
+  font-family: 'InviSurfUIFont', 'Segoe UI', Roboto, Arial, sans-serif;
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }

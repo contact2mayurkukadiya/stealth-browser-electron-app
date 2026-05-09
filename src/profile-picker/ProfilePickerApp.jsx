@@ -261,7 +261,7 @@ export default function ProfilePickerApp() {
     <div className="pp-page">
       <div className="pp-content">
         <header className="pp-header">
-          <h1 className="pp-title">Stealth Browser</h1>
+          <h1 className="pp-title">InviSurf</h1>
           <p className="pp-subtitle">Who&apos;s using this browser?</p>
         </header>
 

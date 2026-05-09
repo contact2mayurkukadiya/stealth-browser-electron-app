@@ -120,16 +120,22 @@ function SuggestionRow({ suggestion, query, isSelected, onMouseDown, onMouseEnte
 }
 
 const SearchIcon = () => (
-  <svg className="ntp-fakebox__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg className="ntp-search-box__icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="11" cy="11" r="7" />
     <line x1="16.5" y1="16.5" x2="22" y2="22" />
   </svg>
 );
 
 const LockIcon = () => (
-  <svg className="ntp-fakebox__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg className="ntp-search-box__icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
+
+const MicIcon = () => (
+  <svg className="ntp-search-box__icon-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V22h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
   </svg>
 );
 
@@ -367,34 +373,48 @@ export default function NtpSearchBox() {
       )
     : null;
 
+  const fieldIcon = isFocused && effectiveInputValue.startsWith('https://') ? <LockIcon /> : <SearchIcon />;
+
   return (
-    <div className="ntp-fakebox ntp-search-box" ref={containerRef}>
-      {isFocused && (effectiveInputValue.startsWith('https://') ? <LockIcon /> : <SearchIcon />)}
-      {!isFocused && <SearchIcon />}
-
-      {isFocused && ghostSuffix && (
-        <div className="omnibox-ghost" aria-hidden="true">
-          <span style={{ color: 'transparent' }}>{inputValue}</span>
-          <span className="omnibox-ghost__suffix">{ghostSuffix}</span>
+    <div className="ntp-search-box" ref={containerRef}>
+      <div className="ntp-search-box__field">
+        <div className="ntp-search-box__icon-left">
+          {fieldIcon}
         </div>
-      )}
-
-      <input
-        ref={inputRef}
-        className="ntp-search-input"
-        type="text"
-        placeholder="Search or enter address"
-        value={effectiveInputValue}
-        onChange={handleChange}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        onMouseUp={handleMouseUp}
-        onKeyDown={handleKeyDown}
-        autoComplete="off"
-        spellCheck={false}
-        aria-label="Search or enter address"
-      />
-
+        <div className="ntp-search-box__input-wrap">
+          {isFocused && ghostSuffix ? (
+            <div className="omnibox-ghost omnibox-ghost--ntp" aria-hidden="true">
+              <span style={{ color: 'transparent' }}>{inputValue}</span>
+              <span className="omnibox-ghost__suffix">{ghostSuffix}</span>
+            </div>
+          ) : null}
+          <input
+            ref={inputRef}
+            className="ntp-search-box__input"
+            type="text"
+            placeholder="Search your intent…"
+            value={effectiveInputValue}
+            onChange={handleChange}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            onMouseUp={handleMouseUp}
+            onKeyDown={handleKeyDown}
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Search or enter address"
+          />
+        </div>
+        <button
+          type="button"
+          className="ntp-search-box__mic"
+          disabled
+          tabIndex={-1}
+          title="Voice search (coming soon)"
+          aria-label="Voice search (coming soon)"
+        >
+          <MicIcon />
+        </button>
+      </div>
       {dropdownPortal}
     </div>
   );

@@ -1021,11 +1021,23 @@ function openUrlInNewTab(targetUrl, options = {}) {
     return true;
 }
 
+/**
+ * Canonical form for internal pseudo-URLs (omnibox + session). Legacy `stealth://`
+ * URLs are still accepted and treated the same as `invisurf://`.
+ */
+function normalizeInternalSchemeUrl(displayUrl) {
+    if (!displayUrl || typeof displayUrl !== 'string') return '';
+    const t = displayUrl.trim().toLowerCase();
+    if (t === 'stealth://history' || t === 'invisurf://history') return 'invisurf://history';
+    if (t === 'stealth://settings' || t === 'invisurf://settings') return 'invisurf://settings';
+    return displayUrl.trim();
+}
+
 function resolveInternalPageUrl(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string') return '';
     const normalizedUrl = rawUrl.trim().toLowerCase();
-    if (normalizedUrl === 'stealth://history') return 'app://localhost/dist/history.html';
-    if (normalizedUrl === 'stealth://settings') return 'app://localhost/dist/settings.html';
+    if (normalizedUrl === 'stealth://history' || normalizedUrl === 'invisurf://history') return 'app://localhost/dist/history.html';
+    if (normalizedUrl === 'stealth://settings' || normalizedUrl === 'invisurf://settings') return 'app://localhost/dist/settings.html';
     if (normalizedUrl === 'app://newtab') return 'app://localhost/dist/newtab.html';
     return rawUrl;
 }
@@ -1042,8 +1054,8 @@ function isBlankTab(url) {
 
 function toDisplayUrl(rawUrl) {
     if (!rawUrl) return '';
-    if (rawUrl.startsWith('app://') && rawUrl.includes('history')) return 'stealth://history';
-    if (rawUrl.startsWith('app://') && rawUrl.includes('settings')) return 'stealth://settings';
+    if (rawUrl.startsWith('app://') && rawUrl.includes('history')) return 'invisurf://history';
+    if (rawUrl.startsWith('app://') && rawUrl.includes('settings')) return 'invisurf://settings';
     if (rawUrl.startsWith('app://') && rawUrl.includes('newtab')) return 'app://newtab';
     return rawUrl;
 }
@@ -1061,17 +1073,19 @@ function getActiveTabView() {
 
 function getTabIdByDisplayUrl(targetDisplayUrl) {
     if (!targetDisplayUrl) return null;
+    const targetNorm = normalizeInternalSchemeUrl(targetDisplayUrl);
 
     const context = getWindowContextByBrowserWindow(mainWindow);
     if (!context) return null;
     for (const [id, view] of Object.entries(context.tabs)) {
         if (!view || view.webContents.isDestroyed()) continue;
-        const currentDisplayUrl = toDisplayUrl(view.webContents.getURL());
-        if (currentDisplayUrl === targetDisplayUrl) return id;
+        const currentNorm = normalizeInternalSchemeUrl(toDisplayUrl(view.webContents.getURL()));
+        if (currentNorm === targetNorm) return id;
     }
 
     for (const [id, entry] of Object.entries(context.sleepingTabs)) {
-        if (toDisplayUrl(entry.url) === targetDisplayUrl) return id;
+        const cand = entry.url.startsWith('app://') ? toDisplayUrl(entry.url) : entry.url;
+        if (normalizeInternalSchemeUrl(cand) === targetNorm) return id;
     }
 
     return null;
@@ -1094,11 +1108,11 @@ function activateOrWakeTab(id) {
 }
 
 function openOrActivateSettingsTab() {
-    const existingSettingsTabId = getTabIdByDisplayUrl('stealth://settings');
+    const existingSettingsTabId = getTabIdByDisplayUrl('invisurf://settings');
     if (existingSettingsTabId) {
         return activateOrWakeTab(existingSettingsTabId);
     }
-    return openUrlInNewTab('stealth://settings', { background: false });
+    return openUrlInNewTab('invisurf://settings', { background: false });
 }
 
 function navigateActiveTabHome() {
@@ -1234,9 +1248,9 @@ function buildApplicationMenu() {
                     click: () => mainWindow.webContents.send('shortcut-new-tab')
                 },
                 {
-                    label: 'New Stealth Tab',
+                    label: 'New Private Tab',
                     accelerator: 'CmdOrCtrl+Shift+T',
-                    click: () => mainWindow.webContents.send('shortcut-new-stealth-tab')
+                    click: () => mainWindow.webContents.send('shortcut-new-private-tab')
                 },
                 {
                     label: 'New Window (Current Profile)',
@@ -2092,7 +2106,8 @@ function getHistoryPath(profileId = defaultProfileId || 'default') {
  */
 function isInternalPageUrl(url) {
     if (!url) return false;
-    if (url.startsWith('stealth://')) return true;
+    const ul = url.toLowerCase();
+    if (ul.startsWith('stealth://') || ul.startsWith('invisurf://')) return true;
     if (url.startsWith('app://') && url.includes('history.html')) return true;
     if (url.startsWith('app://') && url.includes('settings.html')) return true;
     if (url.startsWith('app://') && url.includes('newtab')) return true;
@@ -2352,7 +2367,9 @@ ipcMain.handle('session:save', (e, data) => {
 });
 
 function appendHistory(profileId, tabId, url, title) {
-    if (!url || url.startsWith('stealth://')) return;
+    if (!url) return;
+    const ul = url.toLowerCase();
+    if (ul.startsWith('stealth://') || ul.startsWith('invisurf://')) return;
 
     // Skip all internal pages (NTP, history, settings)
     if (isInternalPageUrl(url)) return;
@@ -2791,6 +2808,38 @@ ipcMain.handle('tab:capture-active-snapshot', async (e) => {
     }
 });
 
+/**
+ * Captures the visible tab, then hides its WebContentsView in one main-process turn.
+ * Keeps the thumbnail correct while ensuring shell UI (omnibox dropdown) is never
+ * covered by the native tab layer.
+ */
+ipcMain.handle('tab:prepare-shell-overlay', async (e) => {
+    if (!isSenderTrusted(e)) return { dataUrl: null };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context) return { dataUrl: null };
+    const id = context.activeTabId;
+    if (!id || detachedTabWindows.has(id)) return { dataUrl: null };
+    const view = context.tabs[id];
+    if (!view || view.webContents.isDestroyed()) return { dataUrl: null };
+    let dataUrl = null;
+    try {
+        const image = await view.webContents.capturePage();
+        if (image && !image.isEmpty()) {
+            const buf = image.toJPEG(85);
+            dataUrl = `data:image/jpeg;base64,${buf.toString('base64')}`;
+        }
+    } catch (err) {
+        console.error('tab:prepare-shell-overlay capture', err);
+    }
+    try {
+        context.isActiveTabTemporarilyHidden = true;
+        view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    } catch (err) {
+        console.error('tab:prepare-shell-overlay hide', err);
+    }
+    return { dataUrl };
+});
+
 ipcMain.handle('tab:move-to-new-window', async (e, { id, fallbackTabId }) => {
     if (!isSenderTrusted(e)) return { ok: false };
     if (!id || typeof id !== 'string') return { ok: false };
@@ -2979,7 +3028,7 @@ ipcMain.on('navigate', (e, { id, url }) => {
 
     let formattedUrl = url.trim();
 
-    // Internal stealth:// pages
+    // Internal invisurf:// (and legacy stealth://) pages
     const resolvedInternalUrl = resolveInternalPageUrl(formattedUrl);
     if (resolvedInternalUrl !== formattedUrl) {
         context.tabs[targetId]?.webContents.loadURL(resolvedInternalUrl);

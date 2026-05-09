@@ -341,12 +341,12 @@ function AppShell() {
   ]);
 
   /**
-   * Opens an internal stealth:// page as a singleton tab.
+   * Opens an internal invisurf:// page as a singleton tab (legacy stealth:// is still accepted in main).
    * If a tab with the given URL is already open, switches to it instead
    * of creating a duplicate — matching Chrome's behaviour for chrome:// pages.
    *
-   * @param {string} navigateTo - The stealth:// URL to navigate to (e.g. 'stealth://History')
-   * @param {string} canonicalUrl - The lowercase display URL stored in Redux (e.g. 'stealth://history')
+   * @param {string} navigateTo - The invisurf:// URL to navigate to (e.g. 'invisurf://History')
+   * @param {string} canonicalUrl - The lowercase display URL stored in Redux (e.g. 'invisurf://history')
    */
   const openSingletonTab = useCallback((navigateTo, canonicalUrl) => {
     const { tabs, tabOrder } = stateRef.current;
@@ -364,7 +364,7 @@ function AppShell() {
   }, [dispatch]);
 
   const handleOpenHistory = useCallback(() => {
-    openSingletonTab('stealth://History', 'stealth://history');
+    openSingletonTab('invisurf://History', 'invisurf://history');
   }, [openSingletonTab]);
 
   const paletteCommands = useMemo(
@@ -409,7 +409,7 @@ function AppShell() {
   );
 
   const handleOpenSettings = useCallback(() => {
-    openSingletonTab('stealth://Settings', 'stealth://settings');
+    openSingletonTab('invisurf://Settings', 'invisurf://settings');
   }, [openSingletonTab]);
 
   const handleTabCreated = useCallback(({ id, url, isStealth }) => {

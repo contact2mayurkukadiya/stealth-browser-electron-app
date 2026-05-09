@@ -151,22 +151,14 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   const dropdownRef     = useRef(null);
   const didSelectRef    = useRef(false);
   const isNavigatingRef = useRef(false);
-  // Tracks whether this component currently holds a beginOverlay call
+  // Tracks whether this component currently holds an overlay from focus (paired with blur)
   const overlayActiveRef = useRef(false);
 
   // Single controller instance for the component lifetime
   const controller = useMemo(() => new AutocompleteController(), []);
   useEffect(() => () => controller.dispose(), [controller]);
 
-  // ── Overlay helpers — always paired ───────────────────────────────────
-  const activateOverlay = useCallback(() => {
-    if (overlayActiveRef.current) return;
-    overlayActiveRef.current = true;
-    // Fire and forget: by the time the first suggestions render (history is
-    // near-instant; network suggestions arrive later), the overlay will be ready.
-    beginOverlay().catch(err => console.warn('[OmniboxInput] beginOverlay failed:', err));
-  }, [beginOverlay]);
-
+  // ── Overlay helpers — paired with blur / dropdown close ───────────────
   const deactivateOverlay = useCallback(() => {
     if (!overlayActiveRef.current) return;
     overlayActiveRef.current = false;
@@ -259,12 +251,19 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   }, []);
 
   // ── Focus ──────────────────────────────────────────────────────────────
-  const handleFocus = useCallback(() => {
+  const handleFocus = useCallback(async () => {
     setIsFocused(true);
     didSelectRef.current = false;
 
-    // Start the overlay immediately so it is ready before suggestions appear
-    activateOverlay();
+    if (!overlayActiveRef.current) {
+      overlayActiveRef.current = true;
+      try {
+        await beginOverlay();
+      } catch (err) {
+        overlayActiveRef.current = false;
+        console.warn('[OmniboxInput] beginOverlay failed:', err);
+      }
+    }
 
     setTimeout(() => {
       if (inputRef.current && !didSelectRef.current) {
@@ -276,7 +275,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     if (inputValue.trim()) {
       runQuery(inputValue);
     }
-  }, [inputValue, runQuery, activateOverlay]);
+  }, [inputValue, runQuery, beginOverlay]);
 
   const handleMouseUp = useCallback(() => {
     if (isFocused && didSelectRef.current) {

@@ -1,8 +1,8 @@
-# 🕶️ Stealth Browser
+# InviSurf
 
 A desktop browser built with **Electron + React + Redux + Vite** focused on:
 - tabbed browsing
-- stealth/incognito-like tabs
+- private / incognito-like tabs (isolated partitions)
 - session restore with lazy tab loading
 - bookmarks/history management
 - security hardening and redirect protections
@@ -13,12 +13,12 @@ A desktop browser built with **Electron + React + Redux + Vite** focused on:
 ## ✨ Highlights
 
 - 🗂️ Multi-tab browsing with drag-reorder
-- 🕵️ Stealth tabs (separate in-memory partition)
+- 🕵️ Private tabs (separate in-memory partition)
 - 💾 Session restore with sleeping tabs (lazy load)
 - 📚 History storage + selective delete + clear all
 - 🔖 Bookmarks and folders
-- ⚙️ Internal Settings page (`stealth://settings`)
-- 🧾 Internal History page (`stealth://history`)
+- ⚙️ Internal Settings page (`invisurf://settings`; legacy `stealth://settings` still resolves)
+- 🧾 Internal History page (`invisurf://history`; legacy `stealth://history` still resolves)
 - 🛡️ Security guards for navigation, popups, permissions, and protocol handling
 - 🌐 Browser-like UA/headers + redirect guard
 - 🧪 Compatibility diagnostics event buffer (optional)
@@ -109,12 +109,12 @@ npm run start
 
 ---
 
-## 4) 🕵️ Open Stealth Tab
+## 4) 🕵️ Open Private Tab
 
-1. User triggers **New Stealth Tab** shortcut/menu.
+1. User triggers **New Private Tab** shortcut/menu (`Cmd/Ctrl + Shift + T`).
 2. Renderer creates tab state with `isStealth = true`.
-3. Main creates tab with unique in-memory partition (`in-memory:stealth-...`).
-4. Stealth tabs are excluded from session persistence logic.
+3. Main creates tab with unique in-memory partition (`in-memory:stealth-<id>`).
+4. Private tabs are excluded from session persistence logic.
 5. Browsing continues in isolated session storage.
 
 ---
@@ -123,7 +123,7 @@ npm run start
 
 ### Save
 1. Renderer watches tab changes.
-2. Debounced save collects non-stealth tabs (`id/url/title/favicon`).
+2. Debounced save collects persistent profile tabs (`id/url/title/favicon`) — excluding private tabs.
 3. Renderer sends `session:save`.
 4. Main encrypts and writes session snapshot.
 
@@ -158,11 +158,11 @@ npm run start
 
 ---
 
-## 8) ⚙️ Internal Pages (`stealth://history`, `stealth://settings`)
+## 8) ⚙️ Internal Pages (`invisurf://history`, `invisurf://settings`)
 
 1. User enters internal URL or uses shortcut/menu.
 2. Renderer opens singleton tab (reuses if already open).
-3. Main resolves `stealth://...` to internal app URL.
+3. Main resolves `invisurf://...` (and legacy `stealth://...`) to internal app URLs.
 4. Custom `app://` protocol serves correct renderer file.
 5. Tab displays canonical internal page.
 
@@ -221,6 +221,6 @@ npm run start
 
 ## 📝 Notes
 
-- Internal pages use `stealth://...` display URLs and resolve to app-rendered pages.
+- Internal pages use `invisurf://...` display URLs (legacy sessions may still carry `stealth://...`; main treats them as aliases).
 - Session/history data are encrypted before writing.
 - Tab metadata in Redux is separate from actual `WebContentsView` lifecycle in main process.

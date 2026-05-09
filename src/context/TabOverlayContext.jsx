@@ -10,12 +10,6 @@ import React, {
 
 const TabOverlayContext = createContext(null);
 
-function doubleRaf() {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(resolve));
-  });
-}
-
 /**
  * Ref-counted tab snapshot + hide so shell modals/menus paint above WebContentsView.
  * beginOverlay/endOverlay must be paired; forceResetOverlay clears on window close/reload.
@@ -39,33 +33,22 @@ export function TabOverlayProvider({ children }) {
     if (!wasZero) return;
 
     /**
-     * On app:// tabs (including the local NTP), capturePage may be slow, empty, or stall.
-     * We must not defer tabHideActive until capture completes — native WebContentsView
-     * would stay on top and hide the omnibox dropdown behind the tab.
-     *
-     * Freeze-frame is best-effort: wait briefly for snapshot, then always hide.
+     * Native WebContentsView stacks above the BrowserWindow shell. Main must capture
+     * the tab while it is still visible, then hide it in one handler so no frame shows
+     * shell UI (e.g. omnibox autocomplete) behind a full-size tab.
      */
-    const snapshotSoon = async () => {
-      try {
-        const snapPromise = window.electronAPI.tabCaptureActiveSnapshot?.();
-        if (!snapPromise) return null;
-        const result = await Promise.race([
-          snapPromise,
-          new Promise(resolve => setTimeout(() => resolve({ dataUrl: null }), 100)),
-        ]);
-        return result?.dataUrl ?? null;
-      } catch {
-        return null;
-      }
-    };
-
     try {
-      const dataUrl = await snapshotSoon();
+      let result = null;
+      const prep = window.electronAPI.tabPrepareShellOverlay?.();
+      if (prep) {
+        result = await prep;
+      } else {
+        await window.electronAPI.tabHideActive?.();
+        result = { dataUrl: null };
+      }
       if (overlayCountRef.current === 0) return;
-      setTabSnapshotDataUrl(dataUrl);
-      await doubleRaf();
-      if (overlayCountRef.current === 0) return;
-      await window.electronAPI.tabHideActive?.();
+      const dataUrl = result?.dataUrl ?? null;
+      if (dataUrl) setTabSnapshotDataUrl(dataUrl);
     } catch (err) {
       console.error('beginOverlay', err);
       endOverlay();
