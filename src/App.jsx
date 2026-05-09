@@ -36,6 +36,7 @@ function AppShell() {
 
   const [searchTabsOpen, setSearchTabsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [searchEngine, setSearchEngine] = useState('google');
 
   // Always-fresh ref so event-handler closures never capture stale state
   const stateRef = useRef({});
@@ -51,7 +52,7 @@ function AppShell() {
         .filter(id => tabs[id] && !tabs[id].isStealth)
         .map(id => ({
           id,
-          url: tabs[id].url || 'https://www.google.com/',
+          url: tabs[id].url || 'app://newtab',
           // Persist display metadata so sleeping tabs can show the right
           // title and favicon immediately on the next session restore.
           title: tabs[id].title || 'New Tab',
@@ -470,9 +471,13 @@ function AppShell() {
   // ── Initialise: load bookmarks then restore session ──────────────────────
   useEffect(() => {
     async function init() {
-      // 1. Load bookmarks first
-      const bkData = await window.electronAPI.bookmarksGet();
+      // 1. Load bookmarks and settings in parallel
+      const [bkData, settingsData] = await Promise.all([
+        window.electronAPI.bookmarksGet(),
+        window.electronAPI.settingsGet?.() || Promise.resolve({}),
+      ]);
       dispatch(setBookmarks(bkData));
+      if (settingsData?.searchEngine) setSearchEngine(settingsData.searchEngine);
 
       // 1.5 Bootstrap payload for windows created from "Move Tab to New Window".
       const bootstrap = await window.electronAPI.windowGetBootstrap?.();
@@ -545,7 +550,7 @@ function AppShell() {
         onDragEnd={handleDragEnd}
         getTabContextMenuItems={getTabContextMenuItems}
       />
-      <NavBar currentTabId={currentTabId} onOpenSettings={handleOpenSettings} />
+      <NavBar currentTabId={currentTabId} onOpenSettings={handleOpenSettings} searchEngine={searchEngine} />
       <BookmarkBar currentTabId={currentTabId} />
     </div>
   );

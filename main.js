@@ -1026,21 +1026,25 @@ function resolveInternalPageUrl(rawUrl) {
     const normalizedUrl = rawUrl.trim().toLowerCase();
     if (normalizedUrl === 'stealth://history') return 'app://localhost/dist/history.html';
     if (normalizedUrl === 'stealth://settings') return 'app://localhost/dist/settings.html';
+    if (normalizedUrl === 'app://newtab') return 'app://localhost/dist/newtab.html';
     return rawUrl;
 }
 
 // A tab qualifies for omnibox autofocus when it has no meaningful page loaded.
-// This covers the default Google homepage NTP, about:blank, and empty URL states.
+// This covers the custom NTP, about:blank, and empty URL states.
 function isBlankTab(url) {
     if (!url || url.trim() === '' || url === 'about:blank') return true;
     const normalized = url.toLowerCase();
-    return normalized.startsWith('https://www.google.com/') && !normalized.includes('/search');
+    return normalized === 'app://newtab' ||
+        normalized.startsWith('app://localhost/dist/newtab') ||
+        (normalized.startsWith('https://www.google.com/') && !normalized.includes('/search'));
 }
 
 function toDisplayUrl(rawUrl) {
     if (!rawUrl) return '';
     if (rawUrl.startsWith('app://') && rawUrl.includes('history')) return 'stealth://history';
     if (rawUrl.startsWith('app://') && rawUrl.includes('settings')) return 'stealth://settings';
+    if (rawUrl.startsWith('app://') && rawUrl.includes('newtab')) return 'app://newtab';
     return rawUrl;
 }
 
@@ -1706,7 +1710,7 @@ function installDevToolsTypographyOnOpen(webContents) {
 }
 
 // Logic to create a new Tab View
-function createTab(context, id, url = "https://www.google.com", isStealth = false, options = {}) {
+function createTab(context, id, url = "app://newtab", isStealth = false, options = {}) {
     if (!context) return;
     const shouldActivate = options.activate !== false;
     const tabPartition = isStealth ? `in-memory:stealth-${id}` : context.partition;
@@ -2022,18 +2026,19 @@ function createTab(context, id, url = "https://www.google.com", isStealth = fals
             errorDescription,
         });
 
-        // If it's a DNS resolution error (likely just typed a search term), fallback to Google
+        // If it's a DNS resolution error (likely just typed a search term), fallback to search engine
         if (errorCode === -105) { // ERR_NAME_NOT_RESOLVED
             const searchQuery = validatedURL.replace(/^https?:\/\//, '').replace(/\/$/, '');
-            const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+            const activeEngine = (loadSettings().searchEngine) || 'google';
+            const searchFallbackUrl = buildSearchUrl(activeEngine, searchQuery);
             recordCompatEvent(id, {
                 type: 'dns-fallback',
                 query: searchQuery,
-                fallbackUrl: googleSearchUrl,
+                fallbackUrl: searchFallbackUrl,
             });
             setImmediate(() => {
                 if (!view.webContents.isDestroyed()) {
-                    view.webContents.loadURL(googleSearchUrl);
+                    view.webContents.loadURL(searchFallbackUrl);
                 }
             });
             return;
@@ -2082,7 +2087,7 @@ function getHistoryPath(profileId = defaultProfileId || 'default') {
 }
 
 /**
- * Returns true for any internal browser page (history, settings, etc.) that
+ * Returns true for any internal browser page (history, settings, NTP, etc.) that
  * should never be recorded in browsing history.
  */
 function isInternalPageUrl(url) {
@@ -2090,6 +2095,7 @@ function isInternalPageUrl(url) {
     if (url.startsWith('stealth://')) return true;
     if (url.startsWith('app://') && url.includes('history.html')) return true;
     if (url.startsWith('app://') && url.includes('settings.html')) return true;
+    if (url.startsWith('app://') && url.includes('newtab')) return true;
     return false;
 }
 
@@ -2100,7 +2106,24 @@ const SETTINGS_DEFAULTS = {
     contentProtection: true,
     startupBehavior: 'continue', // 'fresh' | 'continue' | 'clearHistory'
     compatibilityDiagnosticsEnabled: false,
+    searchEngine: 'google', // 'google' | 'bing' | 'brave' | 'duckDuckGo'
 };
+
+const SEARCH_ENGINES = {
+    google:     'https://www.google.com/search?q=',
+    bing:       'https://www.bing.com/search?q=',
+    brave:      'https://search.brave.com/search?q=',
+    duckDuckGo: 'https://duckduckgo.com/?q=',
+};
+
+/**
+ * Builds a search URL for the given engine key and query string.
+ * Falls back to Google if the engine key is unrecognised.
+ */
+function buildSearchUrl(engine, query) {
+    const base = SEARCH_ENGINES[engine] || SEARCH_ENGINES.google;
+    return base + encodeURIComponent(query);
+}
 
 function getSettingsPath() {
     if (!settingsPath) {
@@ -2331,6 +2354,9 @@ ipcMain.handle('session:save', (e, data) => {
 function appendHistory(profileId, tabId, url, title) {
     if (!url || url.startsWith('stealth://')) return;
 
+    // Skip all internal pages (NTP, history, settings)
+    if (isInternalPageUrl(url)) return;
+
     // Ignore Google's homepage and its query parameter variants (but keep /search queries)
     if (url.startsWith('https://www.google.com/') && !url.includes('/search')) return;
 
@@ -2430,6 +2456,87 @@ ipcMain.handle('history:remove-items', async (e, timestamps) => {
     } catch (error) {
         console.error('Failed to remove history items:', error);
         return false;
+    }
+});
+
+// ─── NEW TAB PAGE IPC ─────────────────────────────────────────────────────────
+
+/**
+ * omnibox:steal-focus — sent by the NTP fakebox when clicked.
+ * Forwards an omnibox:focus event to the browser shell so the real address bar
+ * receives keyboard focus instead of the cosmetic NTP element.
+ */
+ipcMain.on('omnibox:steal-focus', (e) => {
+    if (!isSenderTrusted(e)) return;
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context) return;
+    const shellContents = context.window?.webContents;
+    if (!shellContents || shellContents.isDestroyed()) return;
+    shellContents.focus();
+    shellContents.send('omnibox:focus', { tabId: context.activeTabId, selectAll: true });
+});
+
+/**
+ * newtab:get-top-sites — returns up to 8 frequently visited sites from history.
+ * Groups history entries by eTLD+1 domain, counts visits, and returns the top
+ * entries with { url, title, domain } objects (deduplicated by domain).
+ */
+ipcMain.handle('newtab:get-top-sites', async (e) => {
+    if (!isSenderTrusted(e)) return [];
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context) return [];
+
+    try {
+        const historyFilePath = getHistoryPath(context.profileId);
+        if (!fs.existsSync(historyFilePath)) return [];
+
+        const content = fs.readFileSync(historyFilePath, 'utf-8');
+        const lines = content.trim().split('\n').filter(Boolean);
+
+        const domainMap = new Map(); // domain → { url, title, count }
+
+        for (const line of lines) {
+            let item;
+            try {
+                const parsed = JSON.parse(line);
+                if (parsed && parsed.encrypted !== undefined) {
+                    const dec = encryption.decrypt(parsed);
+                    item = dec ? JSON.parse(dec) : null;
+                } else {
+                    item = parsed;
+                }
+            } catch {
+                continue;
+            }
+
+            if (!item || !item.url) continue;
+            if (isInternalPageUrl(item.url)) continue;
+
+            let domain;
+            try {
+                const parsed = new URL(item.url);
+                domain = parsed.hostname.replace(/^www\./, '');
+            } catch {
+                continue;
+            }
+
+            if (!domain) continue;
+
+            if (domainMap.has(domain)) {
+                const existing = domainMap.get(domain);
+                existing.count += 1;
+            } else {
+                domainMap.set(domain, { url: item.url, title: item.title || domain, domain, count: 1 });
+            }
+        }
+
+        return Array.from(domainMap.values())
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 8)
+            .map(({ url, title, domain }) => ({ url, title, domain }));
+    } catch (err) {
+        console.error('Failed to get top sites:', err);
+        return [];
     }
 });
 
@@ -2739,7 +2846,7 @@ ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
 
-    const resolvedUrl = resolveInternalPageUrl(url || 'https://www.google.com');
+    const resolvedUrl = resolveInternalPageUrl(url || 'app://newtab');
 
     createTab(context, id, resolvedUrl, isStealth);
 
@@ -2886,8 +2993,9 @@ ipcMain.on('navigate', (e, { id, url }) => {
         return true;
     };
 
+    const activeEngine = (loadSettings().searchEngine) || 'google';
     if (!looksLikeUrl(formattedUrl)) {
-        formattedUrl = `https://www.google.com/search?q=${encodeURIComponent(formattedUrl)}`;
+        formattedUrl = buildSearchUrl(activeEngine, formattedUrl);
     } else if (!formattedUrl.includes('://')) {
         formattedUrl = `https://${formattedUrl}`;
     }

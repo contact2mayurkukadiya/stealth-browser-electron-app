@@ -131,7 +131,7 @@ function getTypeIcon(type) {
 
 // ── OmniboxInput component ─────────────────────────────────────────────────
 
-export default function OmniboxInput({ currentTabId, tabsData }) {
+export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'google' }) {
   const tab = tabsData[currentTabId];
   const displayUrl = tab && !tab.isNewTab ? (tab.url || '') : '';
 
@@ -343,7 +343,7 @@ export default function OmniboxInput({ currentTabId, tabsData }) {
       } else if (ghostSuffix) {
         navigateTo(inputValue + ghostSuffix);
       } else {
-        navigateTo(toNavigateUrl(inputValue));
+        navigateTo(toNavigateUrl(inputValue, searchEngine));
       }
       return;
     }
@@ -374,6 +374,7 @@ export default function OmniboxInput({ currentTabId, tabsData }) {
   }, [
     showDropdown, suggestions, selectedIndex, ghostSuffix,
     inputValue, displayUrl, controller, navigateTo, closeDropdown, runQuery,
+    searchEngine,
   ]);
 
   // ── Suggestion click ───────────────────────────────────────────────────

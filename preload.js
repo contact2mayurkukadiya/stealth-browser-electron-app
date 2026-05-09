@@ -94,6 +94,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     compatDiagClear: (payload) => ipcRenderer.invoke('compatDiag:clear', payload),
     clipboardWriteText: (text) => clipboard.writeText(String(text || '')),
 
+    // New Tab Page
+    ntpGetTopSites: () => ipcRenderer.invoke('newtab:get-top-sites'),
+    ntpStealFocus: () => ipcRenderer.send('omnibox:steal-focus'),
+
     // Tooltip Overlay
     tooltipShow: (data) => ipcRenderer.send('tooltip:show', data),
     tooltipHide: () => ipcRenderer.send('tooltip:hide'),

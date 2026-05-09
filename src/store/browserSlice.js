@@ -1,9 +1,17 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-const GOOGLE_HOME = 'https://www.google.com/';
+// The canonical URL for new tabs — resolved by main.js to the actual newtab.html.
+const NTP_URL = 'app://newtab';
 
-function isGoogleHome(url) {
-  return url && url.startsWith('https://www.google.com/') && !url.includes('/search');
+/**
+ * Returns true when a URL represents the custom New Tab Page.
+ * Covers both the short form (stored in Redux / session) and the resolved
+ * app:// path that comes back via url-changed after navigation.
+ */
+function isNtpUrl(url) {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return lower === 'app://newtab' || lower.startsWith('app://localhost/dist/newtab');
 }
 
 function tabChromeDefaults() {
@@ -38,12 +46,12 @@ const browserSlice = createSlice({
   reducers: {
     addTab(state, action) {
       const { id, isStealth = false, initialUrl = null } = action.payload;
-      const url = initialUrl || GOOGLE_HOME;
+      const url = initialUrl || NTP_URL;
       state.tabs[id] = {
         url,
         title: 'New Tab',
         favicon: null,
-        isNewTab: !initialUrl || isGoogleHome(url),
+        isNewTab: !initialUrl || isNtpUrl(url),
         isStealth,
         isLoading: false,
         isSleeping: false,
@@ -59,13 +67,13 @@ const browserSlice = createSlice({
      */
     insertTabAfter(state, action) {
       const { afterId, id, isStealth = false, initialUrl = null } = action.payload;
-      const url = initialUrl || GOOGLE_HOME;
+      const url = initialUrl || NTP_URL;
       const afterIdx = state.tabOrder.indexOf(afterId);
       state.tabs[id] = {
         url,
         title: 'New Tab',
         favicon: null,
-        isNewTab: !initialUrl || isGoogleHome(url),
+        isNewTab: !initialUrl || isNtpUrl(url),
         isStealth,
         isLoading: false,
         isSleeping: false,
@@ -87,12 +95,12 @@ const browserSlice = createSlice({
      */
     addSleepingTab(state, action) {
       const { id, url, title, favicon, isStealth = false } = action.payload;
-      const resolvedUrl = url || GOOGLE_HOME;
+      const resolvedUrl = url || NTP_URL;
       state.tabs[id] = {
         url: resolvedUrl,
         title: title || 'New Tab',
         favicon: favicon || null,
-        isNewTab: isGoogleHome(resolvedUrl),
+        isNewTab: isNtpUrl(resolvedUrl),
         isStealth,
         isLoading: false,
         isSleeping: true,
@@ -154,7 +162,7 @@ const browserSlice = createSlice({
       const { id, title, favicon, isLoading, url } = action.payload;
       if (!state.tabs[id]) {
         state.tabs[id] = {
-          url: GOOGLE_HOME,
+          url: NTP_URL,
           isNewTab: true,
           isStealth: false,
           isLoading: false,
@@ -168,7 +176,7 @@ const browserSlice = createSlice({
       if (isLoading != null) tab.isLoading = isLoading;
       if (title) {
         const currentUrl = url || tab.url || '';
-        tab.title = (tab.isNewTab && isGoogleHome(currentUrl)) ? 'New Tab' : title;
+        tab.title = (tab.isNewTab && isNtpUrl(currentUrl)) ? 'New Tab' : title;
       }
     },
 
@@ -176,7 +184,7 @@ const browserSlice = createSlice({
       const { id, url } = action.payload;
       if (!state.tabs[id]) {
         state.tabs[id] = {
-          url: GOOGLE_HOME,
+          url: NTP_URL,
           isNewTab: true,
           isStealth: false,
           isLoading: false,
@@ -186,7 +194,8 @@ const browserSlice = createSlice({
       }
       const tab = state.tabs[id];
       tab.url = url;
-      if (!isGoogleHome(url)) tab.isNewTab = false;
+      // Keep isNewTab true while the NTP is loaded; clear it on real navigations.
+      if (!isNtpUrl(url)) tab.isNewTab = false;
     },
 
     setTabNewTab(state, action) {

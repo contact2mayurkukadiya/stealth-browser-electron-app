@@ -1,0 +1,257 @@
+/* ── Design tokens ──────────────────────────────────────────────────────── */
+
+:root {
+  --ntp-bg:            #f8f9fa;
+  --ntp-surface:       #ffffff;
+  --ntp-border:        rgba(0, 0, 0, 0.08);
+  --ntp-text-primary:  #202124;
+  --ntp-text-secondary:#5f6368;
+  --ntp-clock-time:    #202124;
+  --ntp-clock-date:    #5f6368;
+  --ntp-fakebox-bg:    #ffffff;
+  --ntp-fakebox-shadow:0 1px 6px rgba(32, 33, 36, 0.18), 0 1px 4px rgba(32, 33, 36, 0.08);
+  --ntp-fakebox-hover: 0 1px 10px rgba(32, 33, 36, 0.22), 0 1px 6px rgba(32, 33, 36, 0.12);
+  --ntp-fakebox-text:  #80868b;
+  --ntp-fakebox-icon:  #9aa0a6;
+  --ntp-tile-bg:       #ffffff;
+  --ntp-tile-hover:    #f1f3f4;
+  --ntp-tile-text:     #3c4043;
+  --ntp-letter-bg:     #e8eaed;
+  --ntp-letter-text:   #5f6368;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ntp-bg:            #202124;
+    --ntp-surface:       #2d2e31;
+    --ntp-border:        rgba(255, 255, 255, 0.06);
+    --ntp-text-primary:  #e8eaed;
+    --ntp-text-secondary:#9aa0a6;
+    --ntp-clock-time:    #e8eaed;
+    --ntp-clock-date:    #9aa0a6;
+    --ntp-fakebox-bg:    #303134;
+    --ntp-fakebox-shadow:0 1px 6px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.3);
+    --ntp-fakebox-hover: 0 1px 10px rgba(0, 0, 0, 0.5), 0 1px 6px rgba(0, 0, 0, 0.35);
+    --ntp-fakebox-text:  #9aa0a6;
+    --ntp-fakebox-icon:  #9aa0a6;
+    --ntp-tile-bg:       #303134;
+    --ntp-tile-hover:    #3c4043;
+    --ntp-tile-text:     #e8eaed;
+    --ntp-letter-bg:     #3c4043;
+    --ntp-letter-text:   #9aa0a6;
+  }
+}
+
+/* ── Reset / base ───────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#newtab-root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: var(--ntp-bg);
+  color: var(--ntp-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+
+.ntp-root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 24px;
+}
+
+.ntp-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  width: 100%;
+  max-width: 600px;
+}
+
+/* ── Clock ──────────────────────────────────────────────────────────────── */
+
+.ntp-clock {
+  text-align: center;
+  user-select: none;
+}
+
+.ntp-clock__time {
+  font-size: 72px;
+  font-weight: 300;
+  letter-spacing: -2px;
+  line-height: 1;
+  color: var(--ntp-clock-time);
+}
+
+.ntp-clock__date {
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ntp-clock-date);
+}
+
+/* ── Fakebox ────────────────────────────────────────────────────────────── */
+
+.ntp-fakebox {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 584px;
+  height: 48px;
+  padding: 0 18px;
+  background: var(--ntp-fakebox-bg);
+  border-radius: 24px;
+  box-shadow: var(--ntp-fakebox-shadow);
+  cursor: text;
+  user-select: none;
+  outline: none;
+  border: none;
+  transition: box-shadow 120ms ease;
+}
+
+.ntp-fakebox:hover {
+  box-shadow: var(--ntp-fakebox-hover);
+}
+
+.ntp-fakebox__icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--ntp-fakebox-icon);
+}
+
+.ntp-fakebox__placeholder {
+  font-size: 16px;
+  color: var(--ntp-fakebox-text);
+}
+
+/* ── In-page omnibox (NtpSearchBox): flex row + omnibox.css ghost ───────────── */
+
+.ntp-search-box {
+  position: relative;
+  overflow: visible;
+  user-select: text;
+}
+
+.ntp-search-box .ntp-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 16px;
+  color: var(--ntp-text-primary);
+  caret-color: var(--ntp-text-primary);
+  font-family: inherit;
+}
+
+.ntp-search-box .ntp-search-input::placeholder {
+  color: var(--ntp-fakebox-text);
+}
+
+.ntp-search-box .omnibox-ghost {
+  pointer-events: none;
+  align-items: center;
+  justify-content: flex-start;
+  /* Match omnibox: icon (20) + gap (12) + outer padding-start (18) */
+  padding-left: calc(18px + 20px + 12px);
+  padding-right: 18px;
+  font-size: 16px;
+}
+
+.ntp-search-box .omnibox-ghost__suffix {
+  color: var(--ntp-fakebox-text);
+  opacity: 0.72;
+}
+
+/* ── Top Sites ──────────────────────────────────────────────────────────── */
+
+.ntp-top-sites {
+  width: 100%;
+}
+
+.ntp-top-sites__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 520px) {
+  .ntp-top-sites__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.ntp-site-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 8px;
+  background: var(--ntp-tile-bg);
+  border: 1px solid var(--ntp-border);
+  border-radius: 12px;
+  cursor: pointer;
+  outline: none;
+  transition: background 120ms ease, transform 100ms ease;
+}
+
+.ntp-site-tile:hover {
+  background: var(--ntp-tile-hover);
+  transform: translateY(-1px);
+}
+
+.ntp-site-tile:active {
+  transform: translateY(0);
+}
+
+.ntp-site-tile__icon-wrap {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--ntp-letter-bg);
+}
+
+.ntp-site-tile__favicon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.ntp-site-tile__letter {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--ntp-letter-text);
+}
+
+.ntp-site-tile__label {
+  font-size: 12px;
+  color: var(--ntp-tile-text);
+  text-align: center;
+  max-width: 80px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

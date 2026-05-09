@@ -19,6 +19,29 @@ const STARTUP_OPTIONS = [
   },
 ];
 
+const SEARCH_ENGINE_OPTIONS = [
+  {
+    value: 'google',
+    label: 'Google',
+    description: 'Search with Google (google.com).',
+  },
+  {
+    value: 'bing',
+    label: 'Bing',
+    description: 'Search with Microsoft Bing (bing.com).',
+  },
+  {
+    value: 'brave',
+    label: 'Brave Search',
+    description: 'Search with Brave Search — independent index, no tracking (search.brave.com).',
+  },
+  {
+    value: 'duckDuckGo',
+    label: 'DuckDuckGo',
+    description: 'Search with DuckDuckGo — privacy-first search (duckduckgo.com).',
+  },
+];
+
 function Toggle({ checked, onChange }) {
   return (
     <button
@@ -32,12 +55,12 @@ function Toggle({ checked, onChange }) {
   );
 }
 
-function RadioRow({ option, checked, onChange }) {
+function RadioRow({ option, checked, onChange, groupName = 'radio-group' }) {
   return (
     <label className={`radio-row${checked ? ' radio-row--checked' : ''}`}>
       <input
         type="radio"
-        name="startupBehavior"
+        name={groupName}
         value={option.value}
         checked={checked}
         onChange={() => onChange(option.value)}
@@ -72,6 +95,10 @@ export default function SettingsApp() {
 
   const handleStartupChange = useCallback(async (value) => {
     await persist({ ...settings, startupBehavior: value });
+  }, [settings, persist]);
+
+  const handleSearchEngineChange = useCallback(async (value) => {
+    await persist({ ...settings, searchEngine: value });
   }, [settings, persist]);
 
   const handleRelaunch = useCallback(() => {
@@ -154,6 +181,23 @@ export default function SettingsApp() {
                 option={opt}
                 checked={settings.startupBehavior === opt.value}
                 onChange={handleStartupChange}
+                groupName="startupBehavior"
+              />
+            ))}
+          </div>
+        </section>
+
+        {/* ── Search Engine ────────────────────────────────────────────── */}
+        <section className="settings-section">
+          <h2 className="settings-section__title">Search Engine</h2>
+          <div className="settings-card">
+            {SEARCH_ENGINE_OPTIONS.map((opt) => (
+              <RadioRow
+                key={opt.value}
+                option={opt}
+                checked={(settings.searchEngine || 'google') === opt.value}
+                onChange={handleSearchEngineChange}
+                groupName="searchEngine"
               />
             ))}
           </div>

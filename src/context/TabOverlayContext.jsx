@@ -38,14 +38,33 @@ export function TabOverlayProvider({ children }) {
     overlayCountRef.current += 1;
     if (!wasZero) return;
 
-    try {
-      const r = await window.electronAPI.tabCaptureActiveSnapshot?.();
-      if (overlayCountRef.current === 0) return;
+    /**
+     * On app:// tabs (including the local NTP), capturePage may be slow, empty, or stall.
+     * We must not defer tabHideActive until capture completes — native WebContentsView
+     * would stay on top and hide the omnibox dropdown behind the tab.
+     *
+     * Freeze-frame is best-effort: wait briefly for snapshot, then always hide.
+     */
+    const snapshotSoon = async () => {
+      try {
+        const snapPromise = window.electronAPI.tabCaptureActiveSnapshot?.();
+        if (!snapPromise) return null;
+        const result = await Promise.race([
+          snapPromise,
+          new Promise(resolve => setTimeout(() => resolve({ dataUrl: null }), 100)),
+        ]);
+        return result?.dataUrl ?? null;
+      } catch {
+        return null;
+      }
+    };
 
-      setTabSnapshotDataUrl(r?.dataUrl ?? null);
+    try {
+      const dataUrl = await snapshotSoon();
+      if (overlayCountRef.current === 0) return;
+      setTabSnapshotDataUrl(dataUrl);
       await doubleRaf();
       if (overlayCountRef.current === 0) return;
-
       await window.electronAPI.tabHideActive?.();
     } catch (err) {
       console.error('beginOverlay', err);

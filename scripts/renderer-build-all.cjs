@@ -12,7 +12,7 @@ const path = require('path');
 const RELOAD_STAMP = '.stealth-renderer-reload';
 
 const ROOT = path.join(__dirname, '..');
-const ENTRIES = ['index', 'history', 'settings', 'profile-picker'];
+const ENTRIES = ['index', 'history', 'settings', 'profile-picker', 'newtab'];
 
 function runViteBuild(entry) {
     const env = { ...process.env };

@@ -56,7 +56,7 @@ function findBookmarkByUrl(url, list) {
   return null;
 }
 
-export default function NavBar({ currentTabId, onOpenSettings }) {
+export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'google' }) {
   const { beginOverlay, endOverlay } = useTabOverlay();
   const tabs = useSelector(s => s.browser.tabs);
   const bookmarksData = useSelector(s => s.bookmarks.data);
@@ -66,7 +66,8 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
   const existingBookmark = findBookmarkByUrl(currentUrl, bookmarksData.bar);
   const isBookmarked = !!existingBookmark;
   const canBookmark = currentUrl && !(
-    currentUrl.startsWith('https://www.google.com/') && !currentUrl.includes('/search')
+    currentUrl.startsWith('app://') ||
+    (currentUrl.startsWith('https://www.google.com/') && !currentUrl.includes('/search'))
   );
 
   // ── Edit popup state ──────────────────────────────────────────────────────
@@ -176,7 +177,7 @@ export default function NavBar({ currentTabId, onOpenSettings }) {
       <button id="forward-btn" className="btn" onClick={handleForward}>{FORWARD_ICON}</button>
       <button id="reload-btn" className="btn" onClick={handleReload}>{RELOAD_ICON}</button>
 
-      <OmniboxInput currentTabId={currentTabId} tabsData={tabs} />
+      <OmniboxInput currentTabId={currentTabId} tabsData={tabs} searchEngine={searchEngine} />
 
       <button
         id="bookmark-btn"

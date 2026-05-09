@@ -15,6 +15,26 @@ const KEYWORD_SHORTCUTS = {
   npm: 'https://www.npmjs.com/search?q=',
 };
 
+/** Search engine base URLs — mirrors the map in main.js. */
+const SEARCH_ENGINE_URLS = {
+  google:     'https://www.google.com/search?q=',
+  bing:       'https://www.bing.com/search?q=',
+  brave:      'https://search.brave.com/search?q=',
+  duckDuckGo: 'https://duckduckgo.com/?q=',
+};
+
+/**
+ * Returns a search URL for the given engine and query.
+ * Falls back to Google when the engine key is unrecognised.
+ * @param {string} engine
+ * @param {string} query
+ * @returns {string}
+ */
+export function buildSearchUrl(engine, query) {
+  const base = SEARCH_ENGINE_URLS[engine] || SEARCH_ENGINE_URLS.google;
+  return base + encodeURIComponent(query);
+}
+
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+\-.]*:\/\//;
 const LOCALHOST_RE = /^localhost(:\d+)?(\/.*)?$/;
 const IP_RE = /^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/.*)?$/;
@@ -57,13 +77,14 @@ export function classifyInput(text) {
 /**
  * Converts raw text to a navigable URL.
  * For URLs missing a scheme, prepends https://.
- * For searches, builds a Google search URL.
+ * For searches, builds a search URL using the specified engine.
  * @param {string} text
+ * @param {string} [engine='google']
  * @returns {string}
  */
-export function toNavigateUrl(text) {
+export function toNavigateUrl(text, engine = 'google') {
   const trimmed = (text || '').trim();
-  if (!trimmed) return 'https://www.google.com/';
+  if (!trimmed) return 'app://newtab';
 
   const kind = classifyInput(trimmed);
 
@@ -81,16 +102,17 @@ export function toNavigateUrl(text) {
     return `https://${trimmed}`;
   }
 
-  return toSearchUrl(trimmed);
+  return toSearchUrl(trimmed, engine);
 }
 
 /**
- * Builds a Google search URL for the given query string.
+ * Builds a search URL for the given query string using the specified engine.
  * @param {string} query
+ * @param {string} [engine='google']
  * @returns {string}
  */
-export function toSearchUrl(query) {
-  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+export function toSearchUrl(query, engine = 'google') {
+  return buildSearchUrl(engine, query);
 }
 
 export { KEYWORD_SHORTCUTS };
