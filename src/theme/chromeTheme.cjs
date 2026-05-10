@@ -158,10 +158,11 @@ function lightSheetHexFromPreset(next) {
   return mixHex('#ffffff', hint, LIGHT_SHEET_TINT_MIX);
 }
 
+/** Same layering as DEFAULT_DARK — stealth chrome matches InvSurf dark tabs, not burgundy. */
 const STEALTH = {
-  '--chrome-slider-stealth': '#5c2020',
-  '--chrome-nav-stealth': '#5c2020',
-  '--chrome-url-well-stealth': '#5c2020',
+  '--chrome-slider-stealth': '#394d55',
+  '--chrome-nav-stealth': '#394d55',
+  '--chrome-url-well-stealth': '#2f3c42',
 };
 
 function ensureFgOnBg(fgHex, bgHex, minRatio = 4) {

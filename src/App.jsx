@@ -114,16 +114,27 @@ function AppShell() {
     const st = stealthWindowRef.current;
     const id = 'tab-' + Date.now();
     dispatch(addTab({ id, isStealth: st, initialUrl: null }));
+    // Main activates the tab inside new-tab → createTab; avoid redundant switch-tab IPC
+    // (stateRef is stale until the next render, so switchTab would always fire duplicate IPC).
     window.electronAPI.newTab(id, st, null);
-    window.electronAPI.switchTab(id);
   }, [dispatch]);
 
   const createTabWithUrl = useCallback((id, isStealth, initialUrl) => {
     const st = stealthWindowRef.current || isStealth;
     dispatch(addTab({ id, isStealth: st, initialUrl }));
     window.electronAPI.newTab(id, st, initialUrl);
-    window.electronAPI.switchTab(id);
   }, [dispatch]);
+
+  /** Normal windows always keep one tab; stealth windows close when the last tab goes away. */
+  const createTabOrCloseStealthWindow = useCallback(() => {
+    setTimeout(() => {
+      if (stealthWindowRef.current) {
+        window.electronAPI.closeStealthWindow?.();
+      } else {
+        createTab();
+      }
+    }, 0);
+  }, [createTab]);
 
   const closeTab = useCallback((id) => {
     const { tabs, tabOrder, currentTabId } = stateRef.current;
@@ -144,10 +155,10 @@ function AppShell() {
           window.electronAPI.switchTab(nextId);
         }, 0);
       } else {
-        setTimeout(() => createTab(), 0);
+        createTabOrCloseStealthWindow();
       }
     }
-  }, [dispatch, createTab]);
+  }, [dispatch, createTabOrCloseStealthWindow]);
 
   const handleDragEnd = useCallback((newTabOrder) => {
     dispatch(reorderTabs(newTabOrder));
@@ -170,7 +181,6 @@ function AppShell() {
     const id = `tab-${Date.now()}`;
     dispatch(insertTabAfter({ afterId: currentTabId, id, isStealth: st, initialUrl: null }));
     window.electronAPI.newTab(id, st, null);
-    window.electronAPI.switchTab(id);
   }, [dispatch]);
 
   const duplicateTab = useCallback(() => {
@@ -182,7 +192,6 @@ function AppShell() {
     const newId = `tab-${Date.now()}`;
     dispatch(insertTabAfter({ afterId: currentTabId, id: newId, isStealth, initialUrl: url }));
     window.electronAPI.newTab(newId, isStealth, url);
-    window.electronAPI.switchTab(newId);
   }, [dispatch]);
 
   const toggleMuteSite = useCallback(() => {
@@ -229,7 +238,6 @@ function AppShell() {
     const id = `tab-${Date.now()}`;
     dispatch(insertTabAfter({ afterId, id, isStealth: st, initialUrl: null }));
     window.electronAPI.newTab(id, st, null);
-    window.electronAPI.switchTab(id);
   }, [dispatch]);
 
   const duplicateTabFrom = useCallback((sourceId) => {
@@ -240,7 +248,6 @@ function AppShell() {
     const newId = `tab-${Date.now()}`;
     dispatch(insertTabAfter({ afterId: sourceId, id: newId, isStealth, initialUrl: url }));
     window.electronAPI.newTab(newId, isStealth, url);
-    window.electronAPI.switchTab(newId);
   }, [dispatch]);
 
   const muteSiteForTab = useCallback((anchorTabId) => {
@@ -296,10 +303,10 @@ function AppShell() {
       if (fallbackTabId) {
         dispatch(setCurrentTab(fallbackTabId));
       } else {
-        setTimeout(() => createTab(), 0);
+        createTabOrCloseStealthWindow();
       }
     }
-  }, [dispatch, createTab]);
+  }, [dispatch, createTabOrCloseStealthWindow]);
 
   const handleTabMoveNewWindowShortcut = useCallback(() => {
     const id = stateRef.current.currentTabId;
@@ -369,7 +376,6 @@ function AppShell() {
     const id = 'tab-' + Date.now();
     dispatch(addTab({ id, isStealth: st, initialUrl: null }));
     window.electronAPI.newTab(id, st, null);
-    window.electronAPI.switchTab(id);
     setTimeout(() => window.electronAPI.navigate(id, navigateTo), 50);
   }, [dispatch]);
 

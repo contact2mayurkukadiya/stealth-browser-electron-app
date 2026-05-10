@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import {
-  logoIcognitoLightSvg,
+  logoIcognitoDarkSvg,
   logoPurpleDarkSvg,
   logoPurpleLightSvg,
 } from '../constants/appAssetUrls';
@@ -52,7 +52,7 @@ export function useInvsurfDocumentFavicon(isStealthNtpFromTab) {
     typeof isStealthNtpFromTab === 'boolean'
       ? isStealthNtpFromTab
       : typeof window !== 'undefined' && !!window.__INVISURF_STEALTH_WINDOW__;
-  const href = isStealthShell ? logoIcognitoLightSvg : themeHref;
+  const href = isStealthShell ? logoIcognitoDarkSvg : themeHref;
   useEffect(() => {
     let link = document.querySelector('link[rel="icon"]');
     if (!link) {

@@ -85,14 +85,50 @@ function RadioRow({ option, checked, onChange, groupName = 'radio-group' }) {
 
 export default function SettingsApp() {
   useChromeTheme();
-  useInvsurfDocumentFavicon();
   const [settings, setSettings] = useState(null);
+  /** Resolved together with settings so Appearance / On Startup can be omitted without flashing in stealth. */
+  const [contextReady, setContextReady] = useState(false);
+  const [isStealthWindow, setIsStealthWindow] = useState(false);
   // Track whether contentProtection was changed since load (to show relaunch hint)
   const [pendingRelaunch, setPendingRelaunch] = useState(false);
 
+  useInvsurfDocumentFavicon(isStealthWindow);
+
   useEffect(() => {
-    window.electronAPI.settingsGet().then((s) => setSettings(s));
+    let cancelled = false;
+    const api = window.electronAPI;
+    Promise.all([
+      api?.settingsGet?.() ?? Promise.resolve(null),
+      typeof api?.isStealthWindow === 'function' ? api.isStealthWindow() : Promise.resolve(false),
+    ]).then(([s, stealth]) => {
+      if (cancelled) return;
+      setSettings(s);
+      setIsStealthWindow(!!stealth);
+      setContextReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!isStealthWindow) return undefined;
+    const root = document.documentElement;
+    root.style.setProperty('--chrome-content-bg', '#253035');
+    root.style.setProperty('--chrome-content-surface', '#2f3c42');
+    root.style.setProperty('--chrome-scrollbar-track', '#1e2a30');
+    root.style.setProperty('--chrome-scrollbar-thumb', '#6b7780');
+    root.style.setProperty('--chrome-scrollbar-thumb-hover', '#8a9399');
+    document.body.classList.add('settings-stealth-ui');
+    return () => {
+      root.style.removeProperty('--chrome-content-bg');
+      root.style.removeProperty('--chrome-content-surface');
+      root.style.removeProperty('--chrome-scrollbar-track');
+      root.style.removeProperty('--chrome-scrollbar-thumb');
+      root.style.removeProperty('--chrome-scrollbar-thumb-hover');
+      document.body.classList.remove('settings-stealth-ui');
+    };
+  }, [isStealthWindow]);
 
   const persist = useCallback(async (updated) => {
     setSettings(updated);
@@ -165,18 +201,19 @@ export default function SettingsApp() {
     if (value) refreshDiagReport();
   }, [settings, persist, refreshDiagReport]);
 
-  if (!settings) {
+  if (!contextReady || !settings) {
     return <div className="settings-loading">Loading…</div>;
   }
 
   return (
-    <div className="settings-page">
+    <div className={`settings-page${isStealthWindow ? ' settings-page--stealth' : ''}`}>
       <header className="settings-header">
         <h1 className="settings-header__title">Settings</h1>
       </header>
 
       <div className="settings-content">
-        {/* ── Appearance ───────────────────────────────────────────────── */}
+        {/* ── Appearance (hidden in stealth — chrome is fixed InvSurf dark) ─ */}
+        {!isStealthWindow && (
         <section className="settings-section">
           <h2 className="settings-section__title">Appearance</h2>
           <div className="settings-card settings-card--appearance">
@@ -286,6 +323,7 @@ export default function SettingsApp() {
             </div>
           </div>
         </section>
+        )}
 
         {/* ── Privacy ──────────────────────────────────────────────────── */}
         <section className="settings-section">
@@ -318,7 +356,8 @@ export default function SettingsApp() {
           </div>
         </section>
 
-        {/* ── On Startup ───────────────────────────────────────────────── */}
+        {/* ── On Startup (hidden in stealth — session restore does not apply) ─ */}
+        {!isStealthWindow && (
         <section className="settings-section">
           <h2 className="settings-section__title">On Startup</h2>
           <div className="settings-card">
@@ -333,6 +372,7 @@ export default function SettingsApp() {
             ))}
           </div>
         </section>
+        )}
 
         {/* ── Search Engine ────────────────────────────────────────────── */}
         <section className="settings-section">

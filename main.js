@@ -983,13 +983,13 @@ function restoreActiveTabViewFromShellOverlay(context) {
 
 function activateTabInContext(context, id) {
     if (!context || !context.tabs[id]) return false;
-    // Re-activating the already-visible tab only removes/re-attaches every view and
-    // re-sends omnibox:focus — causes NTP flicker when clicking the active tab repeatedly.
-    if (
+    const skipSameTab =
         context.activeTabId === id &&
         !detachedTabWindows.has(id) &&
-        !context.isActiveTabTemporarilyHidden
-    ) {
+        !context.isActiveTabTemporarilyHidden;
+    // Re-activating the already-visible tab only removes/re-attaches every view and
+    // re-sends omnibox:focus — causes NTP flicker when clicking the active tab repeatedly.
+    if (skipSameTab) {
         return true;
     }
     if (detachedTabWindows.has(id)) {
@@ -1019,7 +1019,13 @@ function activateTabInContext(context, id) {
         width,
         height: fs ? height : height - UI_HEIGHT,
     });
-    context.tabs[id].webContents.focus();
+    const activeUrl = context.tabs[id]?.webContents.getURL() ?? '';
+    const blankActive = isBlankTab(activeUrl);
+    // For blank/NTP tabs we move keyboard focus straight to the shell + omnibox (below).
+    // Focusing the tab WebContentsView first caused a visible focus flash before setImmediate.
+    if (!blankActive) {
+        context.tabs[id].webContents.focus();
+    }
     context.activeTabId = id;
     if (context.window && !context.window.webContents.isDestroyed()) {
         context.window.webContents.send('tab-switched', { id });
@@ -1030,13 +1036,12 @@ function activateTabInContext(context, id) {
     // webContents.focus() on the shell window shifts Electron's native keyboard
     // ownership away from the tab's WebContentsView back to the chrome renderer,
     // which is required for a DOM .focus() call in the renderer to take effect.
-    const currentUrl = context.tabs[id]?.webContents.getURL() ?? '';
-    if (isBlankTab(currentUrl)) {
+    if (blankActive) {
+        context.omniboxFocusGen = (context.omniboxFocusGen || 0) + 1;
+        const omniboxGen = context.omniboxFocusGen;
         setImmediate(() => {
-            if (context.window && !context.window.webContents.isDestroyed()) {
-                context.window.webContents.focus();
-                context.window.webContents.send('omnibox:focus', { tabId: id, selectAll: true });
-            }
+            if (context.omniboxFocusGen !== omniboxGen) return;
+            sendOmniboxFocusToShell(context, id, true);
         });
     }
 
@@ -1175,7 +1180,7 @@ function isBlankTab(url) {
 }
 
 // After did-finish-load, only re-assert omnibox focus for pages whose scripts steal
-// focus (e.g. Google). Custom NTP refocus causes visible flicker with the shell overlay.
+// focus (e.g. Google). Custom NTP uses a separate path (reassertOmniboxAfterCustomNtpLoad).
 function shouldReassertOmniboxAfterPageLoad(url) {
     if (!url || typeof url !== 'string') return false;
     const u = url.toLowerCase();
@@ -1183,6 +1188,26 @@ function shouldReassertOmniboxAfterPageLoad(url) {
         return false;
     }
     return u.startsWith('https://www.google.com/') && !u.includes('/search');
+}
+
+/** True when the loaded document is our bundled New Tab Page (not Google / about:blank). */
+function isCustomNewTabDocumentUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const u = url.toLowerCase();
+    return u === 'app://newtab' || u.startsWith('app://localhost/dist/newtab');
+}
+
+/** Focus shell omnibox — shared by activateTabInContext and load handlers. */
+function sendOmniboxFocusToShell(context, tabId, selectAll) {
+    if (!context.window || context.window.isDestroyed()) return;
+    try {
+        context.window.focus();
+    } catch (_) {
+        /* ignore */
+    }
+    if (context.window.webContents.isDestroyed()) return;
+    context.window.webContents.focus();
+    context.window.webContents.send('omnibox:focus', { tabId, selectAll });
 }
 
 function toDisplayUrl(rawUrl) {
@@ -1654,6 +1679,19 @@ ipcMain.handle('window:create-stealth', (event) => {
     return { ok: true };
 });
 
+/** When the last stealth tab is closed, the shell asks to close the whole window (Chrome-like incognito). */
+ipcMain.handle('window:close-if-stealth', (event) => {
+    if (!isSenderTrusted(event)) return { ok: false };
+    const context = getWindowContextByEventSender(event.sender);
+    if (!context?.stealthWindow) return { ok: false };
+    try {
+        if (!context.window.isDestroyed()) context.window.close();
+    } catch (_) {
+        return { ok: false };
+    }
+    return { ok: true };
+});
+
 ipcMain.handle('window:get-bootstrap', (event) => {
     if (!isSenderTrusted(event)) return null;
     const context = getWindowContextByEventSender(event.sender);
@@ -1897,7 +1935,12 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
 
     context.tabs[id] = view;
     tabIdToWindowId.set(id, context.window.id);
-    context.window.contentView.addChildView(view);
+    // Active tabs are attached via activateTabInContext() so only one tab view is in the
+    // hierarchy at a time (avoids stacked views stealing hit-testing until switch-tab runs).
+    if (!shouldActivate) {
+        context.window.contentView.addChildView(view);
+        view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    }
 
     const webContentsNumericId = view.webContents.id;
     webContentsIdToTabId.set(webContentsNumericId, id);
@@ -1912,21 +1955,6 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
 
     installSessionNetworkGuards(view.webContents.session);
     installDevToolsTypographyOnOpen(view.webContents);
-
-    // Initial bounds set
-    const { width, height } = context.window.getContentBounds();
-    if (shouldActivate) {
-        const fsInit = htmlFullscreenTabId === id;
-        view.setBounds({
-            x: 0,
-            y: fsInit ? 0 : UI_HEIGHT,
-            width,
-            height: fsInit ? height : height - UI_HEIGHT,
-        });
-        view.webContents.focus();
-    } else {
-        view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-    }
 
     // ─── Security guards for tab content (Rules 13, 14) ────
     // Convert safe popup/new-tab intents into app tabs; block everything else.
@@ -2151,14 +2179,26 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
     // the user's typing is never interrupted on blank/NTP tabs.
     // selectAll is false here because the user may already be mid-query.
     view.webContents.on('did-finish-load', () => {
-        if (!shouldReassertOmniboxAfterPageLoad(view.webContents.getURL())) return;
+        const loadedUrl = view.webContents.getURL();
         if (context.activeTabId !== id) return;
-        setImmediate(() => {
-            if (context.window && !context.window.webContents.isDestroyed()) {
-                context.window.webContents.focus();
-                context.window.webContents.send('omnibox:focus', { tabId: id, selectAll: false });
-            }
-        });
+
+        // Google homepage: scripts steal focus from the omnibox after load.
+        if (shouldReassertOmniboxAfterPageLoad(loadedUrl)) {
+            setImmediate(() => {
+                if (context.activeTabId !== id) return;
+                sendOmniboxFocusToShell(context, id, false);
+            });
+            return;
+        }
+
+        // Bundled NTP: early omnibox IPC can lose to guest focus after paint/load;
+        // re-assert once when the document finishes (does not use omniboxFocusGen).
+        if (isCustomNewTabDocumentUrl(loadedUrl) && isBlankTab(loadedUrl)) {
+            setImmediate(() => {
+                if (context.activeTabId !== id) return;
+                sendOmniboxFocusToShell(context, id, true);
+            });
+        }
     });
 
     // Use these flags to temporarily hold the title until page load completes or URL changes
@@ -2242,6 +2282,10 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
     });
 
     view.webContents.loadURL(resolveTabLoadUrl(url));
+
+    if (shouldActivate) {
+        activateTabInContext(context, id);
+    }
 }
 
 // ─── HISTORY STORAGE ───────────────────────────────────────────────────────────
@@ -2737,11 +2781,8 @@ ipcMain.handle('history:remove-items', async (e, timestamps) => {
 ipcMain.on('omnibox:steal-focus', (e) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
-    if (!context) return;
-    const shellContents = context.window?.webContents;
-    if (!shellContents || shellContents.isDestroyed()) return;
-    shellContents.focus();
-    shellContents.send('omnibox:focus', { tabId: context.activeTabId, selectAll: true });
+    if (!context?.activeTabId) return;
+    sendOmniboxFocusToShell(context, context.activeTabId, true);
 });
 
 /**
@@ -3141,19 +3182,7 @@ ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
     if (context.window && !context.window.webContents.isDestroyed()) {
         context.window.webContents.send('tab-created', { id, isStealth: stealthTab, url: resolvedUrl });
     }
-
-    // Autofocus the omnibox for blank/NTP tabs so the user can type immediately.
-    // setImmediate defers until after the tab strip has rendered the new tab.
-    // webContents.focus() shifts Electron's native keyboard ownership back to the
-    // chrome renderer so the subsequent DOM .focus() call in the renderer works.
-    if (isBlankTab(resolvedUrl)) {
-        setImmediate(() => {
-            if (context.window && !context.window.webContents.isDestroyed()) {
-                context.window.webContents.focus();
-                context.window.webContents.send('omnibox:focus', { tabId: id, selectAll: true });
-            }
-        });
-    }
+    // Omnibox autofocus for blank/NTP is handled inside activateTabInContext() at the end of createTab().
 });
 
 ipcMain.on('switch-tab', (e, { id }) => {

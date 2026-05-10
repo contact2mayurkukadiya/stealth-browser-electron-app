@@ -188,7 +188,7 @@ body {
   object-fit: contain;
 }
 
-/* Stealth NTP: single incognito mark, same in light and dark chrome */
+/* Stealth NTP: purple-icognito-dark.svg — matches stealth tab / document favicon */
 .ntp-hero__logo--stealth {
   display: block;
 }
@@ -448,6 +448,11 @@ html[data-forced-appearance="light"] .ntp-hero__logo--scheme-light {
   outline: none;
 }
 
+/* Favicons / text sometimes keep I-beam or default unless inheritance is explicit */
+.ntp-shortcut * {
+  cursor: inherit;
+}
+
 @media (prefers-color-scheme: dark) {
   .ntp-shortcut {
     background: rgba(28, 36, 51, 0.55);
@@ -525,4 +530,29 @@ html[data-forced-appearance="light"] .ntp-hero__logo--scheme-light {
 .ntp-shortcut:hover .ntp-shortcut__label,
 .ntp-shortcut:focus-visible .ntp-shortcut__label {
   color: var(--ntp-primary);
+}
+
+/*
+ * Stealth NTP: default tile fill matches the dark “hover” navy used in dark mode
+ * (~ --ntp-white / #1c2436); hover lifts slightly so tiles still feel interactive.
+ */
+.ntp-root--stealth {
+  --ntp-stealth-shortcut-fill: #1c2436;
+  --ntp-stealth-shortcut-fill-hover: #252e40;
+}
+
+.ntp-root--stealth .ntp-shortcut {
+  background: var(--ntp-stealth-shortcut-fill);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+}
+
+.ntp-root--stealth .ntp-shortcut:hover,
+.ntp-root--stealth .ntp-shortcut:focus-visible {
+  background: var(--ntp-stealth-shortcut-fill-hover);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.ntp-root--stealth .ntp-shortcut__icon-wrap {
+  background: rgba(255, 255, 255, 0.06);
 }

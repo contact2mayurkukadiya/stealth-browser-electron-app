@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     runMenuCommand: (commandId) => ipcRenderer.invoke('app:run-menu-command', commandId),
     createWindow: (profileId) => ipcRenderer.invoke('window:create', { profileId }),
     createStealthWindow: () => ipcRenderer.invoke('window:create-stealth'),
+    /** Close this BrowserWindow only if it is a stealth window; normal windows ignore (returns ok: false). */
+    closeStealthWindow: () => ipcRenderer.invoke('window:close-if-stealth'),
     windowGetBootstrap: () => ipcRenderer.invoke('window:get-bootstrap'),
     /** True when this renderer lives in a stealth (incognito) window — including tab WebContents. */
     isStealthWindow: () => ipcRenderer.invoke('context:is-stealth-window'),

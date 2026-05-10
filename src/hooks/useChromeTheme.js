@@ -38,39 +38,66 @@ export function applyStealthWindowChrome() {
  */
 export function useChromeTheme() {
   useLayoutEffect(() => {
+    let cancelled = false;
     let unsubTheme = null;
+    let mq = null;
+    let onSchemeChange = null;
 
-    const bootstrap = async () => {
+    (async () => {
       const api = window.electronAPI;
       if (!api?.settingsGet) return;
-      if (typeof window !== 'undefined' && window.__INVISURF_STEALTH_WINDOW__) {
+
+      let isStealthContext =
+        typeof window !== 'undefined' && !!window.__INVISURF_STEALTH_WINDOW__;
+      // Shell sets __INVISURF_STEALTH_WINDOW__; tab WebContents (e.g. new tab) must ask main.
+      if (!isStealthContext && typeof api.isStealthWindow === 'function') {
+        try {
+          isStealthContext = !!(await api.isStealthWindow());
+        } catch (_) {
+          isStealthContext = false;
+        }
+      }
+
+      if (cancelled) return;
+
+      if (isStealthContext) {
         applyStealthWindowChrome();
-        return;
-      }
-      const settings = await api.settingsGet();
-      applyChromeThemeFromSettings(settings);
-
-      if (api.onThemeApply) {
-        unsubTheme = api.onThemeApply(({ settings: next }) => {
-          if (typeof window !== 'undefined' && window.__INVISURF_STEALTH_WINDOW__) {
+        if (api.onThemeApply) {
+          unsubTheme = api.onThemeApply(() => {
             applyStealthWindowChrome();
-            return;
-          }
-          applyChromeThemeFromSettings(next);
-        });
+          });
+        }
+      } else {
+        const settings = await api.settingsGet();
+        if (cancelled) return;
+        applyChromeThemeFromSettings(settings);
+        if (api.onThemeApply) {
+          unsubTheme = api.onThemeApply(({ settings: next }) => {
+            applyChromeThemeFromSettings(next);
+          });
+        }
       }
-    };
 
-    bootstrap();
+      if (cancelled) return;
 
-    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
-    const onSchemeChange = () => {
-      window.electronAPI?.settingsGet?.().then((s) => applyChromeThemeFromSettings(s));
-    };
-    mq?.addEventListener?.('change', onSchemeChange);
+      mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+      onSchemeChange = () => {
+        const stealthShell =
+          typeof window !== 'undefined' && !!window.__INVISURF_STEALTH_WINDOW__;
+        if (stealthShell || isStealthContext) {
+          applyStealthWindowChrome();
+          return;
+        }
+        api.settingsGet?.().then((s) => applyChromeThemeFromSettings(s));
+      };
+      mq?.addEventListener?.('change', onSchemeChange);
+    })();
 
     return () => {
-      mq?.removeEventListener?.('change', onSchemeChange);
+      cancelled = true;
+      if (mq && onSchemeChange) {
+        mq.removeEventListener?.('change', onSchemeChange);
+      }
       if (typeof unsubTheme === 'function') unsubTheme();
     };
   }, []);

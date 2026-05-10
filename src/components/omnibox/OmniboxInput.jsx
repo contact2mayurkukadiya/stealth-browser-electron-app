@@ -261,12 +261,20 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   // useElectronIPC when the main process sends 'omnibox:focus' over IPC.
   // Calling .focus() here triggers handleFocus, which already runs select().
   useEffect(() => {
-    const onRequestFocus = () => {
-      inputRef.current?.focus();
+    const onRequestFocus = (event) => {
+      const requestedTabId = event.detail?.tabId;
+      if (requestedTabId != null && requestedTabId !== currentTabId) return;
+      // Defer past native WebContentsView focus + layout so the shell retains focus
+      // (needed for new-tab omnibox autofocus and stealth windows).
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          inputRef.current?.focus({ preventScroll: true });
+        });
+      });
     };
     window.addEventListener('omnibox:request-focus', onRequestFocus);
     return () => window.removeEventListener('omnibox:request-focus', onRequestFocus);
-  }, []);
+  }, [currentTabId]);
 
   // ── Focus ──────────────────────────────────────────────────────────────
   const handleFocus = useCallback(async () => {

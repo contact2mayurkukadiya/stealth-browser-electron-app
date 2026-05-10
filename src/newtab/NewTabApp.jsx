@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import NtpSearchBox from './NtpSearchBox';
-import { logoIcognitoLightSvg, logoPurpleDarkSvg, logoPurpleLightSvg } from '../constants/appAssetUrls';
+import { logoIcognitoDarkSvg, logoPurpleDarkSvg, logoPurpleLightSvg } from '../constants/appAssetUrls';
 import { useChromeTheme } from '../hooks/useChromeTheme';
 import { useInvsurfDocumentFavicon } from '../hooks/useInvsurfLogoFavicon';
 import './NewTabApp.css';
@@ -210,7 +210,7 @@ export default function NewTabApp() {
   const topSites = useTopSites();
 
   return (
-    <div className="ntp-root">
+    <div className={`ntp-root${isStealthNtp ? ' ntp-root--stealth' : ''}`}>
       <div className="ntp-bg-gradient" aria-hidden="true" />
 
       <main className="ntp-main">
@@ -220,7 +220,7 @@ export default function NewTabApp() {
               {isStealthNtp ? (
                 <img
                   className="ntp-hero__logo ntp-hero__logo--stealth"
-                  src={logoIcognitoLightSvg}
+                  src={logoIcognitoDarkSvg}
                   alt=""
                   width={80}
                   height={80}

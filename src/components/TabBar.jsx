@@ -95,16 +95,20 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
       }
     };
 
-    // Keep menu behavior stable: resizing or losing focus should close it,
-    // which also restores the hidden active WebContentsView.
+    // Keep menu behavior stable: resizing should close it; use visibility so we do not
+    // treat in-window focus moves (e.g. shell overlay hiding the tab view) as "blur",
+    // which was ending/restoring the overlay in a tight loop and flickering the NTP.
+    const onDocumentHidden = () => {
+      if (document.hidden) closeMenu();
+    };
     window.addEventListener('resize', closeMenu);
-    window.addEventListener('blur', closeMenu);
+    document.addEventListener('visibilitychange', onDocumentHidden);
     window.addEventListener('keydown', closeMenuOnShortcut, true);
     window.addEventListener('electron-shortcut-invoked', closeMenu);
 
     return () => {
       window.removeEventListener('resize', closeMenu);
-      window.removeEventListener('blur', closeMenu);
+      document.removeEventListener('visibilitychange', onDocumentHidden);
       window.removeEventListener('keydown', closeMenuOnShortcut, true);
       window.removeEventListener('electron-shortcut-invoked', closeMenu);
       endOverlay();
