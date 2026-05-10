@@ -188,6 +188,11 @@ body {
   object-fit: contain;
 }
 
+/* Stealth NTP: single incognito mark, same in light and dark chrome */
+.ntp-hero__logo--stealth {
+  display: block;
+}
+
 .ntp-hero__logo--scheme-dark {
   display: none;
 }

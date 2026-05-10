@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTabOverlay } from '../context/TabOverlayContext';
+import { logoIcognitoDarkSvg } from '../constants/appAssetUrls';
+import { useInvsurfLogoFaviconUrl } from '../hooks/useInvsurfLogoFavicon';
+import { isInvsurfBrandedInternalTab } from '../utils/invisurfInternalPages';
 
 function getHostname(url) {
   if (!url || typeof url !== 'string') return '';
@@ -39,6 +42,7 @@ export default function SearchTabsModal({
   onCloseTab,
 }) {
   const { beginOverlay, endOverlay } = useTabOverlay();
+  const invsurfLogoFavicon = useInvsurfLogoFaviconUrl();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);
@@ -154,6 +158,11 @@ export default function SearchTabsModal({
             filteredOrder.map((id, idx) => {
               const t = tabs[id];
               if (!t) return null;
+              const rowIconSrc = t.isStealth
+                ? logoIcognitoDarkSvg
+                : isInvsurfBrandedInternalTab(t)
+                  ? invsurfLogoFavicon
+                  : t.favicon;
               const host = getHostname(t.url);
               const meta = [host, formatTabRelativeTime(t.lastActiveAt)].filter(Boolean).join(' • ');
               const isSel = idx === selectedIndex;
@@ -170,8 +179,8 @@ export default function SearchTabsModal({
                   }}
                 >
                   <div className="search-tabs-row-icon">
-                    {t.favicon ? (
-                      <img src={t.favicon} alt="" onError={(e) => { e.target.style.visibility = 'hidden'; }} />
+                    {rowIconSrc ? (
+                      <img src={rowIconSrc} alt="" onError={(e) => { e.target.style.visibility = 'hidden'; }} />
                     ) : (
                       <span className="search-tabs-favicon-fallback" />
                     )}

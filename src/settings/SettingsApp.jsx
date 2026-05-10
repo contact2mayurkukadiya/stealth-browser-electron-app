@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import './SettingsApp.css';
 import { getAccentPresetsForUi, normalizeAccentHex } from '../theme/index.js';
 import { useChromeTheme } from '../hooks/useChromeTheme';
+import { useInvsurfDocumentFavicon } from '../hooks/useInvsurfLogoFavicon';
 
 const STARTUP_OPTIONS = [
   {
@@ -84,6 +85,7 @@ function RadioRow({ option, checked, onChange, groupName = 'radio-group' }) {
 
 export default function SettingsApp() {
   useChromeTheme();
+  useInvsurfDocumentFavicon();
   const [settings, setSettings] = useState(null);
   // Track whether contentProtection was changed since load (to show relaunch hint)
   const [pendingRelaunch, setPendingRelaunch] = useState(false);

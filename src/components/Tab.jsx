@@ -1,6 +1,8 @@
 import React, { useCallback } from 'react';
 import { useTabDrag } from '../hooks/useTabDrag';
-import { tabCloseSvg, tabStealthSvg } from '../constants/appAssetUrls';
+import { useInvsurfLogoFaviconUrl } from '../hooks/useInvsurfLogoFavicon';
+import { isInvsurfBrandedInternalTab } from '../utils/invisurfInternalPages';
+import { logoIcognitoDarkSvg, tabCloseSvg } from '../constants/appAssetUrls';
 
 const DEFAULT_FAVICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDJDNi40OCAyIDIgNi40OCAyIDEyczQuNDggMTAgMTAgMTAgMTAtNC40OCAxMC0xMFMxNy41MiAyIDEyIDJ6bTAgMThjLTQuNDEgMC04LTMuNTktOC04czMuNTktOCA4LTggOCAzLjU5IDggOC0zLjU5IDgtOCA4eiIvPjwvc3ZnPg==';
 
@@ -13,6 +15,7 @@ export default function Tab({
   pinnedTabCount = 0,
 }) {
   const { url, title, favicon, isNewTab, isStealth, isLoading, isPinned } = tab || {};
+  const invsurfLogoFavicon = useInvsurfLogoFaviconUrl();
 
   const handleSwitchTab = useCallback((tabId) => onSwitch(tabId), [onSwitch]);
   const handleDragEnd = useCallback((ids) => onDragEnd(ids), [onDragEnd]);
@@ -30,6 +33,8 @@ export default function Tab({
   // Resolve favicon to display
   const resolvedFavicon = (() => {
     if (isLoading) return null;
+    if (isStealth) return logoIcognitoDarkSvg;
+    if (isInvsurfBrandedInternalTab(tab)) return invsurfLogoFavicon;
     if (favicon) return favicon;
     if (url && url.includes('google.com')) return 'https://www.google.com/favicon.ico';
     return DEFAULT_FAVICON;
@@ -85,9 +90,6 @@ export default function Tab({
 
       {/* Title */}
       <div className="tab-title">
-        {isStealth && (
-          <img src={tabStealthSvg} className="tab-stealth-icon" width={13} height={13} alt="" />
-        )}
         {title || 'New Tab'}
       </div>
 

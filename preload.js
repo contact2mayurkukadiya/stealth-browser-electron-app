@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createWindow: (profileId) => ipcRenderer.invoke('window:create', { profileId }),
     createStealthWindow: () => ipcRenderer.invoke('window:create-stealth'),
     windowGetBootstrap: () => ipcRenderer.invoke('window:get-bootstrap'),
+    /** True when this renderer lives in a stealth (incognito) window — including tab WebContents. */
+    isStealthWindow: () => ipcRenderer.invoke('context:is-stealth-window'),
 
     tabSetAudioMuted: (id, muted) => ipcRenderer.send('tab:set-audio-muted', { id, muted }),
     tabMenuSyncLabels: (payload) => ipcRenderer.send('tab-menu:sync-labels', payload),

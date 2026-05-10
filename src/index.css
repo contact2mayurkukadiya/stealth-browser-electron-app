@@ -393,13 +393,6 @@ body {
     border-radius: 10px 10px 10px 10px;
 }
 
-.tab-title .tab-stealth-icon {
-    margin-right: 4px;
-    flex-shrink: 0;
-    vertical-align: middle;
-    display: inline-block;
-}
-
 .tab-title {
     flex: 1;
     min-width: 0;

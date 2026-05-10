@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './HistoryApp.css';
 import { useChromeTheme } from '../hooks/useChromeTheme';
+import { useInvsurfDocumentFavicon } from '../hooks/useInvsurfLogoFavicon';
 import Sidebar from './components/Sidebar';
 import ByDateView from './components/ByDateView';
 import ByGroupView from './components/ByGroupView';
@@ -30,6 +31,7 @@ function extractDomain(url) {
 
 export default function HistoryApp() {
   useChromeTheme();
+  useInvsurfDocumentFavicon();
   const [entries, setEntries] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState(VIEW_BY_DATE);

@@ -9,8 +9,10 @@ const ASSETS_BASE = 'app://localhost/assets';
 export const logoPurpleLightSvg = `${ASSETS_BASE}/logo/purple-light.svg`;
 /** Lavender / light artwork for dark surfaces */
 export const logoPurpleDarkSvg = `${ASSETS_BASE}/logo/purple-dark.svg`;
-
-export const tabStealthSvg = `${BASE}/tab-stealth.svg`;
+/** Stealth NTP hero — light artwork */
+export const logoIcognitoLightSvg = `${ASSETS_BASE}/logo/purple-icognito-light.svg`;
+/** Stealth tab strip / UI chrome favicon */
+export const logoIcognitoDarkSvg = `${ASSETS_BASE}/logo/purple-icognito-dark.svg`;
 export const tabCloseSvg = `${BASE}/tab-close.svg`;
 export const tabAddSvg = `${BASE}/tab-add.svg`;
 export const navBackSvg = `${BASE}/nav-back.svg`;

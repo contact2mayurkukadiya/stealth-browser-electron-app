@@ -154,8 +154,20 @@ function getWindowContextForShellFallback() {
 }
 
 function getWindowContextByEventSender(sender) {
+    if (!sender) return null;
+    try {
+        if (typeof sender.isDestroyed === 'function' && sender.isDestroyed()) return null;
+    } catch (_) {
+        return null;
+    }
     const win = BrowserWindow.fromWebContents(sender);
-    return getWindowContextByBrowserWindow(win);
+    if (win && !win.isDestroyed()) {
+        const ctx = getWindowContextByBrowserWindow(win);
+        if (ctx) return ctx;
+    }
+    const tabId = webContentsIdToTabId.get(sender.id);
+    if (tabId) return getWindowContextByTabId(tabId);
+    return null;
 }
 
 function getWindowContextByTabId(tabId) {
@@ -1612,6 +1624,12 @@ ipcMain.handle('app:run-menu-command', (event, commandId) => {
     if (!isSenderTrusted(event)) return false;
     if (typeof commandId !== 'string') return false;
     return runMenuCommandFromPalette(commandId);
+});
+
+ipcMain.handle('context:is-stealth-window', (event) => {
+    if (!isSenderTrusted(event)) return false;
+    const ctx = getWindowContextByEventSender(event.sender);
+    return !!(ctx && ctx.stealthWindow);
 });
 
 ipcMain.handle('window:create', (event, payload = {}) => {

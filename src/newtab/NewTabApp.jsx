@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import NtpSearchBox from './NtpSearchBox';
-import { logoPurpleDarkSvg, logoPurpleLightSvg } from '../constants/appAssetUrls';
+import { logoIcognitoLightSvg, logoPurpleDarkSvg, logoPurpleLightSvg } from '../constants/appAssetUrls';
 import { useChromeTheme } from '../hooks/useChromeTheme';
+import { useInvsurfDocumentFavicon } from '../hooks/useInvsurfLogoFavicon';
 import './NewTabApp.css';
 
 // ── Icons (Material-like, inlined for CSP / offline) ────────────────────────
@@ -191,6 +192,21 @@ function useTopSites() {
 
 export default function NewTabApp() {
   useChromeTheme();
+  const [isStealthNtp, setIsStealthNtp] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI?.isStealthWindow?.()
+      .then((v) => {
+        if (!cancelled) setIsStealthNtp(!!v);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useInvsurfDocumentFavicon(isStealthNtp);
   const topSites = useTopSites();
 
   return (
@@ -201,22 +217,35 @@ export default function NewTabApp() {
         <div className="ntp-main__center">
           <div className="ntp-hero">
             <div className="ntp-hero__mark">
-              <img
-                className="ntp-hero__logo ntp-hero__logo--scheme-light"
-                src={logoPurpleLightSvg}
-                alt=""
-                width={80}
-                height={80}
-                draggable={false}
-              />
-              <img
-                className="ntp-hero__logo ntp-hero__logo--scheme-dark"
-                src={logoPurpleDarkSvg}
-                alt=""
-                width={80}
-                height={80}
-                draggable={false}
-              />
+              {isStealthNtp ? (
+                <img
+                  className="ntp-hero__logo ntp-hero__logo--stealth"
+                  src={logoIcognitoLightSvg}
+                  alt=""
+                  width={80}
+                  height={80}
+                  draggable={false}
+                />
+              ) : (
+                <>
+                  <img
+                    className="ntp-hero__logo ntp-hero__logo--scheme-light"
+                    src={logoPurpleLightSvg}
+                    alt=""
+                    width={80}
+                    height={80}
+                    draggable={false}
+                  />
+                  <img
+                    className="ntp-hero__logo ntp-hero__logo--scheme-dark"
+                    src={logoPurpleDarkSvg}
+                    alt=""
+                    width={80}
+                    height={80}
+                    draggable={false}
+                  />
+                </>
+              )}
             </div>
             <h1 className="ntp-hero__name">InviSurf</h1>
           </div>
