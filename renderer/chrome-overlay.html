@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title></title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    #backdrop {
+      position: fixed;
+      inset: 0;
+      background: transparent;
+      display: none;
+    }
+
+    #backdrop.co-visible {
+      display: block;
+    }
+
+    #panel {
+      position: fixed;
+      display: none;
+      min-width: 260px;
+      max-height: min(360px, 70vh);
+      overflow-y: auto;
+      padding: 6px 0;
+      background: var(--chrome-nav-bg, #394d55);
+      color: var(--chrome-fg, rgba(255, 255, 255, 0.95));
+      border: 1px solid var(--chrome-tab-separator, rgba(0, 0, 0, 0.12));
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
+    }
+
+    #panel.co-visible {
+      display: block;
+    }
+
+    .co-row {
+      width: 100%;
+      padding: 10px 14px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .co-row:hover {
+      background: var(--chrome-tab-hover-bg, rgba(0, 0, 0, 0.06));
+    }
+
+    .co-divider {
+      height: 1px;
+      margin: 6px 12px;
+      background: var(--chrome-tab-separator, rgba(0, 0, 0, 0.1));
+    }
+
+    .co-row--add {
+      font-weight: 500;
+    }
+
+    /* ── Bookmark editor (omnibox star) — Chrome-style compact dialog ───────── */
+    #panel.co-panel--editor {
+      min-width: 280px;
+      max-width: min(360px, calc(100vw - 16px));
+      max-height: min(480px, 82vh);
+      padding: 0;
+      overflow: hidden;
+      display: none;
+      background: var(--chrome-nav-bg, #ffffff);
+    }
+
+    #panel.co-panel--editor.co-visible {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .co-bk-editor-scroll {
+      padding: 14px 16px 16px;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .co-bk-url {
+      font-size: 11px;
+      color: var(--chrome-url-ghost, #5f6368);
+      word-break: break-all;
+      line-height: 1.35;
+      margin-bottom: 10px;
+      max-height: 40px;
+      overflow: hidden;
+    }
+
+    .co-bk-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 12px;
+    }
+
+    .co-bk-field-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--chrome-url-ghost, #5f6368);
+    }
+
+    .co-bk-input,
+    .co-bk-select {
+      font-size: 13px;
+      padding: 8px 10px;
+      border: 1px solid var(--chrome-tab-separator, #dadce0);
+      border-radius: 6px;
+      width: 100%;
+      background: var(--chrome-url-well, #ffffff);
+      color: var(--chrome-fg, #202124);
+      font-family: inherit;
+    }
+
+    .co-bk-input:focus,
+    .co-bk-select:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 1px #1a73e8;
+    }
+
+    .co-bk-link {
+      margin-top: 4px;
+      padding: 6px 0;
+      border: none;
+      background: none;
+      color: #1a73e8;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .co-bk-link:hover {
+      text-decoration: underline;
+    }
+
+    .co-bk-new-folder {
+      display: none;
+      margin-top: 8px;
+      padding-top: 10px;
+      border-top: 1px solid var(--chrome-tab-separator, #e8eaed);
+    }
+
+    .co-bk-new-folder.co-bk-visible {
+      display: block;
+    }
+
+    .co-bk-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 4px;
+      padding-top: 4px;
+    }
+
+    .co-bk-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      border: none;
+      cursor: pointer;
+    }
+
+    .co-bk-btn--primary {
+      background: #1a73e8;
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .co-bk-btn--primary:hover {
+      background: #1557b0;
+    }
+
+    .co-bk-btn--secondary {
+      background: var(--chrome-tab-hover-bg, #f1f3f4);
+      color: var(--chrome-fg, #202124);
+    }
+
+    .co-bk-btn--secondary:hover {
+      background: var(--chrome-close-hover, #e8eaed);
+    }
+
+    .co-bk-btn--danger {
+      background: transparent;
+      color: #d93025;
+      margin-right: auto;
+      padding-left: 0;
+    }
+
+    .co-bk-btn--danger:hover {
+      text-decoration: underline;
+    }
+
+    .co-bk-btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    /* ── Omnibox autocomplete (Tier 2, tokens match shell omnibox row) ─ */
+    #panel.co-panel--omnibox {
+      padding: 4px 0;
+      overflow: hidden;
+      max-height: min(420px, 72vh);
+      background: var(--chrome-nav-bg, #394d55);
+      color: var(--chrome-fg, rgba(255, 255, 255, 0.95));
+      border: 1px solid var(--chrome-tab-separator, rgba(0, 0, 0, 0.12));
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.14);
+    }
+
+    #panel.co-panel--omnibox .co-ob-scroll {
+      max-height: min(412px, 70vh);
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    .co-ob-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 7px 12px;
+      min-height: 36px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .co-ob-row:hover {
+      background: var(--chrome-tab-hover-bg, rgba(0, 0, 0, 0.06));
+    }
+
+    .co-ob-row--selected {
+      background: var(--chrome-tab-hover-bg, rgba(0, 0, 0, 0.06));
+      box-shadow: inset 0 0 0 1px var(--chrome-omnibox-focus-border, rgba(255, 180, 48, 0.5));
+    }
+
+    .co-ob-row__icon {
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--chrome-toolbar-icon-muted, rgba(255, 255, 255, 0.55));
+    }
+
+    .co-ob-row__icon svg {
+      width: 14px;
+      height: 14px;
+      opacity: 1;
+    }
+
+    .co-ob-row__favicon {
+      width: 16px;
+      height: 16px;
+      border-radius: 2px;
+      object-fit: contain;
+    }
+
+    .co-ob-row__content {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    .co-ob-row__text {
+      flex-shrink: 0;
+      max-width: 55%;
+      font-size: 13px;
+      color: var(--chrome-fg, rgba(255, 255, 255, 0.95));
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .co-ob-row__text strong {
+      color: var(--chrome-domain, #ffffff);
+      font-weight: 600;
+    }
+
+    .co-ob-row__description {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--chrome-url-ghost, rgba(255, 255, 255, 0.4));
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .co-ob-badge {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      opacity: 0.7;
+    }
+
+    .co-ob-badge--history {
+      background: rgba(255, 255, 255, 0.08);
+      color: #aaa;
+    }
+
+    .co-ob-badge--search {
+      background: rgba(66, 133, 244, 0.18);
+      color: #8ab4f8;
+    }
+
+    .co-ob-badge--keyword {
+      background: rgba(52, 168, 83, 0.18);
+      color: #81c995;
+    }
+
+    .co-ob-badge--bookmark {
+      background: rgba(251, 188, 4, 0.18);
+      color: #fdd663;
+    }
+
+    .co-ob-badge--url {
+      background: rgba(255, 255, 255, 0.08);
+      color: #aaa;
+    }
+
+    /* ── Bookmark bar folder dropdown (Chrome-style, max 90vh, scroll list) ─── */
+    #panel.co-panel--folder-menu {
+      display: none;
+      flex-direction: column;
+      padding: 0;
+      overflow: hidden;
+      max-height: 90vh;
+      background: var(--chrome-bookmark-bar, var(--chrome-nav-bg, #2d3e45));
+      color: var(--chrome-bkm-text, var(--chrome-fg, rgba(255, 255, 255, 0.88)));
+      border: 1px solid var(--chrome-tab-separator, rgba(0, 0, 0, 0.12));
+      border-radius: 10px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.14);
+    }
+
+    #panel.co-panel--folder-menu.co-visible {
+      display: flex;
+    }
+
+    .co-fm-header {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--chrome-tab-separator, rgba(0, 0, 0, 0.1));
+      font-size: 13px;
+      font-weight: 600;
+      min-height: 40px;
+      color: var(--chrome-fg, rgba(255, 255, 255, 0.95));
+    }
+
+    .co-fm-header-icon {
+      display: flex;
+      align-items: center;
+      opacity: 0.75;
+      color: var(--chrome-toolbar-icon-muted, rgba(255, 255, 255, 0.58));
+    }
+
+    .co-fm-header-icon svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .co-fm-header-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .co-fm-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      padding: 4px 0;
+    }
+
+    .co-fm-empty {
+      padding: 16px 12px;
+      font-size: 13px;
+      color: var(--chrome-url-ghost, rgba(255, 255, 255, 0.4));
+      font-style: italic;
+    }
+
+    .co-fm-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 8px 12px;
+      min-height: 36px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: 13px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .co-fm-row:hover {
+      background: var(--chrome-tab-hover-bg, rgba(0, 0, 0, 0.06));
+    }
+
+    .co-fm-row--folder {
+      opacity: 0.68;
+      cursor: default;
+    }
+
+    .co-fm-row--folder:hover {
+      background: var(--chrome-close-hover, rgba(0, 0, 0, 0.04));
+    }
+
+    .co-fm-row__icon {
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--chrome-toolbar-icon-muted, rgba(255, 255, 255, 0.58));
+    }
+
+    .co-fm-row__icon svg {
+      width: 13px;
+      height: 13px;
+      opacity: 1;
+    }
+
+    .co-fm-row__favicon {
+      width: 16px;
+      height: 16px;
+      border-radius: 2px;
+      object-fit: contain;
+    }
+
+    .co-fm-row__label {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="backdrop" aria-hidden="true"></div>
+  <div id="panel" role="menu" aria-hidden="true"></div>
+  <script>
+    (function () {
+      const backdrop = document.getElementById('backdrop');
+      const panel = document.getElementById('panel');
+      const api = window.electronAPI;
+
+      function notifyHost(data) {
+        if (api && api.chromeOverlayNotifyHost) api.chromeOverlayNotifyHost(data);
+      }
+
+      function applyChromeThemeTokens(patch) {
+        const root = document.documentElement;
+        const tokens = patch.tokens && typeof patch.tokens === 'object' ? patch.tokens : {};
+        Object.keys(tokens).forEach(function (k) {
+          const v = tokens[k];
+          if (v === undefined || v === null || v === '') return;
+          root.style.setProperty(k, String(v));
+        });
+        root.style.colorScheme = patch.effectiveDark ? 'dark' : 'light';
+        const fa = patch.forcedAppearance;
+        if (fa === 'light' || fa === 'dark') {
+          root.setAttribute('data-forced-appearance', fa);
+        } else {
+          root.removeAttribute('data-forced-appearance');
+        }
+      }
+
+      function hideAll() {
+        backdrop.classList.remove('co-visible');
+        panel.classList.remove('co-visible', 'co-panel--editor', 'co-panel--omnibox', 'co-panel--folder-menu');
+        panel.style.width = '';
+        panel.style.minWidth = '';
+        panel.style.maxWidth = '';
+        panel.style.maxHeight = '';
+        panel.style.padding = '';
+        panel.style.overflow = '';
+        panel.innerHTML = '';
+      }
+
+      const BOOKMARK_MENU_ACTION_IDS = { openBookmark: 1, removeBookmark: 1 };
+
+      var OB_ICON_SVG = {
+        history: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.5"/><polyline points="8,4.5 8,8 10.5,10" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        search: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>',
+        bookmark: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path d="M3 2h10v13l-5-3-5 3V2z"/></svg>',
+        keyword: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 8h5M9 8h5M8 2v5M8 9v5"/></svg>',
+        url: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5C8 1.5 5.5 4.5 5.5 8s2.5 6.5 2.5 6.5M8 1.5C8 1.5 10.5 4.5 10.5 8S8 14.5 8 14.5M1.5 8h13"/></svg>',
+      };
+
+      function appendHighlightedOmnibox(parent, text, query) {
+        text = String(text || '');
+        query = String(query || '');
+        if (!query) {
+          parent.appendChild(document.createTextNode(text));
+          return;
+        }
+        var lowerText = text.toLowerCase();
+        var lowerQuery = query.toLowerCase();
+        var lastIndex = 0;
+        var searchFrom = 0;
+        while (searchFrom < lowerText.length) {
+          var matchIdx = lowerText.indexOf(lowerQuery, searchFrom);
+          if (matchIdx === -1) break;
+          if (matchIdx > lastIndex) {
+            parent.appendChild(document.createTextNode(text.slice(lastIndex, matchIdx)));
+          }
+          var strong = document.createElement('strong');
+          strong.textContent = text.slice(matchIdx, matchIdx + lowerQuery.length);
+          parent.appendChild(strong);
+          lastIndex = matchIdx + lowerQuery.length;
+          searchFrom = lastIndex;
+        }
+        if (lastIndex < text.length) {
+          parent.appendChild(document.createTextNode(text.slice(lastIndex)));
+        }
+      }
+
+      function renderOmniboxSuggestions(payload) {
+        hideAll();
+        var dr = payload.dropdownRect || {};
+        var w = Math.round(Number(dr.width) || 320);
+        var left = Math.round(Number(dr.left) || 0);
+        var topBase = Math.round(Number(dr.top) || 0) + Math.round(Number(dr.height) || 0) + 4;
+        var pad = 8;
+        w = Math.max(200, Math.min(w, window.innerWidth - 2 * pad));
+        left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
+        var top = Math.max(pad, Math.min(topBase, window.innerHeight - 120 - pad));
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.width = w + 'px';
+        panel.style.minWidth = w + 'px';
+        panel.classList.add('co-panel--omnibox');
+
+        var scroll = document.createElement('div');
+        scroll.className = 'co-ob-scroll';
+        var rawItems = Array.isArray(payload.items) ? payload.items : [];
+        var items = rawItems.slice(0, 24);
+        var selectedIndex = Math.round(Number(payload.selectedIndex));
+        if (!Number.isFinite(selectedIndex)) selectedIndex = -1;
+        var query = String(payload.query || '');
+
+        for (var i = 0; i < items.length; i++) {
+          (function (index) {
+            var it = items[index];
+            if (!it || typeof it !== 'object') return;
+            var typRaw0 = String(it.type || 'url').toLowerCase().replace(/[^a-z]/g, '') || 'url';
+            var typ = ['history', 'search', 'bookmark', 'keyword', 'url'].indexOf(typRaw0) >= 0 ? typRaw0 : 'url';
+            var row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'co-ob-row' + (index === selectedIndex ? ' co-ob-row--selected' : '');
+            row.setAttribute('role', 'option');
+            row.setAttribute('aria-selected', index === selectedIndex ? 'true' : 'false');
+
+            var iconWrap = document.createElement('div');
+            iconWrap.className = 'co-ob-row__icon';
+            var fav = it.favicon && typeof it.favicon === 'string' ? it.favicon.trim() : '';
+            if (fav && fav.indexOf('javascript:') !== 0 && fav.indexOf('data:') !== 0) {
+              var img = document.createElement('img');
+              img.className = 'co-ob-row__favicon';
+              img.alt = '';
+              img.src = fav;
+              img.onerror = function () {
+                img.style.display = 'none';
+                iconWrap.innerHTML = OB_ICON_SVG[typ] || OB_ICON_SVG.url;
+              };
+              iconWrap.appendChild(img);
+            } else {
+              iconWrap.innerHTML = OB_ICON_SVG[it.type] || OB_ICON_SVG.url;
+            }
+            row.appendChild(iconWrap);
+
+            var content = document.createElement('div');
+            content.className = 'co-ob-row__content';
+            var textEl = document.createElement('span');
+            textEl.className = 'co-ob-row__text';
+            appendHighlightedOmnibox(textEl, String(it.text || ''), query);
+            content.appendChild(textEl);
+            var urlStr = String(it.url || '');
+            var desc = it.description && String(it.description);
+            if (desc && desc !== urlStr) {
+              var descEl = document.createElement('span');
+              descEl.className = 'co-ob-row__description';
+              descEl.textContent = desc.slice(0, 240);
+              content.appendChild(descEl);
+            }
+            row.appendChild(content);
+
+            var badge = document.createElement('span');
+            badge.className = 'co-ob-badge co-ob-badge--' + typ;
+            badge.textContent = typ;
+            row.appendChild(badge);
+
+            row.addEventListener('click', function () {
+              notifyHost({ type: 'omniboxSuggestPick', index: index });
+            });
+            scroll.appendChild(row);
+          })(i);
+        }
+
+        if (items.length === 0) return;
+        panel.appendChild(scroll);
+        backdrop.classList.add('co-visible');
+        panel.classList.add('co-visible');
+      }
+
+      function renderBookmarkContextMenu(payload) {
+        hideAll();
+        const bookmarkItemId = payload.bookmarkItemId;
+        if (!bookmarkItemId || typeof bookmarkItemId !== 'string') return;
+        const rawItems = Array.isArray(payload.items) ? payload.items : [];
+        const x = Math.round(Number(payload.clientX) || 0);
+        const y = Math.round(Number(payload.clientY) || 0);
+        const menuWidth = 220;
+        const pad = 8;
+        let left = x;
+        let top = y;
+        left = Math.max(pad, Math.min(left, window.innerWidth - menuWidth - pad));
+        top = Math.max(pad, Math.min(top, window.innerHeight - 48 - pad));
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.width = menuWidth + 'px';
+        panel.style.minWidth = menuWidth + 'px';
+
+        let rowCount = 0;
+        for (let i = 0; i < rawItems.length && rowCount < 20; i++) {
+          const it = rawItems[i];
+          if (!it || typeof it !== 'object') continue;
+          if (it.type === 'separator') {
+            const div = document.createElement('div');
+            div.className = 'co-divider';
+            div.setAttribute('role', 'separator');
+            panel.appendChild(div);
+            continue;
+          }
+          if (it.type !== 'item') continue;
+          const actionId = it.id;
+          if (!actionId || typeof actionId !== 'string' || !BOOKMARK_MENU_ACTION_IDS[actionId]) continue;
+          const label = String(it.label || '').trim().slice(0, 80);
+          if (!label) continue;
+          const enabled = it.enabled !== false;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'co-row';
+          btn.setAttribute('role', 'menuitem');
+          btn.textContent = label;
+          btn.disabled = !enabled;
+          const capId = actionId;
+          btn.addEventListener('click', function () {
+            if (!enabled) return;
+            notifyHost({ type: 'bookmarkMenu', bookmarkItemId: bookmarkItemId, id: capId });
+          });
+          panel.appendChild(btn);
+          rowCount++;
+        }
+        if (rowCount === 0) return;
+        backdrop.classList.add('co-visible');
+        panel.classList.add('co-visible');
+      }
+
+      var FM_FOLDER_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><path fill="currentColor" opacity="0.7" d="M128 512L512 512C547.3 512 576 483.3 576 448L576 208C576 172.7 547.3 144 512 144L362.7 144C355.8 144 349 141.8 343.5 137.6L305.1 108.8C294 100.5 280.5 96 266.7 96L128 96C92.7 96 64 124.7 64 160L64 448C64 483.3 92.7 512 128 512z"/></svg>';
+
+      function renderBookmarkFolderMenu(payload) {
+        hideAll();
+        var folderId = String(payload.folderId || '');
+        if (!folderId) return;
+        var ar = payload.anchorRect || {};
+        var minW = 240;
+        var maxW = 420;
+        var w = Math.round(Number(ar.width) || 280);
+        w = Math.max(minW, Math.min(maxW, w));
+        var left = Math.round(Number(ar.left) || 0);
+        var top = Math.round(Number(ar.top) || 0) + Math.round(Number(ar.height) || 0) + 4;
+        var pad = 8;
+        left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
+        top = Math.max(pad, Math.min(top, window.innerHeight - 80 - pad));
+        var maxH = Math.min(window.innerHeight * 0.9, window.innerHeight - top - pad);
+        maxH = Math.max(100, maxH);
+
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.width = w + 'px';
+        panel.style.minWidth = w + 'px';
+        panel.style.maxWidth = w + 'px';
+        panel.style.maxHeight = maxH + 'px';
+        panel.classList.add('co-panel--folder-menu');
+
+        var header = document.createElement('div');
+        header.className = 'co-fm-header';
+        var hIcon = document.createElement('span');
+        hIcon.className = 'co-fm-header-icon';
+        hIcon.innerHTML = FM_FOLDER_SVG;
+        var hTitle = document.createElement('span');
+        hTitle.className = 'co-fm-header-title';
+        hTitle.textContent = String(payload.title || 'Folder').slice(0, 120);
+        header.appendChild(hIcon);
+        header.appendChild(hTitle);
+        panel.appendChild(header);
+
+        var scroll = document.createElement('div');
+        scroll.className = 'co-fm-scroll';
+
+        var raw = Array.isArray(payload.items) ? payload.items : [];
+        var items = raw.slice(0, 400);
+        if (items.length === 0) {
+          var empty = document.createElement('div');
+          empty.className = 'co-fm-empty';
+          empty.textContent = 'This folder is empty';
+          scroll.appendChild(empty);
+        } else {
+          for (var i = 0; i < items.length; i++) {
+            (function (index) {
+              var it = items[index];
+              if (!it || typeof it !== 'object') return;
+              var typ = it.type === 'folder' ? 'folder' : 'bookmark';
+              var row = document.createElement(typ === 'bookmark' ? 'button' : 'div');
+              if (typ === 'bookmark') row.type = 'button';
+              row.className = 'co-fm-row' + (typ === 'folder' ? ' co-fm-row--folder' : '');
+              row.setAttribute('role', typ === 'bookmark' ? 'menuitem' : 'presentation');
+
+              var iconWrap = document.createElement('span');
+              iconWrap.className = 'co-fm-row__icon';
+              if (typ === 'bookmark') {
+                var fav = it.favicon && String(it.favicon).trim();
+                if (fav && fav.indexOf('javascript:') !== 0 && fav.indexOf('data:') !== 0) {
+                  var img = document.createElement('img');
+                  img.className = 'co-fm-row__favicon';
+                  img.alt = '';
+                  img.src = fav;
+                  img.onerror = function () {
+                    img.style.display = 'none';
+                    iconWrap.textContent = '🔖';
+                  };
+                  iconWrap.appendChild(img);
+                } else {
+                  iconWrap.textContent = '🔖';
+                }
+              } else {
+                iconWrap.innerHTML = FM_FOLDER_SVG;
+              }
+              row.appendChild(iconWrap);
+
+              var lab = document.createElement('span');
+              lab.className = 'co-fm-row__label';
+              lab.textContent = String(it.title || '').slice(0, 200);
+              row.appendChild(lab);
+
+              if (typ === 'bookmark') {
+                row.addEventListener('click', function () {
+                  notifyHost({
+                    type: 'bookmarkFolderPick',
+                    folderId: folderId,
+                    itemId: String(it.id || ''),
+                  });
+                });
+              }
+              scroll.appendChild(row);
+            })(i);
+          }
+        }
+
+        panel.appendChild(scroll);
+        backdrop.classList.add('co-visible');
+        panel.classList.add('co-visible');
+      }
+
+      function renderBookmarkEditor(payload) {
+        hideAll();
+        const ar = payload.anchorRect || {};
+        const panelWidth = Math.min(340, Math.max(280, window.innerWidth - 16));
+        const left0 = Math.round(Number(ar.left) || 0);
+        const top0 = Math.round(Number(ar.top) || 0);
+        const w0 = Math.max(1, Math.round(Number(ar.width) || 32));
+        const h0 = Math.max(1, Math.round(Number(ar.height) || 32));
+        let left = left0 + w0 - panelWidth;
+        left = Math.max(8, Math.min(left, window.innerWidth - panelWidth - 8));
+        let top = top0 + h0 + 6;
+        const estH = 280;
+        top = Math.max(8, Math.min(top, window.innerHeight - estH - 8));
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.width = panelWidth + 'px';
+        panel.style.minWidth = panelWidth + 'px';
+        panel.style.maxWidth = panelWidth + 'px';
+        panel.classList.add('co-panel--editor');
+
+        const mode = payload.mode === 'edit' ? 'edit' : 'add';
+        const pageUrl = String(payload.url || '');
+        const bookmarkId = payload.bookmarkId && typeof payload.bookmarkId === 'string' ? payload.bookmarkId : null;
+
+        const scroll = document.createElement('div');
+        scroll.className = 'co-bk-editor-scroll';
+
+        if (pageUrl) {
+          const urlEl = document.createElement('div');
+          urlEl.className = 'co-bk-url';
+          urlEl.textContent = pageUrl.length > 180 ? pageUrl.slice(0, 177) + '…' : pageUrl;
+          scroll.appendChild(urlEl);
+        }
+
+        const nameField = document.createElement('div');
+        nameField.className = 'co-bk-field';
+        const nameLab = document.createElement('span');
+        nameLab.className = 'co-bk-field-label';
+        nameLab.textContent = 'Name';
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'co-bk-input';
+        nameInput.setAttribute('autocomplete', 'off');
+        nameInput.value = String(payload.initialTitle || '').slice(0, 500);
+        nameField.appendChild(nameLab);
+        nameField.appendChild(nameInput);
+        scroll.appendChild(nameField);
+
+        const folderField = document.createElement('div');
+        folderField.className = 'co-bk-field';
+        const folderLab = document.createElement('span');
+        folderLab.className = 'co-bk-field-label';
+        folderLab.textContent = 'Folder';
+        const sel = document.createElement('select');
+        sel.className = 'co-bk-select';
+        const optRoot = document.createElement('option');
+        optRoot.value = 'root';
+        optRoot.textContent = 'Bookmarks bar';
+        sel.appendChild(optRoot);
+        const folderIds = { root: 1 };
+        const rawFolders = Array.isArray(payload.folders) ? payload.folders : [];
+        for (let i = 0; i < rawFolders.length; i++) {
+          const f = rawFolders[i];
+          if (!f || typeof f.id !== 'string' || !f.id) continue;
+          folderIds[f.id] = 1;
+          const o = document.createElement('option');
+          o.value = f.id;
+          o.textContent = String(f.label || f.id).slice(0, 200);
+          sel.appendChild(o);
+        }
+        let want = payload.initialFolderId === 'root' || !payload.initialFolderId ? 'root' : String(payload.initialFolderId);
+        if (!folderIds[want]) want = 'root';
+        sel.value = want;
+        folderField.appendChild(folderLab);
+        folderField.appendChild(sel);
+        scroll.appendChild(folderField);
+
+        const newFolderToggle = document.createElement('button');
+        newFolderToggle.type = 'button';
+        newFolderToggle.className = 'co-bk-link';
+        newFolderToggle.textContent = 'New folder…';
+        scroll.appendChild(newFolderToggle);
+
+        const nfBlock = document.createElement('div');
+        nfBlock.className = 'co-bk-new-folder';
+        const nfInput = document.createElement('input');
+        nfInput.type = 'text';
+        nfInput.className = 'co-bk-input';
+        nfInput.placeholder = 'Folder name';
+        nfInput.setAttribute('maxlength', '80');
+        const nfRow = document.createElement('div');
+        nfRow.className = 'co-bk-actions';
+        const nfCancel = document.createElement('button');
+        nfCancel.type = 'button';
+        nfCancel.className = 'co-bk-btn co-bk-btn--secondary';
+        nfCancel.textContent = 'Cancel';
+        const nfCreate = document.createElement('button');
+        nfCreate.type = 'button';
+        nfCreate.className = 'co-bk-btn co-bk-btn--primary';
+        nfCreate.textContent = 'Create';
+        nfRow.appendChild(nfCancel);
+        nfRow.appendChild(nfCreate);
+        nfBlock.appendChild(nfInput);
+        nfBlock.appendChild(nfRow);
+        scroll.appendChild(nfBlock);
+
+        newFolderToggle.addEventListener('click', function () {
+          const on = nfBlock.classList.toggle('co-bk-visible');
+          if (on) {
+            setTimeout(function () {
+              nfInput.focus();
+            }, 0);
+          } else {
+            nfInput.value = '';
+          }
+        });
+        nfCancel.addEventListener('click', function () {
+          nfBlock.classList.remove('co-bk-visible');
+          nfInput.value = '';
+        });
+        nfCreate.addEventListener('click', function () {
+          const name = nfInput.value.trim();
+          if (!name) return;
+          notifyHost({
+            type: 'bookmarkEditorCreateFolder',
+            name: name.slice(0, 80),
+            draftTitle: nameInput.value,
+            draftFolderId: sel.value,
+          });
+        });
+
+        const actions = document.createElement('div');
+        actions.className = 'co-bk-actions';
+        if (mode === 'edit') {
+          const rem = document.createElement('button');
+          rem.type = 'button';
+          rem.className = 'co-bk-btn co-bk-btn--danger';
+          rem.textContent = 'Remove';
+          rem.addEventListener('click', function () {
+            if (bookmarkId) notifyHost({ type: 'bookmarkEditorRemove', bookmarkId: bookmarkId });
+          });
+          actions.appendChild(rem);
+        }
+        const done = document.createElement('button');
+        done.type = 'button';
+        done.className = 'co-bk-btn co-bk-btn--primary';
+        done.textContent = 'Done';
+        done.addEventListener('click', function () {
+          notifyHost({
+            type: 'bookmarkEditorDone',
+            title: nameInput.value,
+            folderId: sel.value,
+            url: pageUrl,
+            bookmarkId: bookmarkId,
+          });
+        });
+        actions.appendChild(done);
+        scroll.appendChild(actions);
+
+        panel.appendChild(scroll);
+
+        nameInput.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            done.click();
+          }
+        });
+        nfInput.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            nfCreate.click();
+          }
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            nfCancel.click();
+          }
+        });
+
+        setTimeout(function () {
+          nameInput.focus();
+          nameInput.select();
+        }, 0);
+
+        backdrop.classList.add('co-visible');
+        panel.classList.add('co-visible');
+      }
+
+      function renderProfileMenu(payload) {
+        hideAll();
+        const r = payload.menuRect || {};
+        const left = Math.round(r.left != null ? r.left : 0);
+        const top = Math.round(r.top != null ? r.top : 0);
+        const width = Math.round(r.width != null ? r.width : 260);
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.width = width + 'px';
+
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        items.forEach(function (it) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'co-row';
+          btn.setAttribute('role', 'menuitem');
+          btn.textContent = it.label || it.profileId || '';
+          btn.addEventListener('click', function () {
+            notifyHost({ type: 'selectProfile', profileId: it.profileId });
+          });
+          panel.appendChild(btn);
+        });
+
+        if (payload.showEdit) {
+          const div = document.createElement('div');
+          div.className = 'co-divider';
+          div.setAttribute('role', 'separator');
+          panel.appendChild(div);
+          const editBtn = document.createElement('button');
+          editBtn.type = 'button';
+          editBtn.className = 'co-row';
+          editBtn.setAttribute('role', 'menuitem');
+          editBtn.textContent = 'Edit profile…';
+          editBtn.addEventListener('click', function () {
+            notifyHost({ type: 'editProfile' });
+          });
+          panel.appendChild(editBtn);
+        }
+
+        const div2 = document.createElement('div');
+        div2.className = 'co-divider';
+        div2.setAttribute('role', 'separator');
+        panel.appendChild(div2);
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'co-row co-row--add';
+        addBtn.setAttribute('role', 'menuitem');
+        addBtn.textContent = '+  Add new profile';
+        addBtn.addEventListener('click', function () {
+          notifyHost({ type: 'addProfile' });
+        });
+        panel.appendChild(addBtn);
+
+        backdrop.classList.add('co-visible');
+        panel.classList.add('co-visible');
+      }
+
+      backdrop.addEventListener('mousedown', function () {
+        notifyHost({ type: 'dismiss' });
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') notifyHost({ type: 'dismiss' });
+      });
+
+      if (api && api.onChromeOverlayV1Patch) {
+        api.onChromeOverlayV1Patch(function (patch) {
+          if (!patch || patch.kind === 'hide') {
+            hideAll();
+            return;
+          }
+          if (patch.kind === 'chromeTheme') {
+            applyChromeThemeTokens(patch);
+            return;
+          }
+          if (patch.kind === 'profileMenu') {
+            renderProfileMenu(patch);
+            return;
+          }
+          if (patch.kind === 'bookmarkContextMenu') {
+            renderBookmarkContextMenu(patch);
+            return;
+          }
+          if (patch.kind === 'bookmarkFolderMenu') {
+            renderBookmarkFolderMenu(patch);
+            return;
+          }
+          if (patch.kind === 'omniboxSuggestions') {
+            renderOmniboxSuggestions(patch);
+            return;
+          }
+          if (patch.kind === 'bookmarkEditor') {
+            renderBookmarkEditor(patch);
+            return;
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+
+</html>

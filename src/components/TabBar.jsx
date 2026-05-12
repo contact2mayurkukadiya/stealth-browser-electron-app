@@ -1,8 +1,6 @@
-import React, { useRef, useCallback, useMemo, useState, useEffect, useLayoutEffect } from 'react';
+import React, { useRef, useCallback, useMemo, useState, useLayoutEffect } from 'react';
 import { useSelector } from 'react-redux';
-import { useTabOverlay } from '../context/TabOverlayContext';
 import Tab from './Tab';
-import ContextMenu from './ContextMenu';
 import { tabAddSvg } from '../constants/appAssetUrls';
 
 const ADD_ICON = <img className="chrome-toolbar-icon-img" src={tabAddSvg} width={15} height={15} alt="" />;
@@ -23,13 +21,17 @@ function getTabDisplayMode(tabWidth) {
   return TAB_DISPLAY_MODE.EXTREME_OVERFLOW;
 }
 
-export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, getTabContextMenuItems }) {
-  const { beginOverlay, endOverlay } = useTabOverlay();
+export default function TabBar({
+  onNewTab,
+  onCloseTab,
+  onSwitchTab,
+  onDragEnd,
+  onTabStripContextMenu,
+}) {
   const tabOrder = useSelector(s => s.browser.tabOrder);
   const tabs = useSelector(s => s.browser.tabs);
   const currentTabId = useSelector(s => s.browser.currentTabId);
 
-  const [tabContextMenu, setTabContextMenu] = useState(null);
   const [tabDisplayModes, setTabDisplayModes] = useState({});
   const tabTrackRef = useRef(null);
 
@@ -72,59 +74,6 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
     [tabOrder, tabs],
   );
 
-  const handleTabContextMenuOpen = useCallback(async (e, tabId) => {
-    if (!getTabContextMenuItems) return;
-    const menuApproxHeight = 320;
-    const menuApproxWidth = 220;
-    let x = e.clientX;
-    let y = e.clientY;
-    x = Math.max(8, Math.min(x, window.innerWidth - menuApproxWidth - 8));
-    y = Math.max(8, Math.min(y, window.innerHeight - menuApproxHeight - 8));
-    await beginOverlay();
-    setTabContextMenu({ tabId, x, y });
-  }, [getTabContextMenuItems, beginOverlay]);
-
-  useEffect(() => {
-    if (!tabContextMenu) return undefined;
-    const closeMenu = () => setTabContextMenu(null);
-    const closeMenuOnShortcut = (event) => {
-      const pressedModifier = event.metaKey || event.ctrlKey || event.altKey;
-      const pressedOnlyModifier = ['Meta', 'Control', 'Alt', 'Shift'].includes(event.key);
-      if (pressedModifier && !pressedOnlyModifier) {
-        closeMenu();
-      }
-    };
-
-    // Keep menu behavior stable: resizing should close it; use visibility so we do not
-    // treat in-window focus moves (e.g. shell overlay hiding the tab view) as "blur",
-    // which was ending/restoring the overlay in a tight loop and flickering the NTP.
-    const onDocumentHidden = () => {
-      if (document.hidden) closeMenu();
-    };
-    window.addEventListener('resize', closeMenu);
-    document.addEventListener('visibilitychange', onDocumentHidden);
-    window.addEventListener('keydown', closeMenuOnShortcut, true);
-    window.addEventListener('electron-shortcut-invoked', closeMenu);
-
-    return () => {
-      window.removeEventListener('resize', closeMenu);
-      document.removeEventListener('visibilitychange', onDocumentHidden);
-      window.removeEventListener('keydown', closeMenuOnShortcut, true);
-      window.removeEventListener('electron-shortcut-invoked', closeMenu);
-      endOverlay();
-    };
-  }, [tabContextMenu, endOverlay]);
-
-  useEffect(() => {
-    if (!tabContextMenu) return;
-    setTabContextMenu(null);
-  }, [currentTabId, tabOrder.length]); // Close menu on tab switch/create/close changes.
-
-  const tabContextMenuItems = useMemo(() => {
-    if (!tabContextMenu?.tabId || !getTabContextMenuItems) return [];
-    return getTabContextMenuItems(tabContextMenu.tabId);
-  }, [tabContextMenu, getTabContextMenuItems]);
-
   useLayoutEffect(() => {
     const tabTrackEl = tabTrackRef.current;
     if (!tabTrackEl) return undefined;
@@ -160,7 +109,6 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
     tabTrackEl.querySelectorAll('.tab').forEach((tabEl) => resizeObserver.observe(tabEl));
 
     window.addEventListener('resize', syncLayoutState);
-    // Tab drag updates can finish before React paints; one extra frame keeps alignment stable.
     const rafId = window.requestAnimationFrame(syncLayoutState);
 
     return () => {
@@ -191,7 +139,7 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
               onHoverEnter={handleTabHoverEnter}
               onHoverLeave={hideTooltip}
               onHideTooltip={hideTooltip}
-              onContextMenu={getTabContextMenuItems ? handleTabContextMenuOpen : undefined}
+              onContextMenu={onTabStripContextMenu ? (e) => onTabStripContextMenu(e, id) : undefined}
             />
           ))}
         </div>
@@ -199,15 +147,6 @@ export default function TabBar({ onNewTab, onCloseTab, onSwitchTab, onDragEnd, g
       <button id="add-tab" className="btn" onClick={() => onNewTab()}>
         {ADD_ICON}
       </button>
-      {tabContextMenu && (
-        <ContextMenu
-          items={tabContextMenuItems}
-          x={tabContextMenu.x}
-          y={tabContextMenu.y}
-          variant="tab"
-          onClose={() => setTabContextMenu(null)}
-        />
-      )}
     </div>
   );
 }

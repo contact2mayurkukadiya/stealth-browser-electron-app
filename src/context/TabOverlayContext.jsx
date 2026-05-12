@@ -11,7 +11,8 @@ import React, {
 const TabOverlayContext = createContext(null);
 
 /**
- * Ref-counted tab snapshot + hide so shell modals/menus paint above WebContentsView.
+ * Tier 3 (legacy): ref-counted tab snapshot + detach so shell HTML can paint above WebContentsView.
+ * Prefer Tier 1 (native Menu.popup) or Tier 2 (`ChromeOverlayContext` / chromeOverlayV1*) for new UI.
  * beginOverlay/endOverlay must be paired; forceResetOverlay clears on window close/reload.
  */
 export function TabOverlayProvider({ children }) {

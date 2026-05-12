@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useTabOverlay } from '../context/TabOverlayContext';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useChromeOverlay } from '../context/ChromeOverlayContext';
 import ProfileAvatar from './ProfileAvatar';
 import './ProfileMenuButton.css';
 
@@ -11,6 +11,7 @@ const CHEVRON = (
 
 /**
  * Navbar profile control: avatar + chevron opens menu (profiles + add new).
+ * Menu UI renders in the chrome overlay WebContentsView (Tier 2) above the tab layer.
  */
 export default function ProfileMenuButton({
   profiles = [],
@@ -21,60 +22,126 @@ export default function ProfileMenuButton({
   triggerTitle,
 }) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
-  const { beginOverlay, endOverlay } = useTabOverlay();
+  const triggerRef = useRef(null);
+  const openRef = useRef(false);
+  /** True while this control's `reset()` is in flight so we ignore self-triggered superseded. */
+  const pendingOwnResetRef = useRef(false);
+  /** Main `chrome-overlay:v1:reset` cleared our acquire; effect cleanup must not call `release()`. */
+  const leaseRevokedByResetRef = useRef(false);
+  const { reset, acquire, release, post } = useChromeOverlay();
+
+  const close = useCallback(() => setOpen(false), []);
+  openRef.current = open;
 
   const buttonProfile = activeProfile || profiles[0] || null;
 
-  const close = useCallback(() => setOpen(false), []);
-
-  useEffect(() => {
-    if (!open) {
-      endOverlay();
-      return undefined;
+  const syncMenuToOverlay = useCallback(async () => {
+    if (!triggerRef.current) return;
+    const br = triggerRef.current.getBoundingClientRect();
+    const menuWidth = 260;
+    let menuLeft = Math.round(br.right - menuWidth);
+    menuLeft = Math.max(8, Math.min(menuLeft, window.innerWidth - menuWidth - 8));
+    const menuTop = Math.round(br.bottom + 6);
+    const payload = {
+      kind: 'profileMenu',
+      items: profiles.map((p) => ({
+        profileId: p.profileId,
+        label: p.displayName || p.profileId,
+      })),
+      showEdit: typeof onEditProfile === 'function' && !!activeProfile?.profileId,
+      menuRect: { left: menuLeft, top: menuTop, width: menuWidth },
+    };
+    try {
+      await post(payload);
+    } catch (err) {
+      console.error('ProfileMenuButton chromeOverlayV1Post', err);
     }
+  }, [profiles, activeProfile, onEditProfile, post]);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
     (async () => {
-      await beginOverlay();
+      pendingOwnResetRef.current = true;
+      try {
+        await reset();
+        await acquire();
+        if (cancelled) {
+          await release();
+          return;
+        }
+        await syncMenuToOverlay();
+      } catch (err) {
+        console.error('ProfileMenuButton overlay open', err);
+      } finally {
+        pendingOwnResetRef.current = false;
+      }
     })();
     return () => {
-      endOverlay();
+      cancelled = true;
+      pendingOwnResetRef.current = false;
+      if (leaseRevokedByResetRef.current) {
+        leaseRevokedByResetRef.current = false;
+        return;
+      }
+      void release();
     };
-  }, [open, beginOverlay, endOverlay]);
+  }, [open, reset, acquire, release, syncMenuToOverlay]);
+
+  useEffect(() => {
+    if (!open) return;
+    void syncMenuToOverlay();
+  }, [profiles, activeProfile, open, syncMenuToOverlay]);
 
   useEffect(() => {
     if (!open) return undefined;
-    const onDocMouseDown = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        close();
-      }
+    const onResize = () => {
+      void syncMenuToOverlay();
     };
-    const onKey = (e) => {
-      if (e.key === 'Escape') close();
-    };
-    document.addEventListener('mousedown', onDocMouseDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, close]);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [open, syncMenuToOverlay]);
 
-  const handleSelect = useCallback(
-    (profileId) => {
+  useEffect(() => {
+    const unsub = window.electronAPI?.onChromeOverlaySuperseded?.(() => {
+      if (pendingOwnResetRef.current) return;
+      if (!openRef.current) return;
+      leaseRevokedByResetRef.current = true;
       close();
-      onOpenProfile?.(profileId);
-    },
-    [close, onOpenProfile],
-  );
+    });
+    return typeof unsub === 'function' ? unsub : undefined;
+  }, [close]);
 
-  const handleAdd = useCallback(async () => {
-    close();
-    await onAddProfile?.();
-  }, [close, onAddProfile]);
+  useEffect(() => {
+    const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
+      if (!openRef.current) return;
+      const t = data?.type;
+      if (t === 'dismiss') {
+        close();
+        return;
+      }
+      if (t === 'selectProfile') {
+        close();
+        onOpenProfile?.(data.profileId);
+        return;
+      }
+      if (t === 'editProfile') {
+        close();
+        onEditProfile?.();
+        return;
+      }
+      if (t === 'addProfile') {
+        close();
+        onAddProfile?.();
+      }
+    });
+    return typeof unsub === 'function' ? unsub : undefined;
+  }, [close, onOpenProfile, onEditProfile, onAddProfile]);
 
   return (
-    <div className="profile-menu profile-menu--compact" ref={rootRef}>
+    <div className="profile-menu profile-menu--compact">
       <button
+        ref={triggerRef}
         type="button"
         className="profile-menu__trigger"
         aria-expanded={open}
@@ -90,51 +157,6 @@ export default function ProfileMenuButton({
           {CHEVRON}
         </span>
       </button>
-
-      {open && (
-        <div className="profile-menu__dropdown" role="menu">
-          {profiles.map((p) => (
-            <button
-              key={p.profileId}
-              type="button"
-              role="menuitem"
-              className="profile-menu__row"
-              onClick={() => handleSelect(p.profileId)}
-            >
-              <ProfileAvatar profile={p} size="sm" />
-              <span className="profile-menu__row-label">{p.displayName || p.profileId}</span>
-            </button>
-          ))}
-          {typeof onEditProfile === 'function' && activeProfile?.profileId && (
-            <>
-              <div className="profile-menu__divider" role="separator" />
-              <button
-                type="button"
-                role="menuitem"
-                className="profile-menu__row"
-                onClick={() => {
-                  close();
-                  onEditProfile();
-                }}
-              >
-                <span className="profile-menu__row-label">Edit profile…</span>
-              </button>
-            </>
-          )}
-          <div className="profile-menu__divider" role="separator" />
-          <button
-            type="button"
-            role="menuitem"
-            className="profile-menu__row profile-menu__row--add"
-            onClick={handleAdd}
-          >
-            <span className="profile-menu__add-icon" aria-hidden>
-              +
-            </span>
-            <span>Add new profile</span>
-          </button>
-        </div>
-      )}
     </div>
   );
 }

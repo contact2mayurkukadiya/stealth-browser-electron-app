@@ -84,6 +84,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tabRestoreActive: () => ipcRenderer.invoke('tab:restore-active'),
     tabCaptureActiveSnapshot: () => ipcRenderer.invoke('tab:capture-active-snapshot'),
     tabPrepareShellOverlay: () => ipcRenderer.invoke('tab:prepare-shell-overlay'),
+    /** Native tab strip context menu (Menu.popup); actions via onTabStripContextMenuAction. */
+    tabStripContextMenuShow: (payload) => ipcRenderer.invoke('tab:strip-context-menu', payload),
+    onTabStripContextMenuAction: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on('tab-strip-context-menu:action', handler);
+        return () => ipcRenderer.removeListener('tab-strip-context-menu:action', handler);
+    },
+
+    /**
+     * Tier 2 — Chrome overlay WebContentsView above the tab (main ref-counts acquire/release).
+     * Tier 1: native Menu.popup. Tier 3 (legacy): tabPrepareShellOverlay / detach.
+     */
+    chromeOverlayV1Reset: () => ipcRenderer.invoke('chrome-overlay:v1:reset'),
+    chromeOverlayV1Acquire: () => ipcRenderer.invoke('chrome-overlay:v1:acquire'),
+    chromeOverlayV1Release: () => ipcRenderer.invoke('chrome-overlay:v1:release'),
+    chromeOverlayV1Post: (payload) => ipcRenderer.invoke('chrome-overlay:v1:post', payload),
+    onChromeOverlayV1HostEvent: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on('chrome-overlay:v1:host-event', handler);
+        return () => ipcRenderer.removeListener('chrome-overlay:v1:host-event', handler);
+    },
+    onChromeOverlaySuperseded: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('chrome-overlay:v1:superseded', handler);
+        return () => ipcRenderer.removeListener('chrome-overlay:v1:superseded', handler);
+    },
+    /** Chrome overlay page only: user actions back to shell via main. */
+    chromeOverlayNotifyHost: (data) => ipcRenderer.send('chrome-overlay:v1:from-overlay', data),
+    onChromeOverlayV1Patch: (callback) => {
+        const handler = (_event, payload) => callback(payload);
+        ipcRenderer.on('chrome-overlay:v1:patch', handler);
+        return () => ipcRenderer.removeListener('chrome-overlay:v1:patch', handler);
+    },
 
     // Lazy tab loading: register a tab as sleeping (no WebContentsView created yet)
     tabSleepRegister: (id, url) => ipcRenderer.send('tab:sleep-register', { id, url }),

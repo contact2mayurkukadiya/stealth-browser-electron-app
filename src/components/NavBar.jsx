@@ -1,8 +1,10 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { useSelector } from 'react-redux';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTabOverlay } from '../context/TabOverlayContext';
+import { useChromeOverlay } from '../context/ChromeOverlayContext';
+import { setBookmarks } from '../store/bookmarksSlice';
+import { collectFolderOptions } from '../utils/bookmarkFolderList';
 import OmniboxInput from './omnibox/OmniboxInput';
-import BookmarkEditPopup from './BookmarkEditPopup';
 import ProfileMenuButton from './ProfileMenuButton';
 import ProfileEditorModal from './ProfileEditorModal';
 import {
@@ -56,10 +58,20 @@ function findBookmarkByUrl(url, list) {
   return null;
 }
 
+function isValidFolderId(folderId, bar) {
+  if (folderId === 'root') return true;
+  return collectFolderOptions(bar).some((f) => f.id === folderId);
+}
+
 export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'google' }) {
+  const dispatch = useDispatch();
   const { beginOverlay, endOverlay } = useTabOverlay();
+  const { reset, acquire, release, post } = useChromeOverlay();
   const tabs = useSelector(s => s.browser.tabs);
   const bookmarksData = useSelector(s => s.bookmarks.data);
+  const bookmarksBarRef = useRef(bookmarksData.bar);
+  bookmarksBarRef.current = bookmarksData.bar;
+
   const tab = tabs[currentTabId];
   const currentUrl = tab && !tab.isNewTab ? (tab.url || '') : '';
 
@@ -70,9 +82,11 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
     (currentUrl.startsWith('https://www.google.com/') && !currentUrl.includes('/search'))
   );
 
-  // ── Edit popup state ──────────────────────────────────────────────────────
-  // null = closed; { data } = open
-  const [editPopup, setEditPopup] = useState(null);
+  const starEditorActiveRef = useRef(false);
+  const pendingOwnStarResetRef = useRef(false);
+  const starAnchorRef = useRef(null);
+  const starEditorSessionRef = useRef({ url: '', bookmarkId: null, favicon: null });
+
   const [profiles, setProfiles] = useState([]);
   const [currentProfile, setCurrentProfile] = useState(null);
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
@@ -101,37 +115,183 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
     };
   }, [profileEditorOpen, beginOverlay, endOverlay]);
 
+  const closeStarBookmarkEditor = useCallback(async () => {
+    if (!starEditorActiveRef.current) return;
+    starEditorActiveRef.current = false;
+    try {
+      await release();
+    } catch (err) {
+      console.error('star bookmark overlay release', err);
+    }
+  }, [release]);
+
+  const postStarEditorPatch = useCallback(async (bookmarkDraft, barForFolders) => {
+    const anchor = starAnchorRef.current;
+    if (!anchor) return;
+    const bar = barForFolders || bookmarksBarRef.current;
+    const folders = collectFolderOptions(bar).map((f) => ({ id: f.id, label: f.label }));
+    const payload = {
+      kind: 'bookmarkEditor',
+      mode: bookmarkDraft.id ? 'edit' : 'add',
+      anchorRect: anchor,
+      initialTitle: bookmarkDraft.title || '',
+      initialFolderId: bookmarkDraft.folderId || 'root',
+      url: bookmarkDraft.url || '',
+      bookmarkId: bookmarkDraft.id || null,
+      folders,
+    };
+    await post(payload);
+  }, [post]);
+
+  const openStarBookmarkEditor = useCallback(async (anchorEl, bookmarkDraft) => {
+    const br = anchorEl.getBoundingClientRect();
+    starAnchorRef.current = { left: br.left, top: br.top, width: br.width, height: br.height };
+    starEditorSessionRef.current = {
+      url: bookmarkDraft.url || '',
+      bookmarkId: bookmarkDraft.id || null,
+      favicon: bookmarkDraft.favicon ?? null,
+    };
+    pendingOwnStarResetRef.current = true;
+    try {
+      await reset();
+      await acquire();
+      starEditorActiveRef.current = true;
+      await postStarEditorPatch(bookmarkDraft, bookmarksBarRef.current);
+    } catch (err) {
+      console.error('star bookmark overlay open', err);
+      starEditorActiveRef.current = false;
+      try {
+        await release();
+      } catch (releaseErr) {
+        console.error('star bookmark overlay release after error', releaseErr);
+      }
+    } finally {
+      pendingOwnStarResetRef.current = false;
+    }
+  }, [reset, acquire, release, postStarEditorPatch]);
+
+  useEffect(() => {
+    const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
+      if (!starEditorActiveRef.current) return;
+      const t = data?.type;
+      if (t === 'dismiss') {
+        void closeStarBookmarkEditor();
+        return;
+      }
+      if (t === 'bookmarkEditorRemove') {
+        const id = data?.bookmarkId;
+        const sessionId = starEditorSessionRef.current.bookmarkId;
+        if (!id || id !== sessionId) {
+          void closeStarBookmarkEditor();
+          return;
+        }
+        void (async () => {
+          try {
+            const result = await window.electronAPI.bookmarksRemove(id);
+            dispatch(setBookmarks(result));
+          } catch (err) {
+            console.error('bookmark editor remove', err);
+          } finally {
+            void closeStarBookmarkEditor();
+          }
+        })();
+        return;
+      }
+      if (t === 'bookmarkEditorCreateFolder') {
+        const name = String(data?.name || '').trim();
+        const draftTitle = String(data?.draftTitle ?? '');
+        if (!name) return;
+        void (async () => {
+          try {
+            const result = await window.electronAPI.bookmarksAddFolder(name);
+            dispatch(setBookmarks(result));
+            const newFolder = [...result.bar].reverse().find((i) => i.type === 'folder');
+            const newFolderId = newFolder?.id || 'root';
+            await postStarEditorPatch(
+              {
+                id: starEditorSessionRef.current.bookmarkId || undefined,
+                title: draftTitle.slice(0, 500),
+                url: starEditorSessionRef.current.url,
+                favicon: starEditorSessionRef.current.favicon,
+                folderId: newFolderId,
+              },
+              result.bar,
+            );
+          } catch (err) {
+            console.error('bookmark editor new folder', err);
+          }
+        })();
+        return;
+      }
+      if (t === 'bookmarkEditorDone') {
+        const url = String(data?.url || '');
+        const session = starEditorSessionRef.current;
+        if (!url || url !== session.url) {
+          void closeStarBookmarkEditor();
+          return;
+        }
+        let folderId = data?.folderId === 'root' ? 'root' : String(data?.folderId || 'root');
+        const bar = bookmarksBarRef.current;
+        if (!isValidFolderId(folderId, bar)) folderId = 'root';
+        const title = String(data?.title || '').trim().slice(0, 500) || session.url;
+        const isEdit = !!session.bookmarkId;
+        const item = {
+          id: isEdit ? session.bookmarkId : `bk-${Date.now()}`,
+          type: 'bookmark',
+          title,
+          url: session.url,
+          favicon: session.favicon ?? null,
+        };
+        void (async () => {
+          try {
+            const result = folderId === 'root'
+              ? await window.electronAPI.bookmarksAdd(item)
+              : await window.electronAPI.bookmarksAddToFolder(folderId, item);
+            dispatch(setBookmarks(result));
+          } catch (err) {
+            console.error('bookmark editor done', err);
+          } finally {
+            void closeStarBookmarkEditor();
+          }
+        })();
+      }
+    });
+    return typeof unsub === 'function' ? unsub : undefined;
+  }, [closeStarBookmarkEditor, dispatch, postStarEditorPatch]);
+
+  useEffect(() => {
+    const unsub = window.electronAPI?.onChromeOverlaySuperseded?.(() => {
+      if (pendingOwnStarResetRef.current) return;
+      if (starEditorActiveRef.current) {
+        starEditorActiveRef.current = false;
+      }
+    });
+    return typeof unsub === 'function' ? unsub : undefined;
+  }, []);
+
   const handleBack = () => window.electronAPI.goBack(currentTabId);
   const handleForward = () => window.electronAPI.goForward(currentTabId);
   const handleReload = () => window.electronAPI.reload(currentTabId);
 
-  // Restore the active tab view when the edit modal closes.
-  const handleEditClose = useCallback(() => {
-    setEditPopup(null);
-    endOverlay();
-  }, [endOverlay]);
-
   const handleBookmark = useCallback(async (e) => {
     if (!canBookmark) return;
 
-    // Star animation
     const btn = e.currentTarget;
     btn.classList.remove('pop');
     void btn.offsetWidth;
     btn.classList.add('pop');
     btn.addEventListener('animationend', () => btn.classList.remove('pop'), { once: true });
 
-    // Toggle: clicking star while modal is open closes it and restores the tab
-    if (editPopup) {
-      setEditPopup(null);
-      endOverlay();
+    if (starEditorActiveRef.current) {
+      void closeStarBookmarkEditor();
       return;
     }
 
-    const bookmarkData = existingBookmark
+    const bookmarkDraft = existingBookmark
       ? {
           ...existingBookmark,
           folderId: findFolderIdForBookmark(existingBookmark.id, bookmarksData.bar),
+          url: currentUrl,
         }
       : {
           title: tab?.title || currentUrl,
@@ -140,9 +300,16 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
           folderId: 'root',
         };
 
-    await beginOverlay();
-    setEditPopup({ data: bookmarkData });
-  }, [canBookmark, editPopup, existingBookmark, bookmarksData.bar, tab, currentUrl, beginOverlay, endOverlay]);
+    await openStarBookmarkEditor(btn, bookmarkDraft);
+  }, [
+    canBookmark,
+    closeStarBookmarkEditor,
+    openStarBookmarkEditor,
+    existingBookmark,
+    bookmarksData.bar,
+    tab,
+    currentUrl,
+  ]);
 
   const handleAddProfile = useCallback(() => {
     setProfileEditorMode('create');
@@ -213,13 +380,6 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
         onClose={() => setProfileEditorOpen(false)}
         onSaved={handleProfileEditorSaved}
       />
-
-      {editPopup && (
-        <BookmarkEditPopup
-          data={editPopup.data}
-          onClose={handleEditClose}
-        />
-      )}
     </div>
   );
 }

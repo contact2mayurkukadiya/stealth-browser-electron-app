@@ -18,6 +18,7 @@ import SearchTabsModal from './components/SearchTabsModal';
 import CommandPaletteModal from './components/CommandPaletteModal';
 import { buildCommandPaletteCommands } from './commandPaletteCommands';
 import { TabOverlayProvider } from './context/TabOverlayContext';
+import { ChromeOverlayProvider } from './context/ChromeOverlayContext';
 
 function hostnameFromUrl(url) {
   if (!url || typeof url !== 'string') return '';
@@ -45,6 +46,8 @@ function AppShell() {
   // Always-fresh ref so event-handler closures never capture stale state
   const stateRef = useRef({});
   stateRef.current = { tabs, tabOrder, currentTabId };
+  /** Latest handlers for native tab strip context menu action IPC (refilled each render). */
+  const tabStripMenuHandlersRef = useRef({});
 
   // ── Session save (debounced) ─────────────────────────────────────────────
   const sessionTimer = useRef(null);
@@ -313,7 +316,8 @@ function AppShell() {
     if (id) moveTabToNewWindowFor(id);
   }, [moveTabToNewWindowFor]);
 
-  const getTabContextMenuItems = useCallback((targetId) => {
+  /** Serializable rows for main-process Menu.buildFromTemplate (ids allowlisted in main). */
+  const buildTabStripContextMenuSpec = useCallback((targetId) => {
     const { tabs: tmap, tabOrder: order } = stateRef.current;
     const t = tmap[targetId];
     if (!t) return [];
@@ -327,34 +331,40 @@ function AppShell() {
       }
     }
     const pinLabel = t.isPinned ? 'Unpin' : 'Pin';
+    const stealthShell = stealthWindowRef.current;
 
     return [
-      { label: 'New Tab to the Right', action: () => newTabToTheRightOf(targetId) },
-      { label: 'Move Tab to New Window', action: () => { moveTabToNewWindowFor(targetId); } },
+      { type: 'item', id: 'newTabRight', label: 'New Tab to the Right', enabled: true },
+      { type: 'item', id: 'moveNewWindow', label: 'Move Tab to New Window', enabled: !stealthShell },
       { type: 'separator' },
-      {
-        label: 'Reload',
-        action: () => window.electronAPI.reload(targetId),
-        disabled: !!t.isSleeping,
-      },
-      { label: 'Duplicate', action: () => duplicateTabFrom(targetId) },
-      { label: pinLabel, action: () => togglePinForTab(targetId) },
-      { label: muteLabel, action: () => muteSiteForTab(targetId), disabled: !host },
+      { type: 'item', id: 'reload', label: 'Reload', enabled: !t.isSleeping },
+      { type: 'item', id: 'duplicate', label: 'Duplicate', enabled: true },
+      { type: 'item', id: 'togglePin', label: pinLabel, enabled: true },
+      { type: 'item', id: 'toggleMuteSite', label: muteLabel, enabled: !!host },
       { type: 'separator' },
-      { label: 'Close', action: () => closeTab(targetId), danger: true },
-      { label: 'Close Other Tabs', action: () => closeOtherTabsThan(targetId) },
-      { label: 'Close Tabs to the Right', action: () => closeTabsToTheRightOf(targetId) },
+      { type: 'item', id: 'close', label: 'Close', enabled: true },
+      { type: 'item', id: 'closeOthers', label: 'Close Other Tabs', enabled: true },
+      { type: 'item', id: 'closeRight', label: 'Close Tabs to the Right', enabled: true },
     ];
-  }, [
-    newTabToTheRightOf,
-    moveTabToNewWindowFor,
-    duplicateTabFrom,
-    togglePinForTab,
-    muteSiteForTab,
-    closeTab,
-    closeOtherTabsThan,
-    closeTabsToTheRightOf,
-  ]);
+  }, []);
+
+  const handleTabStripContextMenu = useCallback(async (e, tabId) => {
+    e.preventDefault();
+    const api = window.electronAPI;
+    if (!api?.tabStripContextMenuShow) return;
+    const items = buildTabStripContextMenuSpec(tabId);
+    if (items.length === 0) return;
+    try {
+      await api.tabStripContextMenuShow({
+        tabId,
+        x: e.clientX,
+        y: e.clientY,
+        items,
+      });
+    } catch (err) {
+      console.error('tabStripContextMenuShow', err);
+    }
+  }, [buildTabStripContextMenuSpec]);
 
   /**
    * Opens an internal invisurf:// page as a singleton tab (legacy stealth:// is still accepted in main).
@@ -452,6 +462,16 @@ function AppShell() {
   }, [dispatch]);
 
   // ── Register all IPC listeners ───────────────────────────────────────────
+  useEffect(() => {
+    const unsub = window.electronAPI?.onTabStripContextMenuAction?.((data) => {
+      const { tabId, id } = data || {};
+      if (!tabId || !id) return;
+      const fn = tabStripMenuHandlersRef.current[id];
+      if (typeof fn === 'function') fn(tabId);
+    });
+    return typeof unsub === 'function' ? unsub : undefined;
+  }, []);
+
   useElectronIPC({
     onNewTab: createTab,
     onTabCreated: handleTabCreated,
@@ -551,6 +571,18 @@ function AppShell() {
     init();
   }, [dispatch, createTab, createTabWithUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  tabStripMenuHandlersRef.current = {
+    newTabRight: newTabToTheRightOf,
+    moveNewWindow: moveTabToNewWindowFor,
+    reload: (tid) => window.electronAPI.reload(tid),
+    duplicate: duplicateTabFrom,
+    togglePin: togglePinForTab,
+    toggleMuteSite: muteSiteForTab,
+    close: closeTab,
+    closeOthers: closeOtherTabsThan,
+    closeRight: closeTabsToTheRightOf,
+  };
+
   return (
     <div className={`header${isStealthShell ? ' header--stealth-window' : ''}`}>
       <CommandPaletteModal
@@ -575,7 +607,7 @@ function AppShell() {
         onCloseTab={closeTab}
         onSwitchTab={switchTab}
         onDragEnd={handleDragEnd}
-        getTabContextMenuItems={getTabContextMenuItems}
+        onTabStripContextMenu={handleTabStripContextMenu}
       />
       <NavBar currentTabId={currentTabId} onOpenSettings={handleOpenSettings} searchEngine={searchEngine} />
       <BookmarkBar currentTabId={currentTabId} />
@@ -586,7 +618,9 @@ function AppShell() {
 export default function App() {
   return (
     <TabOverlayProvider>
-      <AppShell />
+      <ChromeOverlayProvider>
+        <AppShell />
+      </ChromeOverlayProvider>
     </TabOverlayProvider>
   );
 }

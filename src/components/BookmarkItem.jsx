@@ -1,9 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
-import { useTabOverlay } from '../context/TabOverlayContext';
 import { setBookmarks } from '../store/bookmarksSlice';
-import ContextMenu from './ContextMenu';
-import FolderDropdown from './FolderDropdown';
 
 const FOLDER_ICON = (
   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 640 640">
@@ -26,30 +23,27 @@ export default function BookmarkItem({
   dragSrcIdRef,
   bookmarksData,
   onNavigate,
+  onBookmarkContextMenu,
+  onOpenFolderMenu,
+  onDismissFolderMenuOnDrag,
 }) {
   const dispatch = useDispatch();
-  const { beginOverlay, endOverlay } = useTabOverlay();
-  const [contextMenu, setContextMenu] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  // true when the folder modal is open, null/false when closed.
-  const [folderOpen, setFolderOpen] = useState(false);
 
   const isFolder = item.type === 'folder';
 
-  // ── Drag source ──────────────────────────────────────────────────────────
   const handleDragStart = (e) => {
+    onDismissFolderMenuOnDrag?.();
     dragSrcIdRef.current = item.id;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', item.id);
     setTimeout(() => e.target.classList.add('dragging'), 0);
-    setFolderOpen(false);
   };
   const handleDragEnd = (e) => {
     e.target.classList.remove('dragging');
     setIsDragOver(false);
   };
 
-  // ── Drop target ──────────────────────────────────────────────────────────
   const handleDragOver = (e) => {
     if (dragSrcIdRef.current === item.id) return;
     e.preventDefault();
@@ -64,22 +58,12 @@ export default function BookmarkItem({
     const srcId = dragSrcIdRef.current;
     if (!srcId || srcId === item.id) return;
 
-    // Read the source item from a snapshot — never mutate Redux state directly.
     const srcItem = bookmarksData.bar.find(b => b.id === srcId);
     if (!srcItem) return;
 
     if (isFolder && srcItem.type !== 'folder') {
-      // ── Move a bookmark INTO this folder ──────────────────────────────────
-      // bookmarksAddToFolder atomically removes the item from its current
-      // position (root or any folder) before inserting it, so no separate
-      // bookmarksRemove call is needed.
       await window.electronAPI.bookmarksAddToFolder(item.id, srcItem);
     } else {
-      // ── Reorder on the root bar ───────────────────────────────────────────
-      // This handles all remaining cases:
-      //   • bookmark  → bookmark  (standard reorder)
-      //   • folder    → bookmark  (reorder folder past a bookmark)
-      //   • folder    → folder    (reorder folder past another folder)
       const newBar = [...bookmarksData.bar];
       const from = newBar.findIndex(b => b.id === srcId);
       const to = newBar.findIndex(b => b.id === item.id);
@@ -94,45 +78,27 @@ export default function BookmarkItem({
     dispatch(setBookmarks(updated));
   };
 
-  const handleFolderClose = useCallback(() => {
-    setFolderOpen(false);
-    endOverlay();
-  }, [endOverlay]);
-
-  // ── Click ────────────────────────────────────────────────────────────────
-  const handleClick = useCallback(async (e) => {
+  const handleClick = useCallback((e) => {
     e.stopPropagation();
     if (isFolder) {
-      await beginOverlay();
-      setFolderOpen(true);
+      if (typeof onOpenFolderMenu === 'function') {
+        void onOpenFolderMenu(e, item);
+      }
     } else {
       onNavigate(item.url);
     }
-  }, [isFolder, onNavigate, item.url, beginOverlay]);
+  }, [isFolder, onNavigate, item, onOpenFolderMenu]);
 
-  // ── Delete ───────────────────────────────────────────────────────────────
   const handleDelete = async (e) => {
     e.stopPropagation();
     const data = await window.electronAPI.bookmarksRemove(item.id);
     dispatch(setBookmarks(data));
   };
 
-  // ── Context menu ─────────────────────────────────────────────────────────
   const handleContextMenu = (e) => {
     e.preventDefault();
-    const menuItems = [];
-    if (!isFolder) {
-      menuItems.push({ label: 'Open', action: () => onNavigate(item.url) });
-    }
-    menuItems.push({
-      label: isFolder ? 'Delete folder' : 'Remove bookmark',
-      danger: true,
-      action: async () => {
-        const data = await window.electronAPI.bookmarksRemove(item.id);
-        dispatch(setBookmarks(data));
-      },
-    });
-    setContextMenu({ x: e.clientX, y: e.clientY, items: menuItems });
+    if (typeof onBookmarkContextMenu !== 'function') return;
+    void onBookmarkContextMenu(e, item, isFolder);
   };
 
   const btnClass = [isFolder ? 'bk-folder' : 'bk-item', isDragOver ? 'bk-drag-over' : ''].filter(Boolean).join(' ');
@@ -172,24 +138,6 @@ export default function BookmarkItem({
       <button className="bk-del-btn" title={isFolder ? 'Delete folder' : 'Remove bookmark'} onClick={handleDelete}>
         {DELETE_ICON}
       </button>
-
-      {contextMenu && (
-        <ContextMenu
-          items={contextMenu.items}
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
-
-      {/* Folder modal — rendered as a React portal, visible above WebContentsView */}
-      {folderOpen && isFolder && (
-        <FolderDropdown
-          folder={item}
-          onClose={handleFolderClose}
-          onNavigate={onNavigate}
-        />
-      )}
     </div>
   );
 }

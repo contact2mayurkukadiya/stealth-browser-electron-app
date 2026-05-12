@@ -809,6 +809,10 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         /** True while active tab's WebContentsView was removeChildView'd for shell overlays. */
         activeTabViewRemovedForShellOverlay: false,
         tooltipView: null,
+        /** Full-window WebContentsView for HTML menus above tab layer (no tab detach). */
+        chromeOverlayView: null,
+        /** Ref-count for chrome-overlay:v1 acquire/release from trusted shell. */
+        chromeOverlayAcquireCount: 0,
     };
     windowContextsById.set(window.id, context);
 
@@ -835,6 +839,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
             width,
             height: fs ? height : height - UI_HEIGHT,
         });
+        layoutChromeOverlayBounds(context);
+        ensureChromeOverlayOnTop(context);
     });
 
     window.on('close', () => {
@@ -854,6 +860,14 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
             try { if (!context.tooltipView.webContents.isDestroyed()) context.tooltipView.webContents.destroy(); } catch (_) { }
             context.tooltipView = null;
         }
+        if (context.chromeOverlayView) {
+            try { context.window.contentView.removeChildView(context.chromeOverlayView); } catch (_) { }
+            try {
+                if (!context.chromeOverlayView.webContents.isDestroyed()) context.chromeOverlayView.webContents.destroy();
+            } catch (_) { }
+            context.chromeOverlayView = null;
+        }
+        context.chromeOverlayAcquireCount = 0;
     });
 
     window.on('closed', () => {
@@ -864,7 +878,9 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         }
     });
 
+    createChromeOverlayLayer(context);
     createTooltipOverlay(context);
+    ensureChromeOverlayOnTop(context);
     return context;
 }
 
@@ -902,6 +918,75 @@ function createProfilePickerWindow() {
             app.quit();
         }
     });
+}
+
+function createChromeOverlayLayer(context) {
+    if (context.chromeOverlayView) return;
+    const overlayView = new WebContentsView({
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+        },
+    });
+    overlayView.setBackgroundColor('#00000000');
+    overlayView.webContents.once('did-finish-load', () => {
+        sendChromeOverlayThemePatch(context);
+    });
+    overlayView.webContents.loadURL('app://localhost/chrome-overlay.html').catch((err) => {
+        console.error('chrome-overlay load', err);
+    });
+    context.window.contentView.addChildView(overlayView);
+    overlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    context.chromeOverlayView = overlayView;
+}
+
+/**
+ * Tab WebContentsView must stay below the chrome overlay; tooltip stays topmost.
+ * Call after tab attach/detach and whenever z-order may have changed.
+ */
+function ensureChromeOverlayOnTop(context) {
+    if (!context?.window?.contentView) return;
+    const cv = context.window.contentView;
+    const activeId = context.activeTabId;
+    const tabView =
+        activeId && !detachedTabWindows.has(activeId) ? context.tabs[activeId] : null;
+    try {
+        if (tabView && !tabView.webContents.isDestroyed()) {
+            cv.addChildView(tabView);
+        }
+        if (context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
+            cv.addChildView(context.chromeOverlayView);
+        }
+        if (context.tooltipView && !context.tooltipView.webContents.isDestroyed()) {
+            cv.addChildView(context.tooltipView);
+        }
+    } catch (err) {
+        console.error('ensureChromeOverlayOnTop', err?.message || err);
+    }
+}
+
+function layoutChromeOverlayBounds(context) {
+    if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return;
+    if (context.chromeOverlayAcquireCount <= 0) return;
+    const { width, height } = context.window.getContentBounds();
+    try {
+        context.chromeOverlayView.setBounds({ x: 0, y: 0, width, height });
+    } catch (err) {
+        console.error('layoutChromeOverlayBounds', err?.message || err);
+    }
+}
+
+function getWindowContextByChromeOverlaySender(sender) {
+    if (!sender || sender.isDestroyed?.()) return null;
+    for (const ctx of windowContextsById.values()) {
+        const ov = ctx.chromeOverlayView;
+        if (ov && !ov.webContents.isDestroyed() && ov.webContents === sender) {
+            return ctx;
+        }
+    }
+    return null;
 }
 
 function createTooltipOverlay(context) {
@@ -979,6 +1064,7 @@ function restoreActiveTabViewFromShellOverlay(context) {
     } catch (err) {
         console.error('restoreActiveTabViewFromShellOverlay setBounds:', err?.message || err);
     }
+    ensureChromeOverlayOnTop(context);
 }
 
 function activateTabInContext(context, id) {
@@ -990,6 +1076,7 @@ function activateTabInContext(context, id) {
     // Re-activating the already-visible tab only removes/re-attaches every view and
     // re-sends omnibox:focus — causes NTP flicker when clicking the active tab repeatedly.
     if (skipSameTab) {
+        ensureChromeOverlayOnTop(context);
         return true;
     }
     if (detachedTabWindows.has(id)) {
@@ -1045,6 +1132,7 @@ function activateTabInContext(context, id) {
         });
     }
 
+    ensureChromeOverlayOnTop(context);
     return true;
 }
 
@@ -1848,8 +1936,7 @@ ipcMain.on('tooltip:show', (e, { title, url, memory, x, y, width, height }) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.tooltipView) return;
 
-    // Re-assert it as the top-most view to solve z-order issues after tab switches
-    context.window.contentView.addChildView(context.tooltipView);
+    ensureChromeOverlayOnTop(context);
 
     // Position and size the overlay view
     context.tooltipView.setBounds({
@@ -1866,6 +1953,98 @@ ipcMain.on('tooltip:hide', (e) => {
     const context = getWindowContextByEventSender(e.sender);
     if (context?.tooltipView) {
         context.tooltipView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    }
+});
+
+// ─── Chrome overlay layer (HTML above tab WebContentsView, no tab detach) ───
+const CHROME_OVERLAY_POST_MAX_BYTES = 256 * 1024;
+
+/** Clear overlay session so another feature can take the surface (ref count → 0, hide, notify shell). */
+ipcMain.handle('chrome-overlay:v1:reset', (e) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context?.chromeOverlayView) return { ok: false };
+    context.chromeOverlayAcquireCount = 0;
+    try {
+        if (!context.chromeOverlayView.webContents.isDestroyed()) {
+            context.chromeOverlayView.webContents.send('chrome-overlay:v1:patch', { kind: 'hide' });
+        }
+        context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    } catch (err) {
+        console.error('chrome-overlay:v1:reset', err?.message || err);
+    }
+    try {
+        if (context.window?.webContents && !context.window.webContents.isDestroyed()) {
+            context.window.webContents.send('chrome-overlay:v1:superseded');
+        }
+    } catch (err) {
+        console.error('chrome-overlay:v1:superseded send', err?.message || err);
+    }
+    return { ok: true };
+});
+
+ipcMain.handle('chrome-overlay:v1:acquire', (e) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context?.chromeOverlayView) return { ok: false };
+    context.chromeOverlayAcquireCount = (context.chromeOverlayAcquireCount || 0) + 1;
+    if (context.chromeOverlayAcquireCount === 1) {
+        layoutChromeOverlayBounds(context);
+        ensureChromeOverlayOnTop(context);
+    }
+    return { ok: true };
+});
+
+ipcMain.handle('chrome-overlay:v1:release', (e) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context?.chromeOverlayView) return { ok: false };
+    if (context.chromeOverlayAcquireCount > 0) {
+        context.chromeOverlayAcquireCount -= 1;
+    }
+    if (context.chromeOverlayAcquireCount <= 0) {
+        context.chromeOverlayAcquireCount = 0;
+        try {
+            if (!context.chromeOverlayView.webContents.isDestroyed()) {
+                context.chromeOverlayView.webContents.send('chrome-overlay:v1:patch', { kind: 'hide' });
+            }
+            context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        } catch (err) {
+            console.error('chrome-overlay:v1:release', err?.message || err);
+        }
+    }
+    return { ok: true };
+});
+
+ipcMain.handle('chrome-overlay:v1:post', (e, payload) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) {
+        return { ok: false };
+    }
+    if (context.chromeOverlayAcquireCount <= 0) return { ok: false };
+    try {
+        const json = JSON.stringify(payload ?? {});
+        if (json.length > CHROME_OVERLAY_POST_MAX_BYTES) return { ok: false };
+    } catch {
+        return { ok: false };
+    }
+    try {
+        context.chromeOverlayView.webContents.send('chrome-overlay:v1:patch', payload ?? {});
+    } catch (err) {
+        console.error('chrome-overlay:v1:post', err?.message || err);
+        return { ok: false };
+    }
+    return { ok: true };
+});
+
+ipcMain.on('chrome-overlay:v1:from-overlay', (e, data) => {
+    const context = getWindowContextByChromeOverlaySender(e.sender);
+    if (!context?.window?.webContents || context.window.webContents.isDestroyed()) return;
+    try {
+        context.window.webContents.send('chrome-overlay:v1:host-event', data ?? {});
+    } catch (err) {
+        console.error('chrome-overlay:v1:from-overlay', err?.message || err);
     }
 });
 
@@ -2400,6 +2579,44 @@ function ensureNativeThemeTitleBarListeners() {
     });
 }
 
+/** Push resolved chrome CSS variables to the chrome-overlay WebContentsView (matches shell theme). */
+function getChromeOverlayThemePatchForContext(context) {
+    const settings = loadSettings();
+    const prefersDark = nativeTheme && typeof nativeTheme.shouldUseDarkColors === 'boolean'
+        ? nativeTheme.shouldUseDarkColors
+        : true;
+    const stealth = !!(context && context.stealthWindow);
+    const effectiveDark = stealth
+        ? true
+        : chromeTheme.resolveEffectiveDarkFromSettings(settings, prefersDark);
+    const tokenSource = stealth
+        ? { colorTheme: 'dark', accentTheme: 'default', accentCustomHex: null }
+        : settings;
+    const tokens = chromeTheme.resolveAppliedTokens(tokenSource, effectiveDark);
+    let forcedAppearance = null;
+    if (!stealth) {
+        const ct = chromeTheme.normalizeColorTheme(settings.colorTheme);
+        if (ct === 'light') forcedAppearance = 'light';
+        else if (ct === 'dark') forcedAppearance = 'dark';
+    }
+    return {
+        kind: 'chromeTheme',
+        tokens,
+        effectiveDark: !!effectiveDark,
+        forcedAppearance,
+    };
+}
+
+function sendChromeOverlayThemePatch(context) {
+    const ov = context?.chromeOverlayView;
+    if (!ov || ov.webContents.isDestroyed()) return;
+    try {
+        ov.webContents.send('chrome-overlay:v1:patch', getChromeOverlayThemePatchForContext(context));
+    } catch (_) {
+        /* overlay may be tearing down */
+    }
+}
+
 function broadcastThemeApply() {
     const settings = loadSettings();
     const payload = { settings };
@@ -2410,6 +2627,9 @@ function broadcastThemeApply() {
         } catch (_) {
             /* window may be closing */
         }
+    }
+    for (const ctx of windowContextsById.values()) {
+        sendChromeOverlayThemePatch(ctx);
     }
 }
 
@@ -3127,6 +3347,79 @@ ipcMain.handle('tab:move-to-new-window', async (e, { id, fallbackTabId }) => {
         console.error('tab:move-to-new-window', err);
         return { ok: false };
     }
+});
+
+const TAB_STRIP_CONTEXT_MENU_MAX_ITEMS = 30;
+const TAB_STRIP_CONTEXT_MENU_ACTION_IDS = new Set([
+    'newTabRight',
+    'moveNewWindow',
+    'reload',
+    'duplicate',
+    'togglePin',
+    'toggleMuteSite',
+    'close',
+    'closeOthers',
+    'closeRight',
+]);
+
+/** Native tab strip context menu: Menu.popup above WebContentsView; actions round-trip to shell. */
+ipcMain.handle('tab:strip-context-menu', (e, payload = {}) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    const sender = e.sender;
+    if (!sender || sender.isDestroyed()) return { ok: false };
+    const tabId = payload.tabId;
+    if (!tabId || typeof tabId !== 'string') return { ok: false };
+    const x = Number(payload.x);
+    const y = Number(payload.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false };
+    const rawItems = Array.isArray(payload.items) ? payload.items : [];
+    const items = rawItems.slice(0, TAB_STRIP_CONTEXT_MENU_MAX_ITEMS);
+    const win = BrowserWindow.fromWebContents(sender);
+    if (!win || win.isDestroyed()) return { ok: false };
+
+    const template = [];
+    for (const raw of items) {
+        if (!raw || typeof raw !== 'object') continue;
+        if (raw.type === 'separator') {
+            template.push({ type: 'separator' });
+            continue;
+        }
+        if (raw.type !== 'item') continue;
+        const actionId = raw.id;
+        if (!actionId || typeof actionId !== 'string' || !TAB_STRIP_CONTEXT_MENU_ACTION_IDS.has(actionId)) {
+            continue;
+        }
+        const label = truncateMenuLabel(String(raw.label || ''), 80);
+        if (!label) continue;
+        const enabled = raw.enabled !== false;
+        const capturedTabId = tabId;
+        const capturedActionId = actionId;
+        template.push({
+            label,
+            enabled,
+            click: () => {
+                try {
+                    if (!sender.isDestroyed()) {
+                        sender.send('tab-strip-context-menu:action', {
+                            tabId: capturedTabId,
+                            id: capturedActionId,
+                        });
+                    }
+                } catch (err) {
+                    console.error('tab-strip-context-menu:action', err?.message || err);
+                }
+            },
+        });
+    }
+    if (template.length === 0) return { ok: false };
+    try {
+        const menu = Menu.buildFromTemplate(template);
+        menu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
+    } catch (err) {
+        console.error('tab:strip-context-menu', err?.message || err);
+        return { ok: false };
+    }
+    return { ok: true };
 });
 
 ipcMain.handle('tab:get-info', async (e, { id }) => {
