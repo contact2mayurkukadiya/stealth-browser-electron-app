@@ -3,7 +3,6 @@ import ProfileAvatar from '../components/ProfileAvatar';
 import ProfileEditorModal from '../components/ProfileEditorModal';
 import { logoPurpleDarkSvg, logoPurpleLightSvg } from '../constants/appAssetUrls';
 import './ProfilePickerApp.css';
-import { useChromeTheme } from '../hooks/useChromeTheme';
 
 const ICON_PENCIL = (
   <svg className="pp-menu-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -196,7 +195,6 @@ function ProfileCard({
 }
 
 export default function ProfilePickerApp() {
-  useChromeTheme();
   const [profiles, setProfiles] = useState([]);
   const [error, setError] = useState(null);
   const [editorOpen, setEditorOpen] = useState(false);

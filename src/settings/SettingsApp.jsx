@@ -214,115 +214,115 @@ export default function SettingsApp() {
       <div className="settings-content">
         {/* ── Appearance (hidden in stealth — chrome is fixed InvSurf dark) ─ */}
         {!isStealthWindow && (
-        <section className="settings-section">
-          <h2 className="settings-section__title">Appearance</h2>
-          <div className="settings-card settings-card--appearance">
-            <div className="appearance-block">
-              <div className="appearance-block__intro">
-                <span className="setting-row__label">Brightness</span>
-                <span className="setting-row__desc">
-                  Device follows your system. Light or Dark applies only to InviSurf.
-                </span>
+          <section className="settings-section">
+            <h2 className="settings-section__title">Appearance</h2>
+            <div className="settings-card settings-card--appearance">
+              <div className="appearance-block">
+                <div className="appearance-block__intro">
+                  <span className="setting-row__label">Brightness</span>
+                  <span className="setting-row__desc">
+                    Device follows your system. Light or Dark applies only to InviSurf.
+                  </span>
+                </div>
+                <div
+                  className="appearance-mode"
+                  role="radiogroup"
+                  aria-label="Brightness"
+                >
+                  {APPEARANCE_MODE_SEGMENTS.map((seg) => {
+                    const active =
+                      (seg.value === 'automatic' &&
+                        settings.colorTheme !== 'dark' &&
+                        settings.colorTheme !== 'light') ||
+                      settings.colorTheme === seg.value;
+                    return (
+                      <button
+                        key={seg.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        title={seg.title}
+                        className={`appearance-mode__btn${active ? ' appearance-mode__btn--active' : ''}`}
+                        onClick={() => handleColorThemeChange(seg.value)}
+                      >
+                        {seg.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div
-                className="appearance-mode"
-                role="radiogroup"
-                aria-label="Brightness"
-              >
-                {APPEARANCE_MODE_SEGMENTS.map((seg) => {
-                  const active =
-                    (seg.value === 'automatic' &&
-                      settings.colorTheme !== 'dark' &&
-                      settings.colorTheme !== 'light') ||
-                    settings.colorTheme === seg.value;
-                  return (
-                    <button
-                      key={seg.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      title={seg.title}
-                      className={`appearance-mode__btn${active ? ' appearance-mode__btn--active' : ''}`}
-                      onClick={() => handleColorThemeChange(seg.value)}
-                    >
-                      {seg.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
 
-            <div className="appearance-block appearance-block--accent">
-              <div className="appearance-block__intro">
-                <span className="setting-row__label">Accent</span>
-                <span className="setting-row__desc">
-                  Colours the tab strip and toolbar. Custom builds a palette from one seed colour.
-                </span>
-              </div>
-              <div className="accent-grid" role="radiogroup" aria-label="Accent colour preset">
-                {accentPresets.map((p) => {
-                  const selected = settings.accentTheme === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      aria-pressed={selected}
-                      className={`accent-swatch${selected ? ' accent-swatch--selected' : ''}`}
-                      onClick={() => handleAccentPreset(p.id)}
-                      title={p.label}
-                    >
+              <div className="appearance-block appearance-block--accent">
+                <div className="appearance-block__intro">
+                  <span className="setting-row__label">Accent</span>
+                  <span className="setting-row__desc">
+                    Colours the tab strip and toolbar. Custom builds a palette from one seed colour.
+                  </span>
+                </div>
+                <div className="accent-grid" role="radiogroup" aria-label="Accent colour preset">
+                  {accentPresets.map((p) => {
+                    const selected = settings.accentTheme === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        aria-pressed={selected}
+                        className={`accent-swatch${selected ? ' accent-swatch--selected' : ''}`}
+                        onClick={() => handleAccentPreset(p.id)}
+                        title={p.label}
+                      >
+                        <span
+                          className="accent-swatch__preview"
+                          style={{
+                            background: `linear-gradient(135deg, ${p.preview.shell} 0%, ${p.preview.slider} 45%, ${p.preview.urlWell} 100%)`,
+                          }}
+                          aria-hidden
+                        />
+                        <span className="accent-swatch__label">{p.label}</span>
+                        {selected ? (
+                          <span className="accent-swatch__check" aria-hidden>
+                            ✓
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                  <div
+                    role="radio"
+                    aria-checked={settings.accentTheme === 'custom'}
+                    className={`accent-swatch accent-swatch--custom${settings.accentTheme === 'custom' ? ' accent-swatch--selected' : ''}`}
+                    title="Custom — pick a seed colour"
+                  >
+                    <input
+                      id="settings-accent-custom"
+                      type="color"
+                      className="accent-swatch__color-input"
+                      value={customColorValue}
+                      onChange={(e) => handleCustomAccentHex(e.target.value)}
+                      aria-label="Custom accent colour"
+                    />
+                    <label htmlFor="settings-accent-custom" className="accent-swatch__custom-hit">
                       <span
-                        className="accent-swatch__preview"
+                        className="accent-swatch__preview accent-swatch__preview--custom"
                         style={{
-                          background: `linear-gradient(135deg, ${p.preview.shell} 0%, ${p.preview.slider} 45%, ${p.preview.urlWell} 100%)`,
+                          background: `linear-gradient(135deg, ${customColorValue} 0%, ${customColorValue} 45%, ${customColorValue} 100%)`,
                         }}
                         aria-hidden
                       />
-                      <span className="accent-swatch__label">{p.label}</span>
-                      {selected ? (
+                      <span className="accent-swatch__label">Custom</span>
+                      {settings.accentTheme === 'custom' ? (
                         <span className="accent-swatch__check" aria-hidden>
                           ✓
                         </span>
                       ) : null}
-                    </button>
-                  );
-                })}
-                <div
-                  role="radio"
-                  aria-checked={settings.accentTheme === 'custom'}
-                  className={`accent-swatch accent-swatch--custom${settings.accentTheme === 'custom' ? ' accent-swatch--selected' : ''}`}
-                  title="Custom — pick a seed colour"
-                >
-                  <input
-                    id="settings-accent-custom"
-                    type="color"
-                    className="accent-swatch__color-input"
-                    value={customColorValue}
-                    onChange={(e) => handleCustomAccentHex(e.target.value)}
-                    aria-label="Custom accent colour"
-                  />
-                  <label htmlFor="settings-accent-custom" className="accent-swatch__custom-hit">
-                    <span
-                      className="accent-swatch__preview accent-swatch__preview--custom"
-                      style={{
-                        background: `linear-gradient(135deg, ${customColorValue} 0%, ${customColorValue} 45%, ${customColorValue} 100%)`,
-                      }}
-                      aria-hidden
-                    />
-                    <span className="accent-swatch__label">Custom</span>
-                    {settings.accentTheme === 'custom' ? (
-                      <span className="accent-swatch__check" aria-hidden>
-                        ✓
-                      </span>
-                    ) : null}
-                  </label>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
         )}
 
         {/* ── Privacy ──────────────────────────────────────────────────── */}
@@ -331,7 +331,7 @@ export default function SettingsApp() {
           <div className="settings-card">
             <div className="setting-row">
               <div className="setting-row__text">
-                <span className="setting-row__label">Screen Capture Protection</span>
+                <span className="setting-row__label">Enable DRM (Digital rights Management)</span>
                 <span className="setting-row__desc">
                   Prevents screenshots and screen recording of this browser window.
                   A relaunch is required for changes to take effect.
@@ -358,20 +358,20 @@ export default function SettingsApp() {
 
         {/* ── On Startup (hidden in stealth — session restore does not apply) ─ */}
         {!isStealthWindow && (
-        <section className="settings-section">
-          <h2 className="settings-section__title">On Startup</h2>
-          <div className="settings-card">
-            {STARTUP_OPTIONS.map((opt) => (
-              <RadioRow
-                key={opt.value}
-                option={opt}
-                checked={settings.startupBehavior === opt.value}
-                onChange={handleStartupChange}
-                groupName="startupBehavior"
-              />
-            ))}
-          </div>
-        </section>
+          <section className="settings-section">
+            <h2 className="settings-section__title">On Startup</h2>
+            <div className="settings-card">
+              {STARTUP_OPTIONS.map((opt) => (
+                <RadioRow
+                  key={opt.value}
+                  option={opt}
+                  checked={settings.startupBehavior === opt.value}
+                  onChange={handleStartupChange}
+                  groupName="startupBehavior"
+                />
+              ))}
+            </div>
+          </section>
         )}
 
         {/* ── Search Engine ────────────────────────────────────────────── */}
