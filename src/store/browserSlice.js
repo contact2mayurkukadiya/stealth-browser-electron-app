@@ -195,8 +195,9 @@ const browserSlice = createSlice({
       }
       const tab = state.tabs[id];
       tab.url = url;
-      // Keep isNewTab true while the NTP is loaded; clear it on real navigations.
-      if (!isNtpUrl(url)) tab.isNewTab = false;
+      // NTP (empty omnibox) vs real navigations — e.g. clearing invisurf://settings + Enter.
+      tab.isNewTab = isNtpUrl(url);
+      if (tab.isNewTab) tab.title = 'New Tab';
     },
 
     setTabNewTab(state, action) {

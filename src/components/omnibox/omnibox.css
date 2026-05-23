@@ -13,6 +13,26 @@
   flex-shrink: 0;
 }
 
+/* When overlay B is open, neutralize A's well so it cannot show beneath B. */
+.url-container.omnibox-overlay-active {
+  background: var(--chrome-nav-bg, transparent);
+  box-shadow: none;
+  transition: none;
+}
+
+.url-container.omnibox-overlay-active:focus-within {
+  border-color: transparent;
+}
+
+.url-container.omnibox-overlay-active #url-input {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.url-container.omnibox-overlay-active .omnibox-ghost {
+  display: none;
+}
+
 /* When the omnibox is focused, shift the input text to make room for the icon */
 .url-container:focus-within #url-input {
   padding-left: 30px;
@@ -20,6 +40,21 @@
 
 .url-container:focus-within .omnibox-ghost {
   padding-left: 30px;
+}
+
+/* Empty-state placeholder when toolbar input is not focused */
+.omnibox-unfocused-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  font-size: 14px;
+  color: var(--chrome-url-ghost, rgba(255, 255, 255, 0.45));
+  pointer-events: none;
+  z-index: 1;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 /* ── Ghost text (inline autocomplete) ────────────────────────────────────── */

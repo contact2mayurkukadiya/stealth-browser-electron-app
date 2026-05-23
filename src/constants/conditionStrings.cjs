@@ -77,6 +77,9 @@ const BOOKMARK = freeze({
 const OVERLAY = freeze({
   DISMISS: 'dismiss',
   OMNIBOX_SUGGEST_PICK: 'omniboxSuggestPick',
+  OMNIBOX_INPUT_CHANGE: 'omniboxInputChange',
+  OMNIBOX_INPUT_COMMIT: 'omniboxInputCommit',
+  OMNIBOX_KEY_DOWN: 'omniboxKeyDown',
   BOOKMARK_MENU: 'bookmarkMenu',
   BOOKMARK_FOLDER_PICK: 'bookmarkFolderPick',
   BOOKMARK_EDITOR_REMOVE: 'bookmarkEditorRemove',

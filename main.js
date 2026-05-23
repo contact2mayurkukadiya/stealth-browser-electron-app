@@ -982,6 +982,20 @@ function layoutChromeOverlayBounds(context) {
     }
 }
 
+/** Move native keyboard focus to the chrome overlay so omnibox B can accept typing. */
+function focusChromeOverlayWebContents(context) {
+    if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return;
+    if (context.chromeOverlayAcquireCount <= 0) return;
+    try {
+        if (context.window && !context.window.isDestroyed()) context.window.focus();
+    } catch (_) { /* ignore */ }
+    try {
+        context.chromeOverlayView.webContents.focus();
+    } catch (err) {
+        console.error('focusChromeOverlayWebContents', err?.message || err);
+    }
+}
+
 function getWindowContextByChromeOverlaySender(sender) {
     if (!sender || sender.isDestroyed?.()) return null;
     for (const ctx of windowContextsById.values()) {
@@ -1132,7 +1146,7 @@ function activateTabInContext(context, id) {
         const omniboxGen = context.omniboxFocusGen;
         setImmediate(() => {
             if (context.omniboxFocusGen !== omniboxGen) return;
-            sendOmniboxFocusToShell(context, id, true);
+            sendOmniboxFocusToShell(context, id, true, false);
         });
     }
 
@@ -1291,7 +1305,7 @@ function isCustomNewTabDocumentUrl(url) {
 }
 
 /** Focus shell omnibox — shared by activateTabInContext and load handlers. */
-function sendOmniboxFocusToShell(context, tabId, selectAll) {
+function sendOmniboxFocusToShell(context, tabId, selectAll, openOverlay = false) {
     if (!context.window || context.window.isDestroyed()) return;
     try {
         context.window.focus();
@@ -1300,7 +1314,11 @@ function sendOmniboxFocusToShell(context, tabId, selectAll) {
     }
     if (context.window.webContents.isDestroyed()) return;
     context.window.webContents.focus();
-    context.window.webContents.send(C.IPC_EVENT.OMNIBOX_FOCUS, { tabId, selectAll });
+    context.window.webContents.send(C.IPC_EVENT.OMNIBOX_FOCUS, {
+        tabId,
+        selectAll,
+        openOverlay: !!openOverlay,
+    });
 }
 
 function toDisplayUrl(rawUrl) {
@@ -2034,11 +2052,18 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
     } catch {
         return { ok: false };
     }
+    const patch = payload ?? {};
     try {
-        context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, payload ?? {});
+        context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
     } catch (err) {
         console.error(C.IPC_INVOKE.CHROME_OVERLAY_POST, err?.message || err);
         return { ok: false };
+    }
+    if (patch.kind === 'omniboxSuggestions' && patch.focusInput !== false) {
+        setImmediate(() => {
+            if (context.chromeOverlayAcquireCount <= 0) return;
+            focusChromeOverlayWebContents(context);
+        });
     }
     return { ok: true };
 });
@@ -2376,7 +2401,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
         if (shouldReassertOmniboxAfterPageLoad(loadedUrl)) {
             setImmediate(() => {
                 if (context.activeTabId !== id) return;
-                sendOmniboxFocusToShell(context, id, false);
+                sendOmniboxFocusToShell(context, id, false, false);
             });
             return;
         }
@@ -2386,7 +2411,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
         if (isCustomNewTabDocumentUrl(loadedUrl) && isBlankTab(loadedUrl)) {
             setImmediate(() => {
                 if (context.activeTabId !== id) return;
-                sendOmniboxFocusToShell(context, id, true);
+                sendOmniboxFocusToShell(context, id, true, false);
             });
         }
     });
@@ -2676,6 +2701,14 @@ function broadcastThemeApply() {
         }
     }
     for (const ctx of windowContextsById.values()) {
+        for (const view of Object.values(ctx.tabs || {})) {
+            if (!view || view.webContents.isDestroyed()) continue;
+            try {
+                view.webContents.send(C.IPC_EVENT.THEME_APPLY, payload);
+            } catch (_) {
+                /* tab view may be navigating or closing */
+            }
+        }
         sendChromeOverlayThemePatch(ctx);
     }
 }
@@ -3010,7 +3043,7 @@ ipcMain.on(C.IPC_SEND.OMNIBOX_STEAL_FOCUS, (e) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.activeTabId) return;
-    sendOmniboxFocusToShell(context, context.activeTabId, true);
+    sendOmniboxFocusToShell(context, context.activeTabId, true, true);
 });
 
 /**

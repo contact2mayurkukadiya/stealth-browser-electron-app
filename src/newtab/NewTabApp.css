@@ -80,7 +80,7 @@ body,
 }
 
 body {
-  background: var(--chrome-content-bg, var(--ntp-surface));
+  background: var(--chrome-slider, var(--chrome-body-bg, var(--ntp-surface)));
   color: var(--ntp-on-surface);
   font-family: var(--ntp-font);
   -webkit-font-smoothing: antialiased;
@@ -114,6 +114,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  background: var(--chrome-slider, var(--chrome-body-bg, var(--ntp-surface)));
 }
 
 /* Logos and favicons: avoid accidental drag into chromed UI / OS */
@@ -127,8 +128,8 @@ body {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: linear-gradient(to bottom right, var(--ntp-surface), var(--ntp-surface-low));
-  opacity: 0.85;
+  background: var(--chrome-slider, var(--chrome-body-bg, var(--ntp-surface)));
+  opacity: 1;
 }
 
 /* ── Main — search + frequent links centered in viewport ──────────────────── */
