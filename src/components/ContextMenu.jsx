@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
+import { BOOKMARK } from '../constants/conditionStrings.js';
 
 export default function ContextMenu({ items, x, y, onClose, variant = 'default' }) {
   if (!items || items.length === 0) return null;
@@ -21,7 +22,7 @@ export default function ContextMenu({ items, x, y, onClose, variant = 'default' 
         onMouseDown={e => e.stopPropagation()}
       >
         {items.map((item, i) => (
-          item.type === 'separator' ? (
+          item.type === BOOKMARK.TYPE_SEPARATOR ? (
             <div key={i} className={separatorClassName} role="separator" />
           ) : (
             <button

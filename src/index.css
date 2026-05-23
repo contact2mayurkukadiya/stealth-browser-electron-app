@@ -50,8 +50,8 @@
     --chrome-toolbar-icon-muted: rgba(255, 255, 255, 0.58);
     --chrome-toolbar-img-filter: brightness(0) invert(1);
     --chrome-omnibox-focus-border: #9aa0a6;
-    --chrome-omnibox-selection-bg: rgba(255, 255, 255, 0.22);
-    --chrome-omnibox-selection-fg: #0d0d0d;
+    --chrome-omnibox-selection-bg: #b9d8c7;
+    --chrome-omnibox-selection-fg: #000000;
 }
 
 @media (prefers-color-scheme: light) {
@@ -81,8 +81,8 @@
         --chrome-toolbar-icon-muted: rgba(60, 64, 67, 0.72);
         --chrome-toolbar-img-filter: brightness(0);
         --chrome-omnibox-focus-border: #3c4043;
-        --chrome-omnibox-selection-bg: rgba(26, 115, 232, 0.28);
-        --chrome-omnibox-selection-fg: #202124;
+        --chrome-omnibox-selection-bg: #1e4d34;
+        --chrome-omnibox-selection-fg: #ffffff;
     }
 }
 
@@ -115,8 +115,8 @@ html[data-forced-appearance="light"] {
     --chrome-toolbar-icon-muted: rgba(60, 64, 67, 0.72);
     --chrome-toolbar-img-filter: brightness(0);
     --chrome-omnibox-focus-border: #3c4043;
-    --chrome-omnibox-selection-bg: rgba(26, 115, 232, 0.28);
-    --chrome-omnibox-selection-fg: #202124;
+    --chrome-omnibox-selection-bg: #1e4d34;
+    --chrome-omnibox-selection-fg: #ffffff;
 }
 
 html[data-forced-appearance="light"] .bk-add-folder {
@@ -153,8 +153,8 @@ html[data-forced-appearance="dark"] {
     --chrome-toolbar-icon-muted: rgba(255, 255, 255, 0.58);
     --chrome-toolbar-img-filter: brightness(0) invert(1);
     --chrome-omnibox-focus-border: #9aa0a6;
-    --chrome-omnibox-selection-bg: rgba(255, 255, 255, 0.22);
-    --chrome-omnibox-selection-fg: #0d0d0d;
+    --chrome-omnibox-selection-bg: #b9d8c7;
+    --chrome-omnibox-selection-fg: #000000;
 }
 
 body {
@@ -516,7 +516,7 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 
 #url-input::selection {
     background: var(--chrome-omnibox-selection-bg, #FFB430);
-    color: var(--chrome-omnibox-selection-fg, #000000);
+    color: var(--chrome-omnibox-selection-fg, #ffffff);
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */

@@ -92,7 +92,7 @@ export default function GroupCard({ groupTitle, entries, onOpenEntry, onOpenCont
       <div role="list">
         {entries.map((entry) => (
           <GroupEntry
-            key={entry.timestamp + entry.url}
+            key={entry.visitId || `${entry.timestamp}-${entry.url}`}
             entry={entry}
             onOpenEntry={onOpenEntry}
           />

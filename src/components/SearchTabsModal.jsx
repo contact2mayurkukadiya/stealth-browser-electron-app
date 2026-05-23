@@ -3,6 +3,7 @@ import { useTabOverlay } from '../context/TabOverlayContext';
 import { logoIcognitoDarkSvg } from '../constants/appAssetUrls';
 import { useInvsurfLogoFaviconUrl } from '../hooks/useInvsurfLogoFavicon';
 import { isInvsurfBrandedInternalTab } from '../utils/invisurfInternalPages';
+import { KEYBOARD, PLATFORM } from '../constants/conditionStrings.js';
 
 function getHostname(url) {
   if (!url || typeof url !== 'string') return '';
@@ -95,22 +96,22 @@ export default function SearchTabsModal({
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === KEYBOARD.ESCAPE) {
         e.preventDefault();
         onClose();
         return;
       }
-      if (e.key === 'ArrowDown') {
+      if (e.key === KEYBOARD.ARROW_DOWN) {
         e.preventDefault();
         safeSelect(selectedIndex + 1);
         return;
       }
-      if (e.key === 'ArrowUp') {
+      if (e.key === KEYBOARD.ARROW_UP) {
         e.preventDefault();
         safeSelect(selectedIndex - 1);
         return;
       }
-      if (e.key === 'Enter' && filteredOrder[selectedIndex]) {
+      if (e.key === KEYBOARD.ENTER && filteredOrder[selectedIndex]) {
         e.preventDefault();
         onSelectTab(filteredOrder[selectedIndex]);
         onClose();
@@ -128,7 +129,7 @@ export default function SearchTabsModal({
   if (!open) return null;
 
   const platform = window.electronAPI?.platform;
-  const shortcutHint = platform === 'darwin' ? '⇧⌘A' : 'Shift+Ctrl+A';
+  const shortcutHint = platform === PLATFORM.DARWIN ? '⇧⌘A' : 'Shift+Ctrl+A';
 
   return (
     <div className="search-tabs-overlay" role="dialog" aria-label="Search tabs">
@@ -144,7 +145,7 @@ export default function SearchTabsModal({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') e.stopPropagation();
+              if (e.key === KEYBOARD.ARROW_DOWN || e.key === KEYBOARD.ARROW_UP) e.stopPropagation();
             }}
           />
           <span className="search-tabs-shortcut-hint">{shortcutHint}</span>

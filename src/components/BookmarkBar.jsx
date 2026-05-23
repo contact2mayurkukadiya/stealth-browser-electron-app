@@ -4,6 +4,7 @@ import { setBookmarks } from '../store/bookmarksSlice';
 import { useChromeOverlay } from '../context/ChromeOverlayContext';
 import BookmarkItem from './BookmarkItem';
 import { bookmarkAddFolderSvg } from '../constants/appAssetUrls';
+import { BOOKMARK, OVERLAY, KEYBOARD } from '../constants/conditionStrings.js';
 
 const ADD_FOLDER_ICON = (
   <img className="chrome-toolbar-icon-img" src={bookmarkAddFolderSvg} width={16} height={16} alt="" />
@@ -14,8 +15,8 @@ function findFolderInBookmarkTree(nodes, folderId) {
   if (!Array.isArray(nodes) || !folderId) return null;
   for (const node of nodes) {
     if (!node) continue;
-    if (node.type === 'folder' && node.id === folderId) return node;
-    if (node.type === 'folder' && node.children?.length) {
+    if (node.type === BOOKMARK.TYPE_FOLDER && node.id === folderId) return node;
+    if (node.type === BOOKMARK.TYPE_FOLDER && node.children?.length) {
       const sub = findFolderInBookmarkTree(node.children, folderId);
       if (sub) return sub;
     }
@@ -50,7 +51,7 @@ export default function BookmarkBar({ currentTabId }) {
   }, [showFolderPrompt]);
 
   const handleNavigate = useCallback((url) => {
-    if (currentTabId) window.electronAPI.navigate(currentTabId, url);
+    if (currentTabId) window.electronAPI.navigate(currentTabId, url, { source: 'bookmark' });
   }, [currentTabId]);
 
   const dismissBookmarkOverlay = useCallback(async () => {
@@ -84,11 +85,11 @@ export default function BookmarkBar({ currentTabId }) {
     (bookmarkItemId, id) => {
       const target = bookmarksData.bar.find((b) => b.id === bookmarkItemId);
       if (!target) return;
-      if (id === 'openBookmark' && target.type !== 'folder') {
+      if (id === BOOKMARK.MENU_OPEN && target.type !== BOOKMARK.TYPE_FOLDER) {
         handleNavigate(target.url);
         return;
       }
-      if (id === 'removeBookmark') {
+      if (id === BOOKMARK.MENU_REMOVE) {
         void (async () => {
           try {
             const next = await window.electronAPI.bookmarksRemove(bookmarkItemId);
@@ -105,12 +106,12 @@ export default function BookmarkBar({ currentTabId }) {
   useEffect(() => {
     const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
       const t = data?.type;
-      if (t === 'dismiss') {
+      if (t === OVERLAY.DISMISS) {
         if (bookmarkMenuActiveRef.current) void dismissBookmarkOverlay();
         if (folderMenuActiveRef.current) void dismissFolderOverlay();
         return;
       }
-      if (t === 'bookmarkFolderPick') {
+      if (t === OVERLAY.BOOKMARK_FOLDER_PICK) {
         if (!folderMenuActiveRef.current) return;
         const folderId = data?.folderId;
         const itemId = data?.itemId;
@@ -122,13 +123,13 @@ export default function BookmarkBar({ currentTabId }) {
         const child = folder && Array.isArray(folder.children)
           ? folder.children.find((c) => c.id === itemId)
           : null;
-        if (child?.type === 'bookmark' && child.url) {
+        if (child?.type === BOOKMARK.TYPE_BOOKMARK && child.url) {
           handleNavigate(child.url);
         }
         void dismissFolderOverlay();
         return;
       }
-      if (t === 'bookmarkMenu') {
+      if (t === OVERLAY.BOOKMARK_MENU) {
         if (!bookmarkMenuActiveRef.current) return;
         const { bookmarkItemId, id } = data || {};
         if (!bookmarkItemId || !id) {
@@ -197,7 +198,7 @@ export default function BookmarkBar({ currentTabId }) {
 
   const openFolderMenu = useCallback(
     async (e, folderItem) => {
-      if (folderItem.type !== 'folder') return;
+      if (folderItem.type !== BOOKMARK.TYPE_FOLDER) return;
       const api = window.electronAPI;
       if (!api?.chromeOverlayV1Reset) return;
 
@@ -211,7 +212,7 @@ export default function BookmarkBar({ currentTabId }) {
       const children = Array.isArray(folder.children) ? folder.children : [];
       const items = children.map((ch) => ({
         id: ch.id,
-        type: ch.type === 'folder' ? 'folder' : 'bookmark',
+        type: ch.type === BOOKMARK.TYPE_FOLDER ? 'folder' : 'bookmark',
         title: String(ch.title || '').slice(0, 200),
         url: ch.url != null ? String(ch.url).slice(0, 2000) : '',
         favicon: ch.favicon != null ? String(ch.favicon).slice(0, 2000) : '',
@@ -262,8 +263,8 @@ export default function BookmarkBar({ currentTabId }) {
   };
 
   const handleFolderKeyDown = (e) => {
-    if (e.key === 'Enter') createFolder();
-    if (e.key === 'Escape') cancelFolder();
+    if (e.key === KEYBOARD.ENTER) createFolder();
+    if (e.key === KEYBOARD.ESCAPE) cancelFolder();
   };
 
   return (

@@ -9,6 +9,7 @@ import ReactDOM from 'react-dom';
 import '../components/omnibox/omnibox.css';
 import AutocompleteController from '../components/omnibox/AutocompleteController.js';
 import { toNavigateUrl } from '../components/omnibox/AutocompleteInput.js';
+import { BOOKMARK, KEYBOARD, OMNIBOX_SUGGESTION } from '../constants/conditionStrings.js';
 
 // ── Mirrors OmniboxInput suggestion row markup (kept local for the NTP bundle) ─
 
@@ -74,10 +75,10 @@ const KeywordIcon = () => (
 
 function getTypeIcon(type) {
   switch (type) {
-    case 'history':  return <HistoryIcon />;
-    case 'search':   return <SearchRowIcon />;
-    case 'bookmark': return <BookmarkIcon />;
-    case 'keyword':  return <KeywordIcon />;
+    case OMNIBOX_SUGGESTION.HISTORY:  return <HistoryIcon />;
+    case OMNIBOX_SUGGESTION.SEARCH:   return <SearchRowIcon />;
+    case OMNIBOX_SUGGESTION.BOOKMARK: return <BookmarkIcon />;
+    case OMNIBOX_SUGGESTION.KEYWORD:  return <KeywordIcon />;
     default:         return <GlobeIcon />;
   }
 }
@@ -194,8 +195,8 @@ export default function NtpSearchBox() {
     controller.unlockList();
   }, [controller]);
 
-  const navigateTo = useCallback((url) => {
-    window.electronAPI.navigate('current', url);
+  const navigateTo = useCallback((url, source = 'typed') => {
+    window.electronAPI.navigate('current', url, { source });
     closeDropdown();
     setInputValue('');
     inputRef.current?.blur();
@@ -257,7 +258,7 @@ export default function NtpSearchBox() {
   const handleKeyDown = useCallback((e) => {
     const { key } = e;
 
-    if (key === 'ArrowDown') {
+    if (key === KEYBOARD.ARROW_DOWN) {
       e.preventDefault();
       if (!showDropdown || suggestions.length === 0) return;
       if (!isNavigatingRef.current) {
@@ -271,7 +272,7 @@ export default function NtpSearchBox() {
       return;
     }
 
-    if (key === 'ArrowUp') {
+    if (key === KEYBOARD.ARROW_UP) {
       e.preventDefault();
       if (!showDropdown || suggestions.length === 0) return;
       if (!isNavigatingRef.current) {
@@ -285,19 +286,19 @@ export default function NtpSearchBox() {
       return;
     }
 
-    if (key === 'Enter') {
+    if (key === KEYBOARD.ENTER) {
       e.preventDefault();
       if (selectedIndex >= 0 && suggestions[selectedIndex]) {
-        navigateTo(suggestions[selectedIndex].url);
+        navigateTo(suggestions[selectedIndex].url, suggestions[selectedIndex].type);
       } else if (ghostSuffix) {
-        navigateTo(inputValue + ghostSuffix);
+        navigateTo(inputValue + ghostSuffix, 'typed');
       } else if (inputValue.trim()) {
-        navigateTo(toNavigateUrl(inputValue, searchEngine));
+        navigateTo(toNavigateUrl(inputValue, searchEngine), 'typed');
       }
       return;
     }
 
-    if (key === 'Escape') {
+    if (key === KEYBOARD.ESCAPE) {
       e.preventDefault();
       closeDropdown();
       setInputValue('');
@@ -305,7 +306,7 @@ export default function NtpSearchBox() {
       return;
     }
 
-    if (key === 'Tab') {
+    if (key === KEYBOARD.TAB) {
       if (ghostSuffix) {
         e.preventDefault();
         const completed = inputValue + ghostSuffix;
@@ -316,7 +317,7 @@ export default function NtpSearchBox() {
       return;
     }
 
-    if (key === 'Backspace' && ghostSuffix) {
+    if (key === KEYBOARD.BACKSPACE && ghostSuffix) {
       e.preventDefault();
       setGhostSuffix('');
     }
@@ -335,7 +336,7 @@ export default function NtpSearchBox() {
 
   const handleSuggestionMouseDown = useCallback((ev, suggestion) => {
     ev.preventDefault();
-    navigateTo(suggestion.url);
+    navigateTo(suggestion.url, suggestion.type);
   }, [navigateTo]);
 
   const effectiveInputValue = useMemo(() => {
@@ -374,7 +375,7 @@ export default function NtpSearchBox() {
       )
     : null;
 
-  const fieldIcon = isFocused && effectiveInputValue.startsWith('https://') ? <LockIcon /> : <SearchIcon />;
+  const fieldIcon = isFocused && effectiveInputValue.startsWith(C.URL.SCHEME_HTTPS) ? <LockIcon /> : <SearchIcon />;
 
   return (
     <div className="ntp-search-box" ref={containerRef}>

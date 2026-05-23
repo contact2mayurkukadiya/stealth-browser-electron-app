@@ -48,9 +48,9 @@ export default function ByDateView({
           <h2 className="h-date-heading">{label}</h2>
           {items.map((entry) => (
             <HistoryRow
-              key={entry.timestamp + entry.url}
+              key={entry.visitId || `${entry.timestamp}-${entry.url}`}
               entry={entry}
-              isSelected={selected.has(entry.timestamp)}
+              isSelected={selected.has(entry.visitId)}
               onToggleSelect={onToggleSelect}
               onOpenEntry={onOpenEntry}
               onOpenContextMenu={onOpenContextMenu}

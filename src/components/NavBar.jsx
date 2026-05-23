@@ -7,6 +7,7 @@ import { collectFolderOptions } from '../utils/bookmarkFolderList';
 import OmniboxInput from './omnibox/OmniboxInput';
 import ProfileMenuButton from './ProfileMenuButton';
 import ProfileEditorModal from './ProfileEditorModal';
+import { BOOKMARK, OVERLAY, PROFILE } from '../constants/conditionStrings.js';
 import {
   bookmarkStarFilledSvg,
   navBackSvg,
@@ -34,10 +35,10 @@ const MORE_ICON = (
 /** Search bar → root, folder → folder id, not found → 'root' (fallback). */
 function findFolderIdForBookmark(bookmarkId, list) {
   for (const item of list) {
-    if (item.type === 'bookmark' && item.id === bookmarkId) return 'root';
-    if (item.type === 'folder' && item.children) {
+    if (item.type === BOOKMARK.TYPE_BOOKMARK && item.id === bookmarkId) return 'root';
+    if (item.type === BOOKMARK.TYPE_FOLDER && item.children) {
       for (const child of item.children) {
-        if (child.type === 'bookmark' && child.id === bookmarkId) return item.id;
+        if (child.type === BOOKMARK.TYPE_BOOKMARK && child.id === bookmarkId) return item.id;
       }
     }
   }
@@ -49,8 +50,8 @@ function findBookmarkByUrl(url, list) {
   const norm = u => u.toLowerCase().replace(/\/$/, '');
   const target = norm(url);
   for (const item of list) {
-    if (item.type === 'bookmark' && norm(item.url || '') === target) return item;
-    if (item.type === 'folder' && item.children) {
+    if (item.type === BOOKMARK.TYPE_BOOKMARK && norm(item.url || '') === target) return item;
+    if (item.type === BOOKMARK.TYPE_FOLDER && item.children) {
       const found = findBookmarkByUrl(url, item.children);
       if (found) return found;
     }
@@ -59,7 +60,7 @@ function findBookmarkByUrl(url, list) {
 }
 
 function isValidFolderId(folderId, bar) {
-  if (folderId === 'root') return true;
+  if (folderId === BOOKMARK.ROOT_ID) return true;
   return collectFolderOptions(bar).some((f) => f.id === folderId);
 }
 
@@ -174,7 +175,7 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
     const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
       if (!starEditorActiveRef.current) return;
       const t = data?.type;
-      if (t === 'dismiss') {
+      if (t === OVERLAY.DISMISS) {
         void closeStarBookmarkEditor();
         return;
       }
@@ -205,7 +206,7 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
           try {
             const result = await window.electronAPI.bookmarksAddFolder(name);
             dispatch(setBookmarks(result));
-            const newFolder = [...result.bar].reverse().find((i) => i.type === 'folder');
+            const newFolder = [...result.bar].reverse().find((i) => i.type === BOOKMARK.TYPE_FOLDER);
             const newFolderId = newFolder?.id || 'root';
             await postStarEditorPatch(
               {
@@ -230,7 +231,7 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
           void closeStarBookmarkEditor();
           return;
         }
-        let folderId = data?.folderId === 'root' ? 'root' : String(data?.folderId || 'root');
+        let folderId = data?.folderId === BOOKMARK.ROOT_ID ? 'root' : String(data?.folderId || 'root');
         const bar = bookmarksBarRef.current;
         if (!isValidFolderId(folderId, bar)) folderId = 'root';
         const title = String(data?.title || '').trim().slice(0, 500) || session.url;
@@ -244,7 +245,7 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
         };
         void (async () => {
           try {
-            const result = folderId === 'root'
+            const result = folderId === BOOKMARK.ROOT_ID
               ? await window.electronAPI.bookmarksAdd(item)
               : await window.electronAPI.bookmarksAddToFolder(folderId, item);
             dispatch(setBookmarks(result));
@@ -325,7 +326,7 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
   const handleProfileEditorSaved = useCallback(
     async ({ mode, profile }) => {
       await loadProfiles();
-      if (mode === 'create' && profile?.profileId) {
+      if (mode === PROFILE.MODE_CREATE && profile?.profileId) {
         await window.electronAPI.profileOpenWindow?.(profile.profileId);
       }
       setProfileEditorOpen(false);
@@ -376,7 +377,7 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
       <ProfileEditorModal
         open={profileEditorOpen}
         mode={profileEditorMode}
-        initialProfile={profileEditorMode === 'edit' ? currentProfile : null}
+        initialProfile={profileEditorMode === PROFILE.MODE_EDIT ? currentProfile : null}
         onClose={() => setProfileEditorOpen(false)}
         onSaved={handleProfileEditorSaved}
       />

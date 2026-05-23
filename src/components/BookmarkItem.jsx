@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
 import { setBookmarks } from '../store/bookmarksSlice';
+import { BOOKMARK } from '../constants/conditionStrings.js';
 
 const FOLDER_ICON = (
   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 640 640">
@@ -30,7 +31,7 @@ export default function BookmarkItem({
   const dispatch = useDispatch();
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const isFolder = item.type === 'folder';
+  const isFolder = item.type === BOOKMARK.TYPE_FOLDER;
 
   const handleDragStart = (e) => {
     onDismissFolderMenuOnDrag?.();
@@ -61,7 +62,7 @@ export default function BookmarkItem({
     const srcItem = bookmarksData.bar.find(b => b.id === srcId);
     if (!srcItem) return;
 
-    if (isFolder && srcItem.type !== 'folder') {
+    if (isFolder && srcItem.type !== BOOKMARK.TYPE_FOLDER) {
       await window.electronAPI.bookmarksAddToFolder(item.id, srcItem);
     } else {
       const newBar = [...bookmarksData.bar];

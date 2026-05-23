@@ -58,7 +58,7 @@ export default function HistoryRow({
         type="checkbox"
         className="h-row-checkbox"
         checked={isSelected}
-        onChange={() => onToggleSelect(entry.timestamp)}
+        onChange={() => onToggleSelect(entry.visitId)}
         onClick={(e) => e.stopPropagation()}
         aria-label={`Select "${entry.title}"`}
       />

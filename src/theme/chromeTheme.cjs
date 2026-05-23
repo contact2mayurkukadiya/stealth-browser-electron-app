@@ -872,27 +872,43 @@ function toolbarIconTokensFromAppearance(navHex, effectiveDark) {
   };
 }
 
+function omniboxSelectionBgFromTheme(themeHex, fallbackHex, effectiveDark) {
+  const source =
+    (typeof themeHex === 'string' && /^#[0-9a-fA-F]{6}$/.test(themeHex.trim()) && themeHex.trim()) ||
+    (typeof fallbackHex === 'string' && /^#[0-9a-fA-F]{6}$/.test(fallbackHex.trim()) && fallbackHex.trim()) ||
+    (effectiveDark ? '#2f3c42' : '#1a73e8');
+  const rgb = hexToRgb(source);
+  if (!rgb) return effectiveDark ? '#1f2a30' : '#1558b0';
+
+  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  const nextS = Math.max(hsl.s, effectiveDark ? 24 : 34);
+  const nextL = effectiveDark
+    ? Math.max(70, Math.min(84, hsl.l * 1.35))
+    : Math.max(20, Math.min(34, hsl.l * 0.42));
+  const nextRgb = hslToRgb(hsl.h, nextS, nextL);
+  return rgbToHex(nextRgb.r, nextRgb.g, nextRgb.b);
+}
+
 /** Focus ring darker than url-well on light UI; lighter shade on dark UI */
-function omniboxFocusTokens(urlWellHex, effectiveDark) {
+function omniboxFocusTokens(urlWellHex, effectiveDark, accentHintHex) {
   const raw = typeof urlWellHex === 'string' ? urlWellHex.trim() : '';
   const well = /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : effectiveDark ? '#2f3c42' : '#ebecef';
+  const selBg = omniboxSelectionBgFromTheme(accentHintHex, well, effectiveDark);
 
   if (effectiveDark) {
     const border = mixHex(well, '#ffffff', 0.52);
-    const selBg = mixHex(well, '#ffffff', 0.28);
     return {
       '--chrome-omnibox-focus-border': border,
       '--chrome-omnibox-selection-bg': selBg,
-      '--chrome-omnibox-selection-fg': '#0d0d0d',
+      '--chrome-omnibox-selection-fg': '#000000',
     };
   }
 
   const border = mixHex(well, '#0a0a0a', 0.42);
-  const selBg = mixHex(well, '#1a73e8', 0.32);
   return {
     '--chrome-omnibox-focus-border': border,
     '--chrome-omnibox-selection-bg': selBg,
-    '--chrome-omnibox-selection-fg': '#202124',
+    '--chrome-omnibox-selection-fg': '#ffffff',
   };
 }
 
@@ -930,7 +946,7 @@ function enrichUnifiedToolbarTokens(tokens, effectiveDark) {
   Object.assign(next, toolbarIconTokensFromAppearance(navForToolbarIcons, effectiveDark));
 
   const well = next['--chrome-url-well'];
-  Object.assign(next, omniboxFocusTokens(well, effectiveDark));
+  Object.assign(next, omniboxFocusTokens(well, effectiveDark, accentHint));
 
   return next;
 }

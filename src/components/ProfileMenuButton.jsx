@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { useChromeOverlay } from '../context/ChromeOverlayContext';
 import ProfileAvatar from './ProfileAvatar';
 import './ProfileMenuButton.css';
+import { OVERLAY } from '../constants/conditionStrings.js';
 
 const CHEVRON = (
   <svg className="profile-menu__chevron-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden>
@@ -116,21 +117,21 @@ export default function ProfileMenuButton({
     const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
       if (!openRef.current) return;
       const t = data?.type;
-      if (t === 'dismiss') {
+      if (t === OVERLAY.DISMISS) {
         close();
         return;
       }
-      if (t === 'selectProfile') {
+      if (t === OVERLAY.SELECT_PROFILE) {
         close();
         onOpenProfile?.(data.profileId);
         return;
       }
-      if (t === 'editProfile') {
+      if (t === OVERLAY.EDIT_PROFILE) {
         close();
         onEditProfile?.();
         return;
       }
-      if (t === 'addProfile') {
+      if (t === OVERLAY.ADD_PROFILE) {
         close();
         onAddProfile?.();
       }

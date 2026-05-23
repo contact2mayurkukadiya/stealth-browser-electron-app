@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ProfileAvatar from './ProfileAvatar';
 import { loadProfilePresetAvatars } from '../utils/profilePresetAvatars';
 import './ProfileEditorModal.css';
+import { PROFILE } from '../constants/conditionStrings.js';
 
 const CAMERA_ICON = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -52,7 +53,7 @@ export default function ProfileEditorModal({
       const list = await loadProfilePresetAvatars();
       if (!cancelled) setPresetAvatars(list);
     })();
-    if (mode === 'create') {
+    if (mode === PROFILE.MODE_CREATE) {
       setName('');
       setAvatarPreviewSrc(null);
       return () => {
@@ -143,7 +144,7 @@ export default function ProfileEditorModal({
     }
     setSaving(true);
     try {
-      if (mode === 'create') {
+      if (mode === PROFILE.MODE_CREATE) {
         if (pendingAvatarDataUrl && !pendingPresetFileName) {
           const pre = await window.electronAPI.profileValidateAvatarData?.(pendingAvatarDataUrl);
           if (!pre?.ok) {
@@ -246,20 +247,20 @@ export default function ProfileEditorModal({
   if (!open) return null;
 
   const previewAvatarSource =
-    mode === 'edit' && removeAvatarOnSave
+    mode === PROFILE.MODE_EDIT && removeAvatarOnSave
       ? null
       : pendingPresetFileName
         ? 'preset'
         : pendingAvatarDataUrl
           ? 'upload'
-          : mode === 'edit' && initialProfile?.hasCustomAvatar
-            ? initialProfile.avatarSource === 'preset'
+          : mode === PROFILE.MODE_EDIT && initialProfile?.hasCustomAvatar
+            ? initialProfile.avatarSource === PROFILE.AVATAR_PRESET
               ? 'preset'
               : 'upload'
             : null;
 
   const previewProfile =
-    mode === 'edit' && initialProfile
+    mode === PROFILE.MODE_EDIT && initialProfile
       ? {
           ...initialProfile,
           displayName: name || initialProfile.displayName,
@@ -276,7 +277,7 @@ export default function ProfileEditorModal({
   const avatarImageOverride =
     avatarPreviewSrc != null
       ? avatarPreviewSrc
-      : removeAvatarOnSave && mode === 'edit'
+      : removeAvatarOnSave && mode === PROFILE.MODE_EDIT
         ? ''
         : undefined;
 
@@ -292,7 +293,7 @@ export default function ProfileEditorModal({
       >
         <div className="profile-editor-dialog-top">
           <h2 id="profile-editor-title" className="profile-editor-title">
-            {mode === 'create' ? 'Add profile' : 'Edit profile'}
+            {mode === PROFILE.MODE_CREATE ? 'Add profile' : 'Edit profile'}
           </h2>
 
           <div className="profile-editor-avatar-block">
@@ -312,7 +313,7 @@ export default function ProfileEditorModal({
               className="profile-editor-file-input"
               onChange={onFileChange}
             />
-            {(avatarPreviewSrc || (mode === 'edit' && initialProfile?.hasCustomAvatar && !removeAvatarOnSave)) && (
+            {(avatarPreviewSrc || (mode === PROFILE.MODE_EDIT && initialProfile?.hasCustomAvatar && !removeAvatarOnSave)) && (
               <button type="button" className="profile-editor-remove-photo" onClick={handleRemovePhoto}>
                 Remove photo
               </button>

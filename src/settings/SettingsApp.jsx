@@ -3,6 +3,7 @@ import './SettingsApp.css';
 import { getAccentPresetsForUi, normalizeAccentHex } from '../theme/index.js';
 import { useChromeTheme } from '../hooks/useChromeTheme';
 import { useInvsurfDocumentFavicon } from '../hooks/useInvsurfLogoFavicon';
+import { SETTINGS } from '../constants/conditionStrings.js';
 
 const STARTUP_OPTIONS = [
   {
@@ -231,9 +232,9 @@ export default function SettingsApp() {
                 >
                   {APPEARANCE_MODE_SEGMENTS.map((seg) => {
                     const active =
-                      (seg.value === 'automatic' &&
-                        settings.colorTheme !== 'dark' &&
-                        settings.colorTheme !== 'light') ||
+                      (seg.value === SETTINGS.COLOR_AUTOMATIC &&
+                        settings.colorTheme !== SETTINGS.COLOR_DARK &&
+                        settings.colorTheme !== SETTINGS.COLOR_LIGHT) ||
                       settings.colorTheme === seg.value;
                     return (
                       <button
@@ -291,8 +292,8 @@ export default function SettingsApp() {
                   })}
                   <div
                     role="radio"
-                    aria-checked={settings.accentTheme === 'custom'}
-                    className={`accent-swatch accent-swatch--custom${settings.accentTheme === 'custom' ? ' accent-swatch--selected' : ''}`}
+                    aria-checked={settings.accentTheme === SETTINGS.ACCENT_CUSTOM}
+                    className={`accent-swatch accent-swatch--custom${settings.accentTheme === SETTINGS.ACCENT_CUSTOM ? ' accent-swatch--selected' : ''}`}
                     title="Custom — pick a seed colour"
                   >
                     <input
@@ -312,7 +313,7 @@ export default function SettingsApp() {
                         aria-hidden
                       />
                       <span className="accent-swatch__label">Custom</span>
-                      {settings.accentTheme === 'custom' ? (
+                      {settings.accentTheme === SETTINGS.ACCENT_CUSTOM ? (
                         <span className="accent-swatch__check" aria-hidden>
                           ✓
                         </span>

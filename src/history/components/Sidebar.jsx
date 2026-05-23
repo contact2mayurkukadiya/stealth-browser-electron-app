@@ -1,5 +1,6 @@
 import React from 'react';
 import { historyGoogleLogoSvg } from '../../constants/appAssetUrls';
+import { KEYBOARD, HISTORY_VIEW } from '../../constants/conditionStrings.js';
 
 const CLOCK_ICON = (
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -36,8 +37,8 @@ export default function Sidebar({ activeItem, onDeleteBrowsingData, onRefresh })
       <nav>
         <button
           type="button"
-          className={`h-nav-item${activeItem === 'chrome-history' ? ' active' : ''}`}
-          aria-current={activeItem === 'chrome-history' ? 'page' : undefined}
+          className={`h-nav-item${activeItem === HISTORY_VIEW.CHROME_HISTORY ? ' active' : ''}`}
+          aria-current={activeItem === HISTORY_VIEW.CHROME_HISTORY ? 'page' : undefined}
         >
           {CLOCK_ICON}
           <span className="h-nav-item-label">Chrome history</span>
@@ -47,7 +48,7 @@ export default function Sidebar({ activeItem, onDeleteBrowsingData, onRefresh })
             className="h-nav-refresh-btn"
             title="Refresh history"
             onClick={(e) => { e.stopPropagation(); onRefresh?.(); }}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onRefresh?.(); } }}
+            onKeyDown={(e) => { if (e.key === KEYBOARD.ENTER || e.key === KEYBOARD.SPACE) { e.stopPropagation(); onRefresh?.(); } }}
             aria-label="Refresh history"
           >
             {REFRESH_ICON}

@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
+import { APPEARANCE } from '../constants/conditionStrings.js';
 import {
   logoIcognitoDarkSvg,
   logoPurpleDarkSvg,
@@ -8,8 +9,8 @@ import {
 function readEffectiveDark() {
   if (typeof document === 'undefined') return false;
   const forced = document.documentElement.getAttribute('data-forced-appearance');
-  if (forced === 'dark') return true;
-  if (forced === 'light') return false;
+  if (forced === APPEARANCE.FORCED_DARK) return true;
+  if (forced === APPEARANCE.FORCED_LIGHT) return false;
   if (typeof window === 'undefined' || !window.matchMedia) return false;
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
@@ -19,7 +20,7 @@ function getLogoFaviconUrl() {
 }
 
 function subscribe(onStoreChange) {
-  if (typeof window === 'undefined') return () => {};
+  if (typeof window === 'undefined') return () => { };
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
   const onMq = () => onStoreChange();
   mq.addEventListener('change', onMq);

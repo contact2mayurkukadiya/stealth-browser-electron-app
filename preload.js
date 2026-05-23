@@ -1,152 +1,265 @@
 const { contextBridge, ipcRenderer, clipboard } = require('electron');
 
+// Keep preload self-contained: it runs with sandbox: true, where requiring
+// arbitrary local project files can fail before electronAPI is exposed.
+const C = Object.freeze({
+    "IPC_INVOKE": {
+        "RUN_MENU_COMMAND": "app:run-menu-command",
+        "IS_STEALTH_WINDOW": "context:is-stealth-window",
+        "WINDOW_CREATE": "window:create",
+        "WINDOW_CREATE_STEALTH": "window:create-stealth",
+        "WINDOW_CLOSE_IF_STEALTH": "window:close-if-stealth",
+        "WINDOW_GET_BOOTSTRAP": "window:get-bootstrap",
+        "PROFILE_LIST": "profile:list",
+        "PROFILE_GET_CURRENT": "profile:get-current",
+        "PROFILE_CREATE": "profile:create",
+        "PROFILE_UPDATE": "profile:update",
+        "PROFILE_SET_AVATAR_DATA": "profile:setAvatarData",
+        "PROFILE_SET_AVATAR_PRESET": "profile:setAvatarFromPresetPng",
+        "PROFILE_VALIDATE_AVATAR": "profile:validateAvatarData",
+        "PROFILE_LIST_PRESETS": "profile:list-preset-avatar-pngs",
+        "PROFILE_CLEAR_AVATAR": "profile:clearAvatar",
+        "PROFILE_GET_AVATAR": "profile:getAvatarDataUrl",
+        "PROFILE_DELETE": "profile:delete",
+        "PROFILE_OPEN_WINDOW": "profile:open-window",
+        "CHROME_OVERLAY_RESET": "chrome-overlay:v1:reset",
+        "CHROME_OVERLAY_ACQUIRE": "chrome-overlay:v1:acquire",
+        "CHROME_OVERLAY_RELEASE": "chrome-overlay:v1:release",
+        "CHROME_OVERLAY_POST": "chrome-overlay:v1:post",
+        "SETTINGS_GET": "settings:get",
+        "SETTINGS_SAVE": "settings:save",
+        "APP_RELAUNCH": "app:relaunch",
+        "COMPAT_GET_REPORT": "compatDiag:getReport",
+        "COMPAT_CLEAR": "compatDiag:clear",
+        "SESSION_LOAD": "session:load",
+        "SESSION_SAVE": "session:save",
+        "HISTORY_SEARCH": "history:search",
+        "HISTORY_SUGGESTIONS": "history:get-suggestions",
+        "HISTORY_DELETE_VISITS": "history:delete-visits",
+        "HISTORY_DELETE_URLS": "history:delete-urls",
+        "HISTORY_CLEAR": "history:clear",
+        "NTP_TOP_SITES": "newtab:get-top-sites",
+        "BOOKMARKS_GET": "bookmarks:get",
+        "BOOKMARKS_SAVE": "bookmarks:save",
+        "BOOKMARKS_ADD": "bookmarks:add",
+        "BOOKMARKS_REMOVE": "bookmarks:remove",
+        "BOOKMARKS_REORDER": "bookmarks:reorder",
+        "BOOKMARKS_ADD_FOLDER": "bookmarks:addFolder",
+        "BOOKMARKS_ADD_TO_FOLDER": "bookmarks:addToFolder",
+        "TAB_HIDE_ACTIVE": "tab:hide-active",
+        "TAB_RESTORE_ACTIVE": "tab:restore-active",
+        "TAB_CAPTURE_SNAPSHOT": "tab:capture-active-snapshot",
+        "TAB_PREPARE_SHELL_OVERLAY": "tab:prepare-shell-overlay",
+        "TAB_MOVE_NEW_WINDOW": "tab:move-to-new-window",
+        "TAB_STRIP_CONTEXT_MENU": "tab:strip-context-menu",
+        "TAB_GET_INFO": "tab:get-info",
+        "DEVTOOLS_UNDOCKED": "devtools:open-undocked"
+    },
+    "IPC_SEND": {
+        "NEW_TAB": "new-tab",
+        "SWITCH_TAB": "switch-tab",
+        "CLOSE_TAB": "close-tab",
+        "NAVIGATE": "navigate",
+        "GO_BACK": "go-back",
+        "GO_FORWARD": "go-forward",
+        "RELOAD": "reload",
+        "TAB_SLEEP_REGISTER": "tab:sleep-register",
+        "TAB_MENU_SYNC": "tab-menu:sync-labels",
+        "TAB_SET_AUDIO_MUTED": "tab:set-audio-muted",
+        "OMNIBOX_STEAL_FOCUS": "omnibox:steal-focus",
+        "TOOLTIP_SHOW": "tooltip:show",
+        "TOOLTIP_HIDE": "tooltip:hide",
+        "CHROME_OVERLAY_FROM_OVERLAY": "chrome-overlay:v1:from-overlay"
+    },
+    "IPC_EVENT": {
+        "URL_CHANGED": "url-changed",
+        "TAB_UPDATE": "tab-update",
+        "TAB_CREATED": "tab-created",
+        "TAB_SWITCHED": "tab-switched",
+        "OMNIBOX_FOCUS": "omnibox:focus",
+        "SHORTCUT_NEW_TAB": "shortcut-new-tab",
+        "SHORTCUT_HISTORY": "shortcut-history",
+        "SHORTCUT_SETTINGS": "shortcut-settings",
+        "SHORTCUT_CLOSE_TAB": "shortcut-close-tab",
+        "SHORTCUT_RELOAD": "shortcut-reload",
+        "SHORTCUT_SWITCH_TAB": "shortcut-switch-tab",
+        "SHORTCUT_TAB_NEW_RIGHT": "shortcut-tab-new-to-right",
+        "SHORTCUT_TAB_DUPLICATE": "shortcut-tab-duplicate",
+        "SHORTCUT_TAB_MUTE": "shortcut-tab-mute-site",
+        "SHORTCUT_TAB_PIN": "shortcut-tab-pin",
+        "SHORTCUT_TAB_CLOSE_OTHERS": "shortcut-tab-close-others",
+        "SHORTCUT_TAB_CLOSE_RIGHT": "shortcut-tab-close-right",
+        "SHORTCUT_TAB_MOVE_WINDOW": "shortcut-tab-move-new-window",
+        "SHORTCUT_TAB_SEARCH": "shortcut-tab-search",
+        "SHORTCUT_COMMAND_PALETTE": "shortcut-command-palette",
+        "TAB_STRIP_MENU_ACTION": "tab-strip-context-menu:action",
+        "CHROME_OVERLAY_HOST": "chrome-overlay:v1:host-event",
+        "CHROME_OVERLAY_SUPERSEDED": "chrome-overlay:v1:superseded",
+        "CHROME_OVERLAY_PATCH": "chrome-overlay:v1:patch",
+        "THEME_APPLY": "theme:apply",
+        "TAB_AWOKEN": "tab:awoken",
+        "TOOLTIP_UPDATE": "tooltip:update"
+    }
+});
+
 contextBridge.exposeInMainWorld('electronAPI', {
     // Tab management
-    newTab: (id, isStealth = false, url = null) => ipcRenderer.send('new-tab', { id, isStealth, url }),
-    switchTab: (id) => ipcRenderer.send('switch-tab', { id }),
-    closeTab: (id) => ipcRenderer.send('close-tab', { id }),
-    navigate: (id, url) => ipcRenderer.send('navigate', { id, url }),
-    goBack: (id) => ipcRenderer.send('go-back', { id }),
-    goForward: (id) => ipcRenderer.send('go-forward', { id }),
-    reload: (id) => ipcRenderer.send('reload', { id }),
-    onUrlChanged: (callback) => ipcRenderer.on('url-changed', (event, data) => callback(data)),
-    onTabUpdate: (callback) => ipcRenderer.on('tab-update', (event, data) => callback(data)),
-    onTabCreated: (callback) => ipcRenderer.on('tab-created', (event, data) => callback(data)),
-    onTabSwitched: (callback) => ipcRenderer.on('tab-switched', (event, data) => callback(data)),
-    onOmniboxFocus: (callback) => ipcRenderer.on('omnibox:focus', (event, data) => callback(data)),
-    onShortcutNewTab: (callback) => ipcRenderer.on('shortcut-new-tab', () => callback()),
-    onShortcutHistory: (callback) => ipcRenderer.on('shortcut-history', () => callback()),
-    onShortcutSettings: (callback) => ipcRenderer.on('shortcut-settings', () => callback()),
-    onShortcutCloseTab: (callback) => ipcRenderer.on('shortcut-close-tab', () => callback()),
-    onShortcutReload: (callback) => ipcRenderer.on('shortcut-reload', () => callback()),
-    onShortcutSwitchTab: (callback) => ipcRenderer.on('shortcut-switch-tab', (event, data) => callback(data)),
-    onShortcutTabNewToRight: (callback) => ipcRenderer.on('shortcut-tab-new-to-right', () => callback()),
-    onShortcutTabDuplicate: (callback) => ipcRenderer.on('shortcut-tab-duplicate', () => callback()),
-    onShortcutTabMuteSite: (callback) => ipcRenderer.on('shortcut-tab-mute-site', () => callback()),
-    onShortcutTabPin: (callback) => ipcRenderer.on('shortcut-tab-pin', () => callback()),
-    onShortcutTabCloseOthers: (callback) => ipcRenderer.on('shortcut-tab-close-others', () => callback()),
-    onShortcutTabCloseRight: (callback) => ipcRenderer.on('shortcut-tab-close-right', () => callback()),
-    onShortcutTabMoveNewWindow: (callback) => ipcRenderer.on('shortcut-tab-move-new-window', () => callback()),
-    onShortcutTabSearch: (callback) => ipcRenderer.on('shortcut-tab-search', () => callback()),
-    onShortcutCommandPalette: (callback) => ipcRenderer.on('shortcut-command-palette', () => callback()),
+    newTab: (id, isStealth = false, url = null, options = {}) => ipcRenderer.send(C.IPC_SEND.NEW_TAB, {
+        id,
+        isStealth,
+        url,
+        source: options && typeof options.source === 'string' ? options.source : undefined,
+    }),
+    switchTab: (id) => ipcRenderer.send(C.IPC_SEND.SWITCH_TAB, { id }),
+    closeTab: (id) => ipcRenderer.send(C.IPC_SEND.CLOSE_TAB, { id }),
+    navigate: (id, url, options = {}) => ipcRenderer.send(C.IPC_SEND.NAVIGATE, {
+        id,
+        url,
+        source: options && typeof options.source === 'string' ? options.source : undefined,
+    }),
+    goBack: (id) => ipcRenderer.send(C.IPC_SEND.GO_BACK, { id }),
+    goForward: (id) => ipcRenderer.send(C.IPC_SEND.GO_FORWARD, { id }),
+    reload: (id) => ipcRenderer.send(C.IPC_SEND.RELOAD, { id }),
+    onUrlChanged: (callback) => ipcRenderer.on(C.IPC_EVENT.URL_CHANGED, (event, data) => callback(data)),
+    onTabUpdate: (callback) => ipcRenderer.on(C.IPC_EVENT.TAB_UPDATE, (event, data) => callback(data)),
+    onTabCreated: (callback) => ipcRenderer.on(C.IPC_EVENT.TAB_CREATED, (event, data) => callback(data)),
+    onTabSwitched: (callback) => ipcRenderer.on(C.IPC_EVENT.TAB_SWITCHED, (event, data) => callback(data)),
+    onOmniboxFocus: (callback) => ipcRenderer.on(C.IPC_EVENT.OMNIBOX_FOCUS, (event, data) => callback(data)),
+    onShortcutNewTab: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_NEW_TAB, () => callback()),
+    onShortcutHistory: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_HISTORY, () => callback()),
+    onShortcutSettings: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_SETTINGS, () => callback()),
+    onShortcutCloseTab: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_CLOSE_TAB, () => callback()),
+    onShortcutReload: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_RELOAD, () => callback()),
+    onShortcutSwitchTab: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_SWITCH_TAB, (event, data) => callback(data)),
+    onShortcutTabNewToRight: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_TAB_NEW_RIGHT, () => callback()),
+    onShortcutTabDuplicate: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_TAB_DUPLICATE, () => callback()),
+    onShortcutTabMuteSite: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_TAB_MUTE, () => callback()),
+    onShortcutTabPin: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_TAB_PIN, () => callback()),
+    onShortcutTabCloseOthers: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_TAB_CLOSE_OTHERS, () => callback()),
+    onShortcutTabCloseRight: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_TAB_CLOSE_RIGHT, () => callback()),
+    onShortcutTabMoveNewWindow: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_TAB_MOVE_WINDOW, () => callback()),
+    onShortcutTabSearch: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_TAB_SEARCH, () => callback()),
+    onShortcutCommandPalette: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_COMMAND_PALETTE, () => callback()),
 
-    runMenuCommand: (commandId) => ipcRenderer.invoke('app:run-menu-command', commandId),
-    createWindow: (profileId) => ipcRenderer.invoke('window:create', { profileId }),
-    createStealthWindow: () => ipcRenderer.invoke('window:create-stealth'),
+    runMenuCommand: (commandId) => ipcRenderer.invoke(C.IPC_INVOKE.RUN_MENU_COMMAND, commandId),
+    createWindow: (profileId) => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE, { profileId }),
+    createStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE_STEALTH),
     /** Close this BrowserWindow only if it is a stealth window; normal windows ignore (returns ok: false). */
-    closeStealthWindow: () => ipcRenderer.invoke('window:close-if-stealth'),
-    windowGetBootstrap: () => ipcRenderer.invoke('window:get-bootstrap'),
+    closeStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH),
+    windowGetBootstrap: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_GET_BOOTSTRAP),
     /** True when this renderer lives in a stealth (incognito) window — including tab WebContents. */
-    isStealthWindow: () => ipcRenderer.invoke('context:is-stealth-window'),
+    isStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.IS_STEALTH_WINDOW),
 
-    tabSetAudioMuted: (id, muted) => ipcRenderer.send('tab:set-audio-muted', { id, muted }),
-    tabMenuSyncLabels: (payload) => ipcRenderer.send('tab-menu:sync-labels', payload),
-    tabMoveToNewWindow: (id, fallbackTabId) => ipcRenderer.invoke('tab:move-to-new-window', { id, fallbackTabId }),
+    tabSetAudioMuted: (id, muted) => ipcRenderer.send(C.IPC_SEND.TAB_SET_AUDIO_MUTED, { id, muted }),
+    tabMenuSyncLabels: (payload) => ipcRenderer.send(C.IPC_SEND.TAB_MENU_SYNC, payload),
+    tabMoveToNewWindow: (id, fallbackTabId) => ipcRenderer.invoke(C.IPC_INVOKE.TAB_MOVE_NEW_WINDOW, { id, fallbackTabId }),
 
     // Bookmarks
-    bookmarksGet: () => ipcRenderer.invoke('bookmarks:get'),
-    bookmarksSave: (data) => ipcRenderer.invoke('bookmarks:save', data),
-    bookmarksAdd: (item) => ipcRenderer.invoke('bookmarks:add', item),
-    bookmarksRemove: (id) => ipcRenderer.invoke('bookmarks:remove', id),
-    bookmarksReorder: (bar) => ipcRenderer.invoke('bookmarks:reorder', bar),
-    bookmarksAddFolder: (name) => ipcRenderer.invoke('bookmarks:addFolder', name),
-    bookmarksAddToFolder: (folderId, item) => ipcRenderer.invoke('bookmarks:addToFolder', folderId, item),
+    bookmarksGet: () => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_GET),
+    bookmarksSave: (data) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_SAVE, data),
+    bookmarksAdd: (item) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_ADD, item),
+    bookmarksRemove: (id) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_REMOVE, id),
+    bookmarksReorder: (bar) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_REORDER, bar),
+    bookmarksAddFolder: (name) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_ADD_FOLDER, name),
+    bookmarksAddToFolder: (folderId, item) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_ADD_TO_FOLDER, folderId, item),
 
     // History
-    historyGet: () => ipcRenderer.invoke('history:get'),
-    historyRemoveItems: (timestamps) => ipcRenderer.invoke('history:remove-items', timestamps),
-    historyClear: () => ipcRenderer.invoke('history:clear'),
+    historySearch: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.HISTORY_SEARCH, payload),
+    historyGetSuggestions: (query) => ipcRenderer.invoke(C.IPC_INVOKE.HISTORY_SUGGESTIONS, query),
+    historyDeleteVisits: (visitIds) => ipcRenderer.invoke(C.IPC_INVOKE.HISTORY_DELETE_VISITS, visitIds),
+    historyDeleteUrls: (urls) => ipcRenderer.invoke(C.IPC_INVOKE.HISTORY_DELETE_URLS, urls),
+    historyClear: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.HISTORY_CLEAR, payload),
 
     // Profiles
-    profileList: () => ipcRenderer.invoke('profile:list'),
-    profileGetCurrent: () => ipcRenderer.invoke('profile:get-current'),
-    profileCreate: (displayName) => ipcRenderer.invoke('profile:create', { displayName }),
-    profileUpdate: (payload) => ipcRenderer.invoke('profile:update', payload),
-    profileSetAvatarData: (payload) => ipcRenderer.invoke('profile:setAvatarData', payload),
-    profileSetAvatarFromPresetPng: (payload) => ipcRenderer.invoke('profile:setAvatarFromPresetPng', payload),
-    profileValidateAvatarData: (dataUrl) => ipcRenderer.invoke('profile:validateAvatarData', { dataUrl }),
-    profileListPresetAvatarPngs: () => ipcRenderer.invoke('profile:list-preset-avatar-pngs'),
-    profileClearAvatar: (profileId) => ipcRenderer.invoke('profile:clearAvatar', { profileId }),
-    profileGetAvatarDataUrl: (profileId) => ipcRenderer.invoke('profile:getAvatarDataUrl', { profileId }),
-    profileDelete: (profileId) => ipcRenderer.invoke('profile:delete', { profileId }),
+    profileList: () => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_LIST),
+    profileGetCurrent: () => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_GET_CURRENT),
+    profileCreate: (displayName) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_CREATE, { displayName }),
+    profileUpdate: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_UPDATE, payload),
+    profileSetAvatarData: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_SET_AVATAR_DATA, payload),
+    profileSetAvatarFromPresetPng: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_SET_AVATAR_PRESET, payload),
+    profileValidateAvatarData: (dataUrl) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_VALIDATE_AVATAR, { dataUrl }),
+    profileListPresetAvatarPngs: () => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_LIST_PRESETS),
+    profileClearAvatar: (profileId) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_CLEAR_AVATAR, { profileId }),
+    profileGetAvatarDataUrl: (profileId) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_GET_AVATAR, { profileId }),
+    profileDelete: (profileId) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_DELETE, { profileId }),
     profileOpenWindow: (profileId, options = {}) =>
-        ipcRenderer.invoke('profile:open-window', {
+        ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_OPEN_WINDOW, {
             profileId,
             closeProfilePicker: options.closeProfilePicker === true,
         }),
 
     // Session
-    sessionSave: (data) => ipcRenderer.invoke('session:save', data),
-    sessionLoad: () => ipcRenderer.invoke('session:load'),
+    sessionSave: (data) => ipcRenderer.invoke(C.IPC_INVOKE.SESSION_SAVE, data),
+    sessionLoad: () => ipcRenderer.invoke(C.IPC_INVOKE.SESSION_LOAD),
 
-    getTabInfo: (id) => ipcRenderer.invoke('tab:get-info', { id }),
-    tabHideActive: () => ipcRenderer.invoke('tab:hide-active'),
-    tabRestoreActive: () => ipcRenderer.invoke('tab:restore-active'),
-    tabCaptureActiveSnapshot: () => ipcRenderer.invoke('tab:capture-active-snapshot'),
-    tabPrepareShellOverlay: () => ipcRenderer.invoke('tab:prepare-shell-overlay'),
+    getTabInfo: (id) => ipcRenderer.invoke(C.IPC_INVOKE.TAB_GET_INFO, { id }),
+    tabHideActive: () => ipcRenderer.invoke(C.IPC_INVOKE.TAB_HIDE_ACTIVE),
+    tabRestoreActive: () => ipcRenderer.invoke(C.IPC_INVOKE.TAB_RESTORE_ACTIVE),
+    tabCaptureActiveSnapshot: () => ipcRenderer.invoke(C.IPC_INVOKE.TAB_CAPTURE_SNAPSHOT),
+    tabPrepareShellOverlay: () => ipcRenderer.invoke(C.IPC_INVOKE.TAB_PREPARE_SHELL_OVERLAY),
     /** Native tab strip context menu (Menu.popup); actions via onTabStripContextMenuAction. */
-    tabStripContextMenuShow: (payload) => ipcRenderer.invoke('tab:strip-context-menu', payload),
+    tabStripContextMenuShow: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.TAB_STRIP_CONTEXT_MENU, payload),
     onTabStripContextMenuAction: (callback) => {
         const handler = (_event, data) => callback(data);
-        ipcRenderer.on('tab-strip-context-menu:action', handler);
-        return () => ipcRenderer.removeListener('tab-strip-context-menu:action', handler);
+        ipcRenderer.on(C.IPC_EVENT.TAB_STRIP_MENU_ACTION, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.TAB_STRIP_MENU_ACTION, handler);
     },
 
     /**
      * Tier 2 — Chrome overlay WebContentsView above the tab (main ref-counts acquire/release).
      * Tier 1: native Menu.popup. Tier 3 (legacy): tabPrepareShellOverlay / detach.
      */
-    chromeOverlayV1Reset: () => ipcRenderer.invoke('chrome-overlay:v1:reset'),
-    chromeOverlayV1Acquire: () => ipcRenderer.invoke('chrome-overlay:v1:acquire'),
-    chromeOverlayV1Release: () => ipcRenderer.invoke('chrome-overlay:v1:release'),
-    chromeOverlayV1Post: (payload) => ipcRenderer.invoke('chrome-overlay:v1:post', payload),
+    chromeOverlayV1Reset: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_RESET),
+    chromeOverlayV1Acquire: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_ACQUIRE),
+    chromeOverlayV1Release: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE),
+    chromeOverlayV1Post: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_POST, payload),
     onChromeOverlayV1HostEvent: (callback) => {
         const handler = (_event, data) => callback(data);
-        ipcRenderer.on('chrome-overlay:v1:host-event', handler);
-        return () => ipcRenderer.removeListener('chrome-overlay:v1:host-event', handler);
+        ipcRenderer.on(C.IPC_EVENT.CHROME_OVERLAY_HOST, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.CHROME_OVERLAY_HOST, handler);
     },
     onChromeOverlaySuperseded: (callback) => {
         const handler = () => callback();
-        ipcRenderer.on('chrome-overlay:v1:superseded', handler);
-        return () => ipcRenderer.removeListener('chrome-overlay:v1:superseded', handler);
+        ipcRenderer.on(C.IPC_EVENT.CHROME_OVERLAY_SUPERSEDED, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.CHROME_OVERLAY_SUPERSEDED, handler);
     },
     /** Chrome overlay page only: user actions back to shell via main. */
-    chromeOverlayNotifyHost: (data) => ipcRenderer.send('chrome-overlay:v1:from-overlay', data),
+    chromeOverlayNotifyHost: (data) => ipcRenderer.send(C.IPC_SEND.CHROME_OVERLAY_FROM_OVERLAY, data),
     onChromeOverlayV1Patch: (callback) => {
         const handler = (_event, payload) => callback(payload);
-        ipcRenderer.on('chrome-overlay:v1:patch', handler);
-        return () => ipcRenderer.removeListener('chrome-overlay:v1:patch', handler);
+        ipcRenderer.on(C.IPC_EVENT.CHROME_OVERLAY_PATCH, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.CHROME_OVERLAY_PATCH, handler);
     },
 
     // Lazy tab loading: register a tab as sleeping (no WebContentsView created yet)
-    tabSleepRegister: (id, url) => ipcRenderer.send('tab:sleep-register', { id, url }),
+    tabSleepRegister: (id, url) => ipcRenderer.send(C.IPC_SEND.TAB_SLEEP_REGISTER, { id, url }),
     // Called by main process when a sleeping tab's WebContentsView is created on activation
-    onTabAwoken: (callback) => ipcRenderer.on('tab:awoken', (event, data) => callback(data)),
+    onTabAwoken: (callback) => ipcRenderer.on(C.IPC_EVENT.TAB_AWOKEN, (event, data) => callback(data)),
 
     // Settings
-    settingsGet: () => ipcRenderer.invoke('settings:get'),
-    settingsSave: (data) => ipcRenderer.invoke('settings:save', data),
-    appRelaunch: () => ipcRenderer.invoke('app:relaunch'),
+    settingsGet: () => ipcRenderer.invoke(C.IPC_INVOKE.SETTINGS_GET),
+    settingsSave: (data) => ipcRenderer.invoke(C.IPC_INVOKE.SETTINGS_SAVE, data),
+    appRelaunch: () => ipcRenderer.invoke(C.IPC_INVOKE.APP_RELAUNCH),
 
     /** Subscribe to accent/theme updates broadcast from main (all windows). */
     onThemeApply: (callback) => {
         const handler = (_event, payload) => callback(payload);
-        ipcRenderer.on('theme:apply', handler);
-        return () => ipcRenderer.removeListener('theme:apply', handler);
+        ipcRenderer.on(C.IPC_EVENT.THEME_APPLY, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.THEME_APPLY, handler);
     },
 
-    compatDiagGetReport: (payload) => ipcRenderer.invoke('compatDiag:getReport', payload),
-    compatDiagClear: (payload) => ipcRenderer.invoke('compatDiag:clear', payload),
+    compatDiagGetReport: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.COMPAT_GET_REPORT, payload),
+    compatDiagClear: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.COMPAT_CLEAR, payload),
     clipboardWriteText: (text) => clipboard.writeText(String(text || '')),
 
     // New Tab Page
-    ntpGetTopSites: () => ipcRenderer.invoke('newtab:get-top-sites'),
-    ntpStealFocus: () => ipcRenderer.send('omnibox:steal-focus'),
+    ntpGetTopSites: () => ipcRenderer.invoke(C.IPC_INVOKE.NTP_TOP_SITES),
+    ntpStealFocus: () => ipcRenderer.send(C.IPC_SEND.OMNIBOX_STEAL_FOCUS),
 
     // Tooltip Overlay
-    tooltipShow: (data) => ipcRenderer.send('tooltip:show', data),
-    tooltipHide: () => ipcRenderer.send('tooltip:hide'),
-    onTooltipUpdate: (callback) => ipcRenderer.on('tooltip:update', (event, v) => callback(v)),
+    tooltipShow: (data) => ipcRenderer.send(C.IPC_SEND.TOOLTIP_SHOW, data),
+    tooltipHide: () => ipcRenderer.send(C.IPC_SEND.TOOLTIP_HIDE),
+    onTooltipUpdate: (callback) => ipcRenderer.on(C.IPC_EVENT.TOOLTIP_UPDATE, (event, v) => callback(v)),
 
     // Platform identifier — used by the renderer to apply platform-specific styles
     platform: process.platform,

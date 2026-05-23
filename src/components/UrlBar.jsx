@@ -1,31 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { buildDisplayParts } from '../utils/omniboxDisplayUrl.js';
+import { KEYBOARD, NAV_SOURCE } from '../constants/conditionStrings.js';
 
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function buildDisplayParts(url) {
-  if (!url || url.startsWith('app://') || url === 'New Tab') return null;
-  try {
-    const urlObj = new URL(url);
-    const protocol = urlObj.protocol + '//';
-    let displayUrl = url.replace(protocol, '');
-    if (displayUrl.endsWith('/') && displayUrl.split('/').length === 2) {
-      displayUrl = displayUrl.slice(0, -1);
-    }
-    const domain = urlObj.hostname;
-    const idx = displayUrl.indexOf(domain);
-    if (idx === -1) return { prefix: '', domain: displayUrl, suffix: '' };
-    return {
-      prefix: displayUrl.substring(0, idx),
-      domain,
-      suffix: displayUrl.substring(idx + domain.length),
-    };
-  } catch {
-    return { prefix: '', domain: url, suffix: '' };
-  }
 }
 
 export default function UrlBar({ currentTabId, tabsData }) {
@@ -68,8 +48,8 @@ export default function UrlBar({ currentTabId, tabsData }) {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && currentTabId) {
-      window.electronAPI.navigate(currentTabId, inputValue);
+    if (e.key === KEYBOARD.ENTER && currentTabId) {
+      window.electronAPI.navigate(currentTabId, inputValue, { source: NAV_SOURCE.TYPED });
       inputRef.current?.blur();
     }
   };

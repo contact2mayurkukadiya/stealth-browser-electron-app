@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { DOM_EVENT } from '../constants/conditionStrings.js';
 import { useDispatch } from 'react-redux';
 import { updateTab, updateTabUrl } from '../store/browserSlice';
 
@@ -83,7 +84,7 @@ export function useElectronIPC({
     // without needing a prop chain. Mirrors the electron-shortcut-invoked pattern.
     if (api.onOmniboxFocus) {
       api.onOmniboxFocus((data) => {
-        window.dispatchEvent(new CustomEvent('omnibox:request-focus', { detail: data }));
+        window.dispatchEvent(new CustomEvent(DOM_EVENT.OMNIBOX_REQUEST_FOCUS, { detail: data }));
       });
     }
 

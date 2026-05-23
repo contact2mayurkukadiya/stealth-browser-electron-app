@@ -2,6 +2,7 @@ import HistoryProvider from './providers/HistoryProvider.js';
 import SearchSuggestionsProvider from './providers/SearchSuggestionsProvider.js';
 import BookmarkProvider from './providers/BookmarkProvider.js';
 import KeywordProvider from './providers/KeywordProvider.js';
+import { OMNIBOX_SUGGESTION } from '../../constants/conditionStrings.js';
 
 const MAX_SUGGESTIONS = 8;
 
@@ -112,7 +113,7 @@ export default class AutocompleteController {
    */
   _getInlineAutocomplete(input, topSuggestion) {
     if (!topSuggestion || !input) return null;
-    if (!['history', 'bookmark', 'url', 'keyword'].includes(topSuggestion.type)) return null;
+    if (!OMNIBOX_SUGGESTION.DEFAULT_TYPES.includes(topSuggestion.type)) return null;
 
     const candidate = topSuggestion.url;
     const lower = input.toLowerCase();

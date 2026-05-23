@@ -19,6 +19,12 @@ import CommandPaletteModal from './components/CommandPaletteModal';
 import { buildCommandPaletteCommands } from './commandPaletteCommands';
 import { TabOverlayProvider } from './context/TabOverlayContext';
 import { ChromeOverlayProvider } from './context/ChromeOverlayContext';
+import {
+  URL as URL_C,
+  NAV_SOURCE,
+  TAB_STRIP_MENU,
+  CONTEXT_MENU,
+} from './constants/conditionStrings.js';
 
 function hostnameFromUrl(url) {
   if (!url || typeof url !== 'string') return '';
@@ -59,10 +65,10 @@ function AppShell() {
         .filter(id => tabs[id] && !tabs[id].isStealth)
         .map(id => ({
           id,
-          url: tabs[id].url || 'app://newtab',
+          url: tabs[id].url || URL_C.NTP_DISPLAY,
           // Persist display metadata so sleeping tabs can show the right
           // title and favicon immediately on the next session restore.
-          title: tabs[id].title || 'New Tab',
+          title: tabs[id].title || URL_C.NEW_TAB_LABEL,
           favicon: tabs[id].favicon || null,
         }));
 
@@ -102,7 +108,7 @@ function AppShell() {
   useEffect(() => {
     window.__navigateCurrentTab = (url) => {
       const { currentTabId } = stateRef.current;
-      if (currentTabId) window.electronAPI.navigate(currentTabId, url);
+      if (currentTabId) window.electronAPI.navigate(currentTabId, url, { source: NAV_SOURCE.BOOKMARK });
     };
   }, []);
 
@@ -334,17 +340,17 @@ function AppShell() {
     const stealthShell = stealthWindowRef.current;
 
     return [
-      { type: 'item', id: 'newTabRight', label: 'New Tab to the Right', enabled: true },
-      { type: 'item', id: 'moveNewWindow', label: 'Move Tab to New Window', enabled: !stealthShell },
-      { type: 'separator' },
-      { type: 'item', id: 'reload', label: 'Reload', enabled: !t.isSleeping },
-      { type: 'item', id: 'duplicate', label: 'Duplicate', enabled: true },
-      { type: 'item', id: 'togglePin', label: pinLabel, enabled: true },
-      { type: 'item', id: 'toggleMuteSite', label: muteLabel, enabled: !!host },
-      { type: 'separator' },
-      { type: 'item', id: 'close', label: 'Close', enabled: true },
-      { type: 'item', id: 'closeOthers', label: 'Close Other Tabs', enabled: true },
-      { type: 'item', id: 'closeRight', label: 'Close Tabs to the Right', enabled: true },
+      { type: CONTEXT_MENU.TYPE_ITEM, id: TAB_STRIP_MENU.NEW_TAB_RIGHT, label: 'New Tab to the Right', enabled: true },
+      { type: CONTEXT_MENU.TYPE_ITEM, id: TAB_STRIP_MENU.MOVE_NEW_WINDOW, label: 'Move Tab to New Window', enabled: !stealthShell },
+      { type: CONTEXT_MENU.TYPE_SEPARATOR },
+      { type: CONTEXT_MENU.TYPE_ITEM, id: TAB_STRIP_MENU.RELOAD, label: 'Reload', enabled: !t.isSleeping },
+      { type: CONTEXT_MENU.TYPE_ITEM, id: TAB_STRIP_MENU.DUPLICATE, label: 'Duplicate', enabled: true },
+      { type: CONTEXT_MENU.TYPE_ITEM, id: TAB_STRIP_MENU.TOGGLE_PIN, label: pinLabel, enabled: true },
+      { type: CONTEXT_MENU.TYPE_ITEM, id: TAB_STRIP_MENU.TOGGLE_MUTE_SITE, label: muteLabel, enabled: !!host },
+      { type: CONTEXT_MENU.TYPE_SEPARATOR },
+      { type: CONTEXT_MENU.TYPE_ITEM, id: TAB_STRIP_MENU.CLOSE, label: 'Close', enabled: true },
+      { type: CONTEXT_MENU.TYPE_ITEM, id: TAB_STRIP_MENU.CLOSE_OTHERS, label: 'Close Other Tabs', enabled: true },
+      { type: CONTEXT_MENU.TYPE_ITEM, id: TAB_STRIP_MENU.CLOSE_RIGHT, label: 'Close Tabs to the Right', enabled: true },
     ];
   }, []);
 
@@ -390,7 +396,7 @@ function AppShell() {
   }, [dispatch]);
 
   const handleOpenHistory = useCallback(() => {
-    openSingletonTab('invisurf://History', 'invisurf://history');
+    openSingletonTab(URL_C.HISTORY_NAVIGATE, URL_C.HISTORY_DISPLAY);
   }, [openSingletonTab]);
 
   const paletteCommands = useMemo(
@@ -436,7 +442,7 @@ function AppShell() {
   );
 
   const handleOpenSettings = useCallback(() => {
-    openSingletonTab('invisurf://Settings', 'invisurf://settings');
+    openSingletonTab(URL_C.SETTINGS_NAVIGATE, URL_C.SETTINGS_DISPLAY);
   }, [openSingletonTab]);
 
   const handleTabCreated = useCallback(({ id, url, isStealth }) => {
@@ -572,15 +578,15 @@ function AppShell() {
   }, [dispatch, createTab, createTabWithUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   tabStripMenuHandlersRef.current = {
-    newTabRight: newTabToTheRightOf,
-    moveNewWindow: moveTabToNewWindowFor,
-    reload: (tid) => window.electronAPI.reload(tid),
-    duplicate: duplicateTabFrom,
-    togglePin: togglePinForTab,
-    toggleMuteSite: muteSiteForTab,
-    close: closeTab,
-    closeOthers: closeOtherTabsThan,
-    closeRight: closeTabsToTheRightOf,
+    [TAB_STRIP_MENU.NEW_TAB_RIGHT]: newTabToTheRightOf,
+    [TAB_STRIP_MENU.MOVE_NEW_WINDOW]: moveTabToNewWindowFor,
+    [TAB_STRIP_MENU.RELOAD]: (tid) => window.electronAPI.reload(tid),
+    [TAB_STRIP_MENU.DUPLICATE]: duplicateTabFrom,
+    [TAB_STRIP_MENU.TOGGLE_PIN]: togglePinForTab,
+    [TAB_STRIP_MENU.TOGGLE_MUTE_SITE]: muteSiteForTab,
+    [TAB_STRIP_MENU.CLOSE]: closeTab,
+    [TAB_STRIP_MENU.CLOSE_OTHERS]: closeOtherTabsThan,
+    [TAB_STRIP_MENU.CLOSE_RIGHT]: closeTabsToTheRightOf,
   };
 
   return (

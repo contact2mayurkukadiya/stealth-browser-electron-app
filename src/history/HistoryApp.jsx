@@ -7,26 +7,29 @@ import ByDateView from './components/ByDateView';
 import ByGroupView from './components/ByGroupView';
 import ContextMenu from './components/ContextMenu';
 import ClearDataModal from './components/ClearDataModal';
+import { KEYBOARD } from '../constants/conditionStrings.js';
 
 export const VIEW_BY_DATE = 'byDate';
 export const VIEW_BY_GROUP = 'byGroup';
+
+const PAGE_SIZE = 50;
 
 function normalizeEntries(raw) {
   return (Array.isArray(raw) ? raw : [])
     .filter((entry) => entry && typeof entry.url === 'string')
     .map((entry) => {
-      const ts = Number(entry.timestamp);
+      const visitTime = Number(entry.visitTime ?? entry.timestamp);
+      const visitId = Number(entry.visitId);
       return {
+        visitId: Number.isFinite(visitId) ? visitId : visitTime,
+        urlId: Number(entry.urlId) || null,
         url: entry.url,
         title: entry.title || entry.url,
-        timestamp: Number.isFinite(ts) ? ts : Date.now(),
+        visitTime: Number.isFinite(visitTime) ? visitTime : Date.now(),
+        timestamp: Number.isFinite(visitTime) ? visitTime : Date.now(),
+        transition: entry.transition || 'LINK',
       };
-    })
-    .sort((a, b) => b.timestamp - a.timestamp);
-}
-
-function extractDomain(url) {
-  try { return new URL(url).hostname; } catch { return ''; }
+    });
 }
 
 export default function HistoryApp() {
@@ -39,11 +42,16 @@ export default function HistoryApp() {
   const [contextMenu, setContextMenu] = useState(null); // { x, y, entry }
   const [showClearModal, setShowClearModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [cursor, setCursor] = useState(null);
 
-  // Close context menu on outside click
   const contextMenuRef = useRef(null);
+  const sentinelRef = useRef(null);
+  const requestIdRef = useRef(0);
+
   useEffect(() => {
-    if (!contextMenu) return;
+    if (!contextMenu) return undefined;
     const onPointerDown = (e) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(e.target)) {
         setContextMenu(null);
@@ -53,10 +61,9 @@ export default function HistoryApp() {
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [contextMenu]);
 
-  // Escape closes modal and context menu
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === KEYBOARD.ESCAPE) {
         setContextMenu(null);
         setShowClearModal(false);
       }
@@ -65,57 +72,80 @@ export default function HistoryApp() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  const fetchHistory = useCallback(async () => {
-    setIsLoading(true);
+  const fetchHistory = useCallback(async ({ reset = false, nextCursor = null, query = searchTerm } = {}) => {
+    const requestId = ++requestIdRef.current;
+    if (reset) setIsLoading(true);
+    else setIsLoadingMore(true);
+
     try {
-      const raw = await window.electronAPI.historyGet();
-      setEntries(normalizeEntries(raw));
+      const result = await window.electronAPI.historySearch({
+        query,
+        limit: PAGE_SIZE,
+        cursor: reset ? null : nextCursor,
+      });
+      if (requestId !== requestIdRef.current) return;
+
+      const nextItems = normalizeEntries(result?.items);
+      setEntries((prev) => (reset ? nextItems : [...prev, ...nextItems]));
+      setCursor(result?.nextCursor || null);
+      setHasMore(!!result?.hasMore);
+      if (reset) setSelected(new Set());
     } catch (err) {
       console.error('Failed to load history:', err);
-      setEntries([]);
+      if (reset) {
+        setEntries([]);
+        setCursor(null);
+        setHasMore(false);
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      }
     }
-  }, []);
+  }, [searchTerm]);
 
-  // Load history on mount
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      fetchHistory({ reset: true, query: searchTerm });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [fetchHistory, searchTerm]);
 
-  const filteredEntries = searchTerm
-    ? entries.filter((e) => {
-        const q = searchTerm.toLowerCase();
-        return (
-          e.title.toLowerCase().includes(q) ||
-          e.url.toLowerCase().includes(q)
-        );
-      })
-    : entries;
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return undefined;
+    const observer = new IntersectionObserver((items) => {
+      const first = items[0];
+      if (!first?.isIntersecting) return;
+      if (!hasMore || isLoading || isLoadingMore) return;
+      fetchHistory({ reset: false, nextCursor: cursor });
+    }, { rootMargin: '240px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [cursor, fetchHistory, hasMore, isLoading, isLoadingMore]);
 
   const selectedCount = selected.size;
 
-  // ── Selection helpers ───────────────────────────────────────────────────────
-  const toggleSelect = useCallback((timestamp) => {
+  const toggleSelect = useCallback((visitId) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(timestamp)) next.delete(timestamp);
-      else next.add(timestamp);
+      if (next.has(visitId)) next.delete(visitId);
+      else next.add(visitId);
       return next;
     });
   }, []);
 
-  // ── Open entry in new tab and make it active ────────────────────────────────
   const openEntry = useCallback((url) => {
     const tabId = `h-${Date.now()}`;
-    window.electronAPI.newTab(tabId, false, url);
+    window.electronAPI.newTab(tabId, false, url, { source: 'history' });
     window.electronAPI.switchTab(tabId);
   }, []);
 
-  // ── Context menu ────────────────────────────────────────────────────────────
   const openContextMenu = useCallback((anchorRect, entry) => {
     const menuWidth = 200;
     let x = Math.round(anchorRect.right - menuWidth);
     let y = Math.round(anchorRect.bottom + 6);
-    // Keep inside viewport
     if (x < 4) x = 4;
     if (y + 120 > window.innerHeight) y = Math.round(anchorRect.top - 120);
     setContextMenu({ x, y, entry });
@@ -123,69 +153,46 @@ export default function HistoryApp() {
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
-  // ── Delete single entry ─────────────────────────────────────────────────────
-  const removeEntry = useCallback(async (timestamp) => {
-    const ts = Number(timestamp);
-    if (!Number.isFinite(ts)) return;
-    const ok = await window.electronAPI.historyRemoveItems([ts]);
+  const removeEntry = useCallback(async (entry) => {
+    const visitId = Number(entry?.visitId);
+    if (!Number.isFinite(visitId)) return;
+    const ok = await window.electronAPI.historyDeleteVisits([visitId]);
     if (!ok) return;
-    setEntries((prev) => prev.filter((e) => e.timestamp !== ts));
-    setSelected((prev) => { const n = new Set(prev); n.delete(ts); return n; });
+    setEntries((prev) => prev.filter((e) => e.visitId !== visitId));
+    setSelected((prev) => { const n = new Set(prev); n.delete(visitId); return n; });
   }, []);
 
-  // ── Delete selected entries ─────────────────────────────────────────────────
   const deleteSelected = useCallback(async () => {
     if (selected.size === 0) return;
-    const timestamps = Array.from(selected).map(Number).filter(Number.isFinite);
-    const ok = await window.electronAPI.historyRemoveItems(timestamps);
+    const visitIds = Array.from(selected).map(Number).filter(Number.isFinite);
+    const ok = await window.electronAPI.historyDeleteVisits(visitIds);
     if (!ok) return;
-    const removeSet = new Set(timestamps);
-    setEntries((prev) => prev.filter((e) => !removeSet.has(e.timestamp)));
+    const removeSet = new Set(visitIds);
+    setEntries((prev) => prev.filter((e) => !removeSet.has(e.visitId)));
     setSelected(new Set());
   }, [selected]);
 
-  // ── Clear by time range (from modal) ───────────────────────────────────────
   const clearByTimeRange = useCallback(async (rangeMs) => {
-    if (rangeMs === null) {
-      // "All time"
-      const ok = await window.electronAPI.historyClear();
-      if (!ok) return;
-      setEntries([]);
-      setSelected(new Set());
-    } else {
-      const cutoff = Date.now() - rangeMs;
-      const toRemove = entries
-        .filter((e) => e.timestamp >= cutoff)
-        .map((e) => Number(e.timestamp))
-        .filter(Number.isFinite);
-      if (toRemove.length === 0) {
-        setShowClearModal(false);
-        return;
-      }
-      const ok = await window.electronAPI.historyRemoveItems(toRemove);
-      if (!ok) return;
-      const removeSet = new Set(toRemove);
-      setEntries((prev) => prev.filter((e) => !removeSet.has(e.timestamp)));
-      setSelected((prev) => {
-        const next = new Set(prev);
-        for (const ts of removeSet) next.delete(ts);
-        return next;
-      });
-    }
+    const payload = rangeMs == null ? { since: null } : { since: Date.now() - rangeMs };
+    const ok = await window.electronAPI.historyClear(payload);
+    if (!ok) return;
     setShowClearModal(false);
-  }, [entries]);
+    await fetchHistory({ reset: true, query: searchTerm });
+  }, [fetchHistory, searchTerm]);
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  const refreshHistory = useCallback(() => {
+    fetchHistory({ reset: true, query: searchTerm });
+  }, [fetchHistory, searchTerm]);
+
   return (
     <div className="h-page">
       <Sidebar
         activeItem="chrome-history"
         onDeleteBrowsingData={() => setShowClearModal(true)}
-        onRefresh={fetchHistory}
+        onRefresh={refreshHistory}
       />
 
       <main className="h-main">
-        {/* Search */}
         <div className="h-search-wrap">
           <label className="h-search" htmlFor="h-search-input">
             <svg className="h-search-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -202,7 +209,6 @@ export default function HistoryApp() {
           </label>
         </div>
 
-        {/* View tabs */}
         <div className="h-view-tabs" role="tablist">
           <button
             role="tab"
@@ -236,7 +242,6 @@ export default function HistoryApp() {
           </button>
         </div>
 
-        {/* Selection toolbar */}
         <div className={`h-selection-bar${selectedCount === 0 ? ' hidden' : ''}`} aria-live="polite">
           <span className="h-selection-count">
             {selectedCount} {selectedCount === 1 ? 'item' : 'items'} selected
@@ -246,17 +251,16 @@ export default function HistoryApp() {
           </button>
         </div>
 
-        {/* Content */}
         <div className="h-content">
           {isLoading ? (
-            <div className="h-empty">Loading history…</div>
-          ) : filteredEntries.length === 0 ? (
+            <div className="h-empty">Loading history...</div>
+          ) : entries.length === 0 ? (
             <div className="h-empty">
               {searchTerm ? 'No history matches your search.' : 'No browsing history yet.'}
             </div>
           ) : viewMode === VIEW_BY_DATE ? (
             <ByDateView
-              entries={filteredEntries}
+              entries={entries}
               selected={selected}
               onToggleSelect={toggleSelect}
               onOpenEntry={openEntry}
@@ -264,15 +268,16 @@ export default function HistoryApp() {
             />
           ) : (
             <ByGroupView
-              entries={filteredEntries}
+              entries={entries}
               onOpenEntry={openEntry}
               onOpenContextMenu={openContextMenu}
             />
           )}
+          <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />
+          {isLoadingMore ? <div className="h-empty">Loading more...</div> : null}
         </div>
       </main>
 
-      {/* Context menu */}
       {contextMenu && (
         <ContextMenu
           ref={contextMenuRef}
@@ -281,13 +286,12 @@ export default function HistoryApp() {
           entry={contextMenu.entry}
           onRemove={async (entry) => {
             closeContextMenu();
-            await removeEntry(entry.timestamp);
+            await removeEntry(entry);
           }}
           onClose={closeContextMenu}
         />
       )}
 
-      {/* Clear data modal */}
       {showClearModal && (
         <ClearDataModal
           onClear={clearByTimeRange}

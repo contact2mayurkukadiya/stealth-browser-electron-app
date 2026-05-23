@@ -2,6 +2,7 @@ import React, { useRef, useCallback, useMemo, useState, useLayoutEffect } from '
 import { useSelector } from 'react-redux';
 import Tab from './Tab';
 import { tabAddSvg } from '../constants/appAssetUrls';
+import { PLATFORM } from '../constants/conditionStrings.js';
 
 const ADD_ICON = <img className="chrome-toolbar-icon-img" src={tabAddSvg} width={15} height={15} alt="" />;
 const TAB_DISPLAY_MODE = {
@@ -67,8 +68,8 @@ export default function TabBar({
   }, []);
 
   const platform = window.electronAPI?.platform;
-  const isMac = platform === 'darwin';
-  const isWin = platform === 'win32';
+  const isMac = platform === PLATFORM.DARWIN;
+  const isWin = platform === PLATFORM.WIN32;
   const pinnedTabCount = useMemo(
     () => tabOrder.filter((tid) => tabs[tid]?.isPinned).length,
     [tabOrder, tabs],

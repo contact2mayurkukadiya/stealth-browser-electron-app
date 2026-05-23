@@ -3,6 +3,7 @@ import ProfileAvatar from '../components/ProfileAvatar';
 import ProfileEditorModal from '../components/ProfileEditorModal';
 import { logoPurpleDarkSvg, logoPurpleLightSvg } from '../constants/appAssetUrls';
 import './ProfilePickerApp.css';
+import { KEYBOARD } from '../constants/conditionStrings.js';
 
 const ICON_PENCIL = (
   <svg className="pp-menu-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -50,7 +51,7 @@ function ProfileCard({
       }
     };
     const onKey = (e) => {
-      if (e.key === 'Escape') setMenuOpen(false);
+      if (e.key === KEYBOARD.ESCAPE) setMenuOpen(false);
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', onKey);
@@ -167,11 +168,11 @@ function ProfileCard({
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === KEYBOARD.ENTER) {
                   e.preventDefault();
                   e.currentTarget.blur();
                 }
-                if (e.key === 'Escape') {
+                if (e.key === KEYBOARD.ESCAPE) {
                   setNameDraft(displayLabel);
                   setNameHover(false);
                 }

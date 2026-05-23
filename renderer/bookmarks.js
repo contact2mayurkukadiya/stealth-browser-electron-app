@@ -1,3 +1,4 @@
+const { BOOKMARK, KEYBOARD } = require('../src/constants/conditionStrings.cjs');
 /**
  * Bookmark Manager for InviSurf
  * Handles: star toggle, bookmark bar render, overlay folder navigation, drag-to-reorder
@@ -62,7 +63,7 @@ function renderBar() {
 
     // ── Root view: show all top-level items ──
     bookmarksData.bar.forEach(item => {
-        if (item.type === 'folder') {
+        if (item.type === C.BOOKMARK.TYPE_FOLDER) {
             bar.appendChild(createFolderEl(item));
         } else {
             bar.appendChild(createBookmarkEl(item));
@@ -86,7 +87,7 @@ function createBookmarkEl(item) {
     const el = document.createElement('button');
     el.className = 'bk-item';
     el.id = 'bk-' + item.id;
-    el.draggable = true; 
+    el.draggable = true;
     el.title = item.title;
 
     const faviconHtml = item.favicon
@@ -95,9 +96,9 @@ function createBookmarkEl(item) {
 
     el.innerHTML = `${faviconHtml}<span class="bk-label">${escapeHtml(item.title)}</span>`;
 
-    el.onclick = (e) => { 
-        e.stopPropagation(); 
-        navigateCurrentTab(item.url); 
+    el.onclick = (e) => {
+        e.stopPropagation();
+        navigateCurrentTab(item.url);
         window.electronAPI.bookmarkPopupHide();
     };
 
@@ -207,7 +208,7 @@ function setupDropTarget(el, id) {
         const targetItem = bookmarksData.bar.find(b => b.id === id);
         const srcItemIdx = bookmarksData.bar.findIndex(b => b.id === dragSrcId);
 
-        if (targetItem && targetItem.type === 'folder' && srcItemIdx !== -1) {
+        if (targetItem && targetItem.type === C.BOOKMARK.TYPE_FOLDER && srcItemIdx !== -1) {
             const [srcItem] = bookmarksData.bar.splice(srcItemIdx, 1);
             bookmarksData = await window.electronAPI.bookmarksRemove(srcItem.id);
             bookmarksData = await window.electronAPI.bookmarksAddToFolder(id, srcItem);
@@ -236,12 +237,12 @@ function showContextMenu(e, item) {
     menu.id = 'bk-context-menu';
 
     const actions = [];
-    if (item.type === 'bookmark') {
+    if (item.type === C.BOOKMARK.TYPE_BOOKMARK) {
         actions.push({ label: 'Open', action: () => navigateCurrentTab(item.url) });
     }
 
     actions.push({
-        label: item.type === 'folder' ? 'Delete folder' : 'Remove bookmark',
+        label: item.type === C.BOOKMARK.TYPE_FOLDER ? 'Delete folder' : 'Remove bookmark',
         action: async () => {
             bookmarksData = await window.electronAPI.bookmarksRemove(item.id);
             renderBar();
@@ -314,8 +315,8 @@ function promptAddFolder() {
     prompt.querySelector('#bk-folder-ok').onclick = create;
     prompt.querySelector('#bk-folder-cancel').onclick = () => prompt.remove();
     input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') create();
-        if (e.key === 'Escape') prompt.remove();
+        if (e.key === C.KEYBOARD.ENTER) create();
+        if (e.key === C.KEYBOARD.ESCAPE) prompt.remove();
     });
 }
 
@@ -327,8 +328,8 @@ function findBookmarkByUrl(url, list) {
     const target = norm(url);
 
     for (const item of list) {
-        if (item.type === 'bookmark' && norm(item.url || '') === target) return item;
-        if (item.type === 'folder' && item.children) {
+        if (item.type === C.BOOKMARK.TYPE_BOOKMARK && norm(item.url || '') === target) return item;
+        if (item.type === C.BOOKMARK.TYPE_FOLDER && item.children) {
             const found = findBookmarkByUrl(url, item.children);
             if (found) return found;
         }

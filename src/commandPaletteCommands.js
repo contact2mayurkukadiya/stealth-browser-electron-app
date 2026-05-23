@@ -1,3 +1,5 @@
+import { MENU_COMMAND, PLATFORM } from './constants/conditionStrings.js';
+
 /** @typedef {{ category: string, label: string, shortcut?: string, keywords?: string, run: () => void }} CommandPaletteItem */
 
 const CATEGORY_ORDER = ['File', 'View', 'Edit', 'History', 'Tab', 'Help'];
@@ -7,7 +9,7 @@ const CATEGORY_ORDER = ['File', 'View', 'Edit', 'History', 'Tab', 'Help'];
  * @returns {CommandPaletteItem[]}
  */
 export function buildCommandPaletteCommands(ctx) {
-  const mac = ctx.platform === 'darwin';
+  const mac = ctx.platform === PLATFORM.DARWIN;
   const S = {
     fileNew: mac ? '⌘T' : 'Ctrl+T',
     fileStealthWindow: mac ? '⌘⇧N' : 'Ctrl+Shift+N',
@@ -52,7 +54,7 @@ export function buildCommandPaletteCommands(ctx) {
       label: 'Quit',
       shortcut: S.fileQuit,
       keywords: 'exit',
-      run: () => { void ctx.runMenuCommand('quit'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.QUIT); },
     },
     {
       category: 'View',
@@ -66,85 +68,85 @@ export function buildCommandPaletteCommands(ctx) {
       label: 'Settings page',
       shortcut: S.viewSettings,
       keywords: 'preferences options',
-      run: () => { void ctx.runMenuCommand('open-settings'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.OPEN_SETTINGS); },
     },
     {
       category: 'View',
       label: 'View Source',
       keywords: 'html',
-      run: () => { void ctx.runMenuCommand('view-source'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.VIEW_SOURCE); },
     },
     {
       category: 'View',
       label: 'Inspect Elements',
       keywords: 'devtools inspector',
-      run: () => { void ctx.runMenuCommand('devtools-elements'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.DEVTOOLS_ELEMENTS); },
     },
     {
       category: 'View',
       label: 'JavaScript Console',
       keywords: 'devtools debug',
-      run: () => { void ctx.runMenuCommand('devtools-console'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.DEVTOOLS_CONSOLE); },
     },
     {
       category: 'View',
       label: 'Toggle Full Screen',
       keywords: 'fullscreen',
-      run: () => { void ctx.runMenuCommand('toggle-fullscreen'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.TOGGLE_FULLSCREEN); },
     },
     {
       category: 'Edit',
       label: 'Undo',
       keywords: '',
-      run: () => { void ctx.runMenuCommand('edit-undo'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.EDIT_UNDO); },
     },
     {
       category: 'Edit',
       label: 'Redo',
       keywords: '',
-      run: () => { void ctx.runMenuCommand('edit-redo'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.EDIT_REDO); },
     },
     {
       category: 'Edit',
       label: 'Cut',
       keywords: '',
-      run: () => { void ctx.runMenuCommand('edit-cut'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.EDIT_CUT); },
     },
     {
       category: 'Edit',
       label: 'Copy',
       keywords: '',
-      run: () => { void ctx.runMenuCommand('edit-copy'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.EDIT_COPY); },
     },
     {
       category: 'Edit',
       label: 'Paste',
       keywords: '',
-      run: () => { void ctx.runMenuCommand('edit-paste'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.EDIT_PASTE); },
     },
     {
       category: 'Edit',
       label: 'Select All',
       keywords: '',
-      run: () => { void ctx.runMenuCommand('edit-select-all'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.EDIT_SELECT_ALL); },
     },
     {
       category: 'History',
       label: 'Home',
       keywords: 'google start',
-      run: () => { void ctx.runMenuCommand('navigate-home'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.NAVIGATE_HOME); },
     },
     {
       category: 'History',
       label: 'Back',
       keywords: 'previous',
-      run: () => { void ctx.runMenuCommand('history-back'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.HISTORY_BACK); },
     },
     {
       category: 'History',
       label: 'Forward',
       keywords: 'next',
-      run: () => { void ctx.runMenuCommand('history-forward'); },
+      run: () => { void ctx.runMenuCommand(MENU_COMMAND.HISTORY_FORWARD); },
     },
     {
       category: 'History',
@@ -215,7 +217,7 @@ export function buildCommandPaletteCommands(ctx) {
       label: 'Search menu commands',
       shortcut: S.palette,
       keywords: 'command palette help',
-      run: () => {},
+      run: () => { },
     },
   ];
 

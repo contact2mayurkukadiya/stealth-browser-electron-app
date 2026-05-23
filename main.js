@@ -27,7 +27,9 @@ const crypto = require('crypto');
 const encryption = require('./encryption');
 const compatDiagnostics = require('./compatibilityDiagnostics');
 const authPolicy = require('./authPolicy'); // <--- ADD THIS
+const { HistoryService } = require('./historyService');
 const chromeTheme = require(path.join(__dirname, 'src', 'theme', 'chromeTheme.cjs'));
+const C = require(path.join(__dirname, 'src', 'constants', 'conditionStrings.cjs'));
 
 process.on('uncaughtException', (error) => {
     const message = error?.stack || error?.message || String(error);
@@ -47,6 +49,7 @@ process.on('uncaughtException', (error) => {
 });
 
 const appProtocolInstalledSessions = new WeakSet();
+const historyService = new HistoryService({ app, encryptionModule: encryption });
 function registerAppProtocolForSession(targetSession, sessionTag = 'unknown') {
     if (!targetSession || appProtocolInstalledSessions.has(targetSession)) return;
     targetSession.protocol.handle('app', (request) => {
@@ -377,6 +380,7 @@ function getProfileAvatarDataUrl(profileId) {
     return `data:${mime};base64,${buf.toString('base64')}`;
 }
 
+// app.name = 'Google Chrome'; // Mimics OS execution signature matching processes exactly.
 app.name = 'Google Chrome'; // Mimics OS execution signature matching processes exactly.
 
 
@@ -387,10 +391,10 @@ function getBrowserLikeUserAgent() {
 
 
     const platform = process.platform;
-    if (platform === 'darwin') {
+    if (platform === C.PLATFORM.DARWIN) {
         return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
     }
-    if (platform === 'win32') {
+    if (platform === C.PLATFORM.WIN32) {
         return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
     }
     return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
@@ -571,7 +575,7 @@ function installSessionNetworkGuards(session) {
     // Network-layer redirect/loop guard (more robust than will-redirect alone).
 
     session.webRequest.onBeforeRequest((details, callback) => {
-        if (details.resourceType !== 'mainFrame') {
+        if (details.resourceType !== C.RESOURCE_TYPE.MAIN_FRAME) {
             callback({});
             return;
         }
@@ -607,7 +611,7 @@ function installSessionNetworkGuards(session) {
     });
 
     session.webRequest.onHeadersReceived((details, callback) => {
-        if (details.resourceType !== 'mainFrame') {
+        if (details.resourceType !== C.RESOURCE_TYPE.MAIN_FRAME) {
             callback({});
             return;
         }
@@ -709,14 +713,14 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         authPolicy.applyGoogleAuthPolicy(stealthTabSession);
     }
 
-    const isMac = process.platform === 'darwin';
+    const isMac = process.platform === C.PLATFORM.DARWIN;
     const workArea = fillWorkArea ? getPrimaryWorkAreaBounds() : null;
     const stealthTitleBarOverlay =
         process.platform !== 'darwin'
             ? chromeTheme.getTitleBarOverlayFromSettings(
-                  { colorTheme: 'dark', accentTheme: 'default', accentCustomHex: null },
-                  true,
-              )
+                { colorTheme: 'dark', accentTheme: 'default', accentCustomHex: null },
+                true,
+            )
             : null;
     const window = new BrowserWindow({
         ...(workArea
@@ -751,7 +755,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
     // Security constraints for main window
     window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
-        if (permission === 'fullscreen') return callback(true);
+        if (permission === C.PERMISSION.FULLSCREEN) return callback(true);
         callback(false); // Deny all other permissions safely
     });
 
@@ -1015,10 +1019,10 @@ function generateTabId() {
 
 function isAllowedTabNavigationUrl(targetUrl) {
     if (!targetUrl || typeof targetUrl !== 'string') return false;
-    return targetUrl.startsWith('https://') ||
-        targetUrl.startsWith('http://') ||
-        targetUrl.startsWith('app://') ||
-        targetUrl.startsWith('view-source:');
+    return targetUrl.startsWith(C.URL.SCHEME_HTTPS) ||
+        targetUrl.startsWith(C.URL.SCHEME_HTTP) ||
+        targetUrl.startsWith(C.URL.SCHEME_APP) ||
+        targetUrl.startsWith(C.URL.SCHEME_VIEW_SOURCE);
 }
 
 /** Detach active tab native view so shell HTML (portals, omnibox popups) renders above it. */
@@ -1115,7 +1119,7 @@ function activateTabInContext(context, id) {
     }
     context.activeTabId = id;
     if (context.window && !context.window.webContents.isDestroyed()) {
-        context.window.webContents.send('tab-switched', { id });
+        context.window.webContents.send(C.IPC_EVENT.TAB_SWITCHED, { id });
     }
 
     // Autofocus the omnibox when switching to a blank/NTP tab so the user
@@ -1191,7 +1195,8 @@ function moveTabToDetachedWindow(id, fallbackTabId) {
     delete context.tabs[id];
     delete context.sleepingTabs[id];
     tabIdToWindowId.delete(id);
-    lastRecordedByTab.delete(id);
+    pendingTransitionsByTab.delete(String(id));
+    historyService.clearTab(id);
     compatDiagnostics.clear(id);
 
     // Open a full shell window (header/tab bar/nav) and bootstrap it with this tab URL.
@@ -1218,7 +1223,7 @@ function openUrlInNewTab(targetUrl, options = {}) {
     createTab(context, newTabId, resolvedTargetUrl, stealthTab, { activate: !openInBackground });
 
     if (context.window && !context.window.webContents.isDestroyed()) {
-        context.window.webContents.send('tab-created', { id: newTabId, isStealth: stealthTab, url: resolvedTargetUrl });
+        context.window.webContents.send(C.IPC_EVENT.TAB_CREATED, { id: newTabId, isStealth: stealthTab, url: resolvedTargetUrl });
     }
     if (!openInBackground) {
         activateTabInContext(context, newTabId);
@@ -1233,38 +1238,38 @@ function openUrlInNewTab(targetUrl, options = {}) {
 function normalizeInternalSchemeUrl(displayUrl) {
     if (!displayUrl || typeof displayUrl !== 'string') return '';
     const t = displayUrl.trim().toLowerCase();
-    if (t === 'stealth://history' || t === 'invisurf://history') return 'invisurf://history';
-    if (t === 'stealth://settings' || t === 'invisurf://settings') return 'invisurf://settings';
+    if (t === C.URL.STEALTH_HISTORY || t === C.URL.HISTORY_DISPLAY) return C.URL.HISTORY_DISPLAY;
+    if (t === C.URL.STEALTH_SETTINGS || t === C.URL.SETTINGS_DISPLAY) return C.URL.SETTINGS_DISPLAY;
     return displayUrl.trim();
 }
 
-const CANONICAL_NTP_HTML = 'app://localhost/dist/newtab.html';
+const CANONICAL_NTP_HTML = C.URL.NTP_CANONICAL_HTML;
 
 function resolveInternalPageUrl(rawUrl) {
     if (rawUrl == null || typeof rawUrl !== 'string') return '';
     const trimmed = rawUrl.trim();
     if (!trimmed) return '';
     const normalizedUrl = trimmed.toLowerCase();
-    if (normalizedUrl === 'stealth://history' || normalizedUrl === 'invisurf://history') return 'app://localhost/dist/history.html';
-    if (normalizedUrl === 'stealth://settings' || normalizedUrl === 'invisurf://settings') return 'app://localhost/dist/settings.html';
-    if (normalizedUrl === 'app://newtab') return CANONICAL_NTP_HTML;
+    if (normalizedUrl === C.URL.STEALTH_HISTORY || normalizedUrl === C.URL.HISTORY_DISPLAY) return C.URL.HISTORY_LOAD;
+    if (normalizedUrl === C.URL.STEALTH_SETTINGS || normalizedUrl === C.URL.SETTINGS_DISPLAY) return C.URL.SETTINGS_LOAD;
+    if (normalizedUrl === C.URL.NTP_DISPLAY) return CANONICAL_NTP_HTML;
     return trimmed;
 }
 
 /** Always returns a non-empty loadable URL for tab WebContents (never `loadURL('')`). */
 function resolveTabLoadUrl(rawUrl) {
-    const effective = typeof rawUrl === 'string' && rawUrl.trim() ? rawUrl.trim() : 'app://newtab';
+    const effective = typeof rawUrl === 'string' && rawUrl.trim() ? rawUrl.trim() : C.URL.NTP_DISPLAY;
     return resolveInternalPageUrl(effective) || CANONICAL_NTP_HTML;
 }
 
 // A tab qualifies for omnibox autofocus when it has no meaningful page loaded.
 // This covers the custom NTP, about:blank, and empty URL states.
 function isBlankTab(url) {
-    if (!url || url.trim() === '' || url === 'about:blank') return true;
+    if (!url || url.trim() === '' || url === C.URL.ABOUT_BLANK) return true;
     const normalized = url.toLowerCase();
-    return normalized === 'app://newtab' ||
-        normalized.startsWith('app://localhost/dist/newtab') ||
-        (normalized.startsWith('https://www.google.com/') && !normalized.includes('/search'));
+    return normalized === C.URL.NTP_DISPLAY ||
+        normalized.startsWith(C.URL.NTP_LOCALHOST_PREFIX) ||
+        (normalized.startsWith(C.URL.GOOGLE_ORIGIN_PREFIX) && !normalized.includes(C.URL.SEARCH_PATH));
 }
 
 // After did-finish-load, only re-assert omnibox focus for pages whose scripts steal
@@ -1272,17 +1277,17 @@ function isBlankTab(url) {
 function shouldReassertOmniboxAfterPageLoad(url) {
     if (!url || typeof url !== 'string') return false;
     const u = url.toLowerCase();
-    if (u === 'about:blank' || u === 'app://newtab' || u.startsWith('app://localhost/dist/newtab')) {
+    if (u === C.URL.ABOUT_BLANK || u === C.URL.NTP_DISPLAY || u.startsWith(C.URL.NTP_LOCALHOST_PREFIX)) {
         return false;
     }
-    return u.startsWith('https://www.google.com/') && !u.includes('/search');
+    return u.startsWith(C.URL.GOOGLE_ORIGIN_PREFIX) && !u.includes(C.URL.SEARCH_PATH);
 }
 
 /** True when the loaded document is our bundled New Tab Page (not Google / about:blank). */
 function isCustomNewTabDocumentUrl(url) {
     if (!url || typeof url !== 'string') return false;
     const u = url.toLowerCase();
-    return u === 'app://newtab' || u.startsWith('app://localhost/dist/newtab');
+    return u === C.URL.NTP_DISPLAY || u.startsWith(C.URL.NTP_LOCALHOST_PREFIX);
 }
 
 /** Focus shell omnibox — shared by activateTabInContext and load handlers. */
@@ -1295,14 +1300,14 @@ function sendOmniboxFocusToShell(context, tabId, selectAll) {
     }
     if (context.window.webContents.isDestroyed()) return;
     context.window.webContents.focus();
-    context.window.webContents.send('omnibox:focus', { tabId, selectAll });
+    context.window.webContents.send(C.IPC_EVENT.OMNIBOX_FOCUS, { tabId, selectAll });
 }
 
 function toDisplayUrl(rawUrl) {
     if (!rawUrl) return '';
-    if (rawUrl.startsWith('app://') && rawUrl.includes('history')) return 'invisurf://history';
-    if (rawUrl.startsWith('app://') && rawUrl.includes('settings')) return 'invisurf://settings';
-    if (rawUrl.startsWith('app://') && rawUrl.includes('newtab')) return 'app://newtab';
+    if (rawUrl.startsWith(C.URL.SCHEME_APP) && rawUrl.includes(C.URL.FRAGMENT_HISTORY)) return C.URL.HISTORY_DISPLAY;
+    if (rawUrl.startsWith(C.URL.SCHEME_APP) && rawUrl.includes(C.URL.FRAGMENT_SETTINGS)) return C.URL.SETTINGS_DISPLAY;
+    if (rawUrl.startsWith(C.URL.SCHEME_APP) && rawUrl.includes(C.URL.FRAGMENT_NEWTAB)) return C.URL.NTP_DISPLAY;
     return rawUrl;
 }
 
@@ -1347,18 +1352,18 @@ function activateOrWakeTab(id) {
         createTab(context, id, resolvedUrl, !!context.stealthWindow);
 
         if (context.window && !context.window.webContents.isDestroyed()) {
-            context.window.webContents.send('tab:awoken', { id });
+            context.window.webContents.send(C.IPC_EVENT.TAB_AWOKEN, { id });
         }
     }
     return activateTabInContext(context, id);
 }
 
 function openOrActivateSettingsTab() {
-    const existingSettingsTabId = getTabIdByDisplayUrl('invisurf://settings');
+    const existingSettingsTabId = getTabIdByDisplayUrl(C.URL.SETTINGS_DISPLAY);
     if (existingSettingsTabId) {
         return activateOrWakeTab(existingSettingsTabId);
     }
-    return openUrlInNewTab('invisurf://settings', { background: false });
+    return openUrlInNewTab(C.URL.SETTINGS_DISPLAY, { background: false });
 }
 
 function navigateActiveTabHome() {
@@ -1383,9 +1388,9 @@ function openViewSourceForActiveTab() {
     const activeView = getActiveTabView();
     if (!activeView || activeView.webContents.isDestroyed()) return;
     const currentUrl = activeView.webContents.getURL();
-    if (!currentUrl || currentUrl.startsWith('view-source:')) return;
-    if (currentUrl.startsWith('data:')) return;
-    openUrlInNewTab(`view-source:${currentUrl}`, { background: false });
+    if (!currentUrl || currentUrl.startsWith(C.URL.SCHEME_VIEW_SOURCE)) return;
+    if (currentUrl.startsWith(C.URL.SCHEME_DATA)) return;
+    openUrlInNewTab(`${C.URL.SCHEME_VIEW_SOURCE}${currentUrl}`, { background: false });
 }
 
 function openDevToolsForActiveTab(panel) {
@@ -1431,7 +1436,7 @@ function openDevToolsForActiveTab(panel) {
 function canStoreRecentlyClosedUrl(rawUrl) {
     const displayUrl = toDisplayUrl(rawUrl);
     const resolvedUrl = resolveInternalPageUrl(displayUrl);
-    if (!resolvedUrl || resolvedUrl.startsWith('data:')) return false;
+    if (!resolvedUrl || resolvedUrl.startsWith(C.URL.SCHEME_DATA)) return false;
     return isAllowedTabNavigationUrl(resolvedUrl);
 }
 
@@ -1491,7 +1496,7 @@ function buildApplicationMenu() {
                 {
                     label: 'New Tab',
                     accelerator: 'CmdOrCtrl+T',
-                    click: () => focusedShellWebContents()?.send('shortcut-new-tab')
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_NEW_TAB)
                 },
                 {
                     label: 'New Stealth Window',
@@ -1516,7 +1521,7 @@ function buildApplicationMenu() {
                 {
                     label: 'Close Tab',
                     accelerator: 'CmdOrCtrl+W',
-                    click: () => focusedShellWebContents()?.send('shortcut-close-tab')
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_CLOSE_TAB)
                 },
                 { type: 'separator' },
                 { role: 'quit' }
@@ -1528,7 +1533,7 @@ function buildApplicationMenu() {
                 {
                     label: 'Reload',
                     accelerator: 'CmdOrCtrl+R',
-                    click: () => focusedShellWebContents()?.send('shortcut-reload')
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_RELOAD)
                 },
                 { type: 'separator' },
                 {
@@ -1575,7 +1580,7 @@ function buildApplicationMenu() {
                 {
                     label: 'Show History',
                     accelerator: 'CmdOrCtrl+Y',
-                    click: () => focusedShellWebContents()?.send('shortcut-history'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_HISTORY),
                 },
                 { type: 'separator' },
                 { label: 'Home', click: () => navigateActiveTabHome() },
@@ -1591,32 +1596,32 @@ function buildApplicationMenu() {
             submenu: [
                 {
                     label: 'New Tab to the Right',
-                    click: () => focusedShellWebContents()?.send('shortcut-tab-new-to-right'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_TAB_NEW_RIGHT),
                 },
                 { type: 'separator' },
                 {
                     label: 'Select Next Tab',
                     accelerator: 'Control+Tab',
-                    click: () => focusedShellWebContents()?.send('shortcut-switch-tab', { direction: 1 }),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_SWITCH_TAB, { direction: 1 }),
                 },
                 {
                     label: 'Select Previous Tab',
                     accelerator: 'Control+Shift+Tab',
-                    click: () => focusedShellWebContents()?.send('shortcut-switch-tab', { direction: -1 }),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_SWITCH_TAB, { direction: -1 }),
                 },
                 { type: 'separator' },
                 {
                     label: 'Duplicate Tab',
                     accelerator: 'CommandOrControl+Shift+D',
-                    click: () => focusedShellWebContents()?.send('shortcut-tab-duplicate'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_TAB_DUPLICATE),
                 },
                 {
                     label: tabMenuMuteSiteShowsUnmute ? 'Unmute Site' : 'Mute Site',
-                    click: () => focusedShellWebContents()?.send('shortcut-tab-mute-site'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_TAB_MUTE),
                 },
                 {
                     label: tabMenuPinShowsUnpin ? 'Unpin Tab' : 'Pin Tab',
-                    click: () => focusedShellWebContents()?.send('shortcut-tab-pin'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_TAB_PIN),
                 },
                 {
                     label: 'Group Tab',
@@ -1625,21 +1630,21 @@ function buildApplicationMenu() {
                 { type: 'separator' },
                 {
                     label: 'Close Other Tabs',
-                    click: () => focusedShellWebContents()?.send('shortcut-tab-close-others'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_TAB_CLOSE_OTHERS),
                 },
                 {
                     label: 'Close Tabs to the Right',
-                    click: () => focusedShellWebContents()?.send('shortcut-tab-close-right'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_TAB_CLOSE_RIGHT),
                 },
                 { type: 'separator' },
                 {
                     label: 'Move Tab to New Window',
-                    click: () => focusedShellWebContents()?.send('shortcut-tab-move-new-window'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_TAB_MOVE_WINDOW),
                 },
                 {
                     label: 'Search Tabs…',
                     accelerator: 'Shift+CommandOrControl+A',
-                    click: () => focusedShellWebContents()?.send('shortcut-tab-search'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_TAB_SEARCH),
                 },
             ],
         },
@@ -1649,7 +1654,7 @@ function buildApplicationMenu() {
                 {
                     label: 'Search…',
                     accelerator: 'CommandOrControl+Shift+P',
-                    click: () => focusedShellWebContents()?.send('shortcut-command-palette'),
+                    click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_COMMAND_PALETTE),
                 },
             ],
         },
@@ -1658,67 +1663,67 @@ function buildApplicationMenu() {
 
 function runMenuCommandFromPalette(commandId) {
     switch (commandId) {
-        case 'open-settings':
+        case C.MENU_COMMAND.OPEN_SETTINGS:
             openOrActivateSettingsTab();
             return true;
-        case 'navigate-home':
+        case C.MENU_COMMAND.NAVIGATE_HOME:
             navigateActiveTabHome();
             return true;
-        case 'history-back':
+        case C.MENU_COMMAND.HISTORY_BACK:
             goBackInActiveTab();
             return true;
-        case 'history-forward':
+        case C.MENU_COMMAND.HISTORY_FORWARD:
             goForwardInActiveTab();
             return true;
-        case 'view-source':
+        case C.MENU_COMMAND.VIEW_SOURCE:
             openViewSourceForActiveTab();
             return true;
-        case 'devtools-elements':
-            openDevToolsForActiveTab('elements');
+        case C.MENU_COMMAND.DEVTOOLS_ELEMENTS:
+            openDevToolsForActiveTab(C.DEVTOOLS_PANEL.ELEMENTS);
             return true;
-        case 'devtools-console':
-            openDevToolsForActiveTab('console');
+        case C.MENU_COMMAND.DEVTOOLS_CONSOLE:
+            openDevToolsForActiveTab(C.DEVTOOLS_PANEL.CONSOLE);
             return true;
-        case 'toggle-fullscreen':
+        case C.MENU_COMMAND.TOGGLE_FULLSCREEN:
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.setFullScreen(!mainWindow.isFullScreen());
             }
             return true;
-        case 'quit':
+        case C.MENU_COMMAND.QUIT:
             app.quit();
             return true;
-        case 'new-window-current-profile': {
+        case C.MENU_COMMAND.NEW_WINDOW_CURRENT_PROFILE: {
             const context = getWindowContextByBrowserWindow(mainWindow);
             if (!context) return false;
             createWindow({ profileId: context.profileId });
             return true;
         }
-        case 'edit-undo': {
+        case C.MENU_COMMAND.EDIT_UNDO: {
             const focused = webContents.getFocusedWebContents();
             if (focused && !focused.isDestroyed()) focused.undo();
             return true;
         }
-        case 'edit-redo': {
+        case C.MENU_COMMAND.EDIT_REDO: {
             const focused = webContents.getFocusedWebContents();
             if (focused && !focused.isDestroyed()) focused.redo();
             return true;
         }
-        case 'edit-cut': {
+        case C.MENU_COMMAND.EDIT_CUT: {
             const focused = webContents.getFocusedWebContents();
             if (focused && !focused.isDestroyed()) focused.cut();
             return true;
         }
-        case 'edit-copy': {
+        case C.MENU_COMMAND.EDIT_COPY: {
             const focused = webContents.getFocusedWebContents();
             if (focused && !focused.isDestroyed()) focused.copy();
             return true;
         }
-        case 'edit-paste': {
+        case C.MENU_COMMAND.EDIT_PASTE: {
             const focused = webContents.getFocusedWebContents();
             if (focused && !focused.isDestroyed()) focused.paste();
             return true;
         }
-        case 'edit-select-all': {
+        case C.MENU_COMMAND.EDIT_SELECT_ALL: {
             const focused = webContents.getFocusedWebContents();
             if (focused && !focused.isDestroyed()) focused.selectAll();
             return true;
@@ -1733,19 +1738,19 @@ function rebuildApplicationMenu() {
     Menu.setApplicationMenu(buildApplicationMenu());
 }
 
-ipcMain.handle('app:run-menu-command', (event, commandId) => {
+ipcMain.handle(C.IPC_INVOKE.RUN_MENU_COMMAND, (event, commandId) => {
     if (!isSenderTrusted(event)) return false;
     if (typeof commandId !== 'string') return false;
     return runMenuCommandFromPalette(commandId);
 });
 
-ipcMain.handle('context:is-stealth-window', (event) => {
+ipcMain.handle(C.IPC_INVOKE.IS_STEALTH_WINDOW, (event) => {
     if (!isSenderTrusted(event)) return false;
     const ctx = getWindowContextByEventSender(event.sender);
     return !!(ctx && ctx.stealthWindow);
 });
 
-ipcMain.handle('window:create', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.WINDOW_CREATE, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return null;
     const senderContext = getWindowContextByEventSender(event.sender);
     if (!senderContext) return null;
@@ -1757,7 +1762,7 @@ ipcMain.handle('window:create', (event, payload = {}) => {
     return { windowId: created.windowId, profileId };
 });
 
-ipcMain.handle('window:create-stealth', (event) => {
+ipcMain.handle(C.IPC_INVOKE.WINDOW_CREATE_STEALTH, (event) => {
     if (!isSenderTrusted(event)) return { ok: false };
     const senderContext = getWindowContextByEventSender(event.sender);
     const profileId = senderContext?.profileId || defaultProfileId;
@@ -1768,7 +1773,7 @@ ipcMain.handle('window:create-stealth', (event) => {
 });
 
 /** When the last stealth tab is closed, the shell asks to close the whole window (Chrome-like incognito). */
-ipcMain.handle('window:close-if-stealth', (event) => {
+ipcMain.handle(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH, (event) => {
     if (!isSenderTrusted(event)) return { ok: false };
     const context = getWindowContextByEventSender(event.sender);
     if (!context?.stealthWindow) return { ok: false };
@@ -1780,7 +1785,7 @@ ipcMain.handle('window:close-if-stealth', (event) => {
     return { ok: true };
 });
 
-ipcMain.handle('window:get-bootstrap', (event) => {
+ipcMain.handle(C.IPC_INVOKE.WINDOW_GET_BOOTSTRAP, (event) => {
     if (!isSenderTrusted(event)) return null;
     const context = getWindowContextByEventSender(event.sender);
     if (!context) return null;
@@ -1789,19 +1794,19 @@ ipcMain.handle('window:get-bootstrap', (event) => {
     return payload;
 });
 
-ipcMain.handle('profile:list', (event) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_LIST, (event) => {
     if (!isSenderTrusted(event)) return [];
     return Array.from(profilesById.values());
 });
 
-ipcMain.handle('profile:get-current', (event) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_GET_CURRENT, (event) => {
     if (!isSenderTrusted(event)) return null;
     const context = getWindowContextByEventSender(event.sender);
     if (!context) return null;
     return profilesById.get(context.profileId) || null;
 });
 
-ipcMain.handle('profile:create', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_CREATE, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return null;
     const displayName = typeof payload.displayName === 'string' && payload.displayName.trim()
         ? payload.displayName.trim()
@@ -1812,7 +1817,7 @@ ipcMain.handle('profile:create', (event, payload = {}) => {
     return profile;
 });
 
-ipcMain.handle('profile:update', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_UPDATE, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return null;
     if (!payload || typeof payload.profileId !== 'string') return null;
     const sid = String(payload.profileId).trim().replace(/[^a-zA-Z0-9-_]/g, '_');
@@ -1826,7 +1831,7 @@ ipcMain.handle('profile:update', (event, payload = {}) => {
     return p;
 });
 
-ipcMain.handle('profile:setAvatarData', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_SET_AVATAR_DATA, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return { ok: false, error: 'Unauthorized' };
     if (!payload || typeof payload.profileId !== 'string' || typeof payload.dataUrl !== 'string') {
         return { ok: false, error: 'Invalid payload' };
@@ -1834,7 +1839,7 @@ ipcMain.handle('profile:setAvatarData', (event, payload = {}) => {
     return setProfileAvatarFromDataUrl(payload.profileId, payload.dataUrl);
 });
 
-ipcMain.handle('profile:setAvatarFromPresetPng', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_SET_AVATAR_PRESET, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return { ok: false, error: 'Unauthorized' };
     if (!payload || typeof payload.profileId !== 'string' || typeof payload.fileName !== 'string') {
         return { ok: false, error: 'Invalid payload' };
@@ -1842,7 +1847,7 @@ ipcMain.handle('profile:setAvatarFromPresetPng', (event, payload = {}) => {
     return setProfileAvatarFromPresetPngFile(payload.profileId, payload.fileName);
 });
 
-ipcMain.handle('profile:validateAvatarData', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_VALIDATE_AVATAR, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return { ok: false, error: 'Unauthorized' };
     if (!payload || typeof payload.dataUrl !== 'string') {
         return { ok: false, error: 'No image' };
@@ -1853,7 +1858,7 @@ ipcMain.handle('profile:validateAvatarData', (event, payload = {}) => {
 });
 
 /** Lists `<index>.png` files under renderer/assets/images/profiles (numeric basename only). */
-ipcMain.handle('profile:list-preset-avatar-pngs', (event) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_LIST_PRESETS, (event) => {
     if (!isSenderTrusted(event)) return { ok: false, error: 'Unauthorized', files: [] };
     const dir = PRESET_AVATAR_PNG_DIR;
     try {
@@ -1863,12 +1868,12 @@ ipcMain.handle('profile:list-preset-avatar-pngs', (event) => {
         pngs.sort((a, b) => parseInt(a.replace(/\.png$/i, ''), 10) - parseInt(b.replace(/\.png$/i, ''), 10));
         return { ok: true, files: pngs };
     } catch (err) {
-        console.error('profile:list-preset-avatar-pngs', err);
+        console.error(C.IPC_INVOKE.PROFILE_LIST_PRESETS, err);
         return { ok: false, error: String(err?.message || err), files: [] };
     }
 });
 
-ipcMain.handle('profile:clearAvatar', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_CLEAR_AVATAR, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return { ok: false };
     if (!payload || typeof payload.profileId !== 'string') return { ok: false };
     const sid = String(payload.profileId).trim().replace(/[^a-zA-Z0-9-_]/g, '_');
@@ -1883,14 +1888,14 @@ ipcMain.handle('profile:clearAvatar', (event, payload = {}) => {
     return { ok: true, profile: p };
 });
 
-ipcMain.handle('profile:getAvatarDataUrl', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_GET_AVATAR, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return { dataUrl: null };
     if (!payload || typeof payload.profileId !== 'string') return { dataUrl: null };
     const dataUrl = getProfileAvatarDataUrl(payload.profileId);
     return { dataUrl: dataUrl || null };
 });
 
-ipcMain.handle('profile:delete', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_DELETE, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return { ok: false, error: 'Unauthorized' };
     if (!payload || typeof payload.profileId !== 'string') return { ok: false, error: 'Invalid request' };
     const sid = String(payload.profileId).trim().replace(/[^a-zA-Z0-9-_]/g, '_');
@@ -1912,7 +1917,7 @@ ipcMain.handle('profile:delete', (event, payload = {}) => {
     return { ok: true };
 });
 
-ipcMain.handle('profile:open-window', (event, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.PROFILE_OPEN_WINDOW, (event, payload = {}) => {
     if (!isSenderTrusted(event)) return null;
     if (!payload || typeof payload.profileId !== 'string') return null;
     const profile = ensureProfile(payload.profileId);
@@ -1931,7 +1936,7 @@ ipcMain.handle('profile:open-window', (event, payload = {}) => {
 });
 
 
-ipcMain.on('tooltip:show', (e, { title, url, memory, x, y, width, height }) => {
+ipcMain.on(C.IPC_SEND.TOOLTIP_SHOW, (e, { title, url, memory, x, y, width, height }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.tooltipView) return;
@@ -1945,10 +1950,10 @@ ipcMain.on('tooltip:show', (e, { title, url, memory, x, y, width, height }) => {
         width: Math.round(width),
         height: Math.round(height)
     });
-    context.tooltipView.webContents.send('tooltip:update', { title, url, memory });
+    context.tooltipView.webContents.send(C.IPC_EVENT.TOOLTIP_UPDATE, { title, url, memory });
 });
 
-ipcMain.on('tooltip:hide', (e) => {
+ipcMain.on(C.IPC_SEND.TOOLTIP_HIDE, (e) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (context?.tooltipView) {
@@ -1960,22 +1965,22 @@ ipcMain.on('tooltip:hide', (e) => {
 const CHROME_OVERLAY_POST_MAX_BYTES = 256 * 1024;
 
 /** Clear overlay session so another feature can take the surface (ref count → 0, hide, notify shell). */
-ipcMain.handle('chrome-overlay:v1:reset', (e) => {
+ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RESET, (e) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.chromeOverlayView) return { ok: false };
     context.chromeOverlayAcquireCount = 0;
     try {
         if (!context.chromeOverlayView.webContents.isDestroyed()) {
-            context.chromeOverlayView.webContents.send('chrome-overlay:v1:patch', { kind: 'hide' });
+            context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
         }
         context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
     } catch (err) {
-        console.error('chrome-overlay:v1:reset', err?.message || err);
+        console.error(C.IPC_INVOKE.CHROME_OVERLAY_RESET, err?.message || err);
     }
     try {
         if (context.window?.webContents && !context.window.webContents.isDestroyed()) {
-            context.window.webContents.send('chrome-overlay:v1:superseded');
+            context.window.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_SUPERSEDED);
         }
     } catch (err) {
         console.error('chrome-overlay:v1:superseded send', err?.message || err);
@@ -1983,7 +1988,7 @@ ipcMain.handle('chrome-overlay:v1:reset', (e) => {
     return { ok: true };
 });
 
-ipcMain.handle('chrome-overlay:v1:acquire', (e) => {
+ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_ACQUIRE, (e) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.chromeOverlayView) return { ok: false };
@@ -1995,7 +2000,7 @@ ipcMain.handle('chrome-overlay:v1:acquire', (e) => {
     return { ok: true };
 });
 
-ipcMain.handle('chrome-overlay:v1:release', (e) => {
+ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, (e) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.chromeOverlayView) return { ok: false };
@@ -2006,17 +2011,17 @@ ipcMain.handle('chrome-overlay:v1:release', (e) => {
         context.chromeOverlayAcquireCount = 0;
         try {
             if (!context.chromeOverlayView.webContents.isDestroyed()) {
-                context.chromeOverlayView.webContents.send('chrome-overlay:v1:patch', { kind: 'hide' });
+                context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
             }
             context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
         } catch (err) {
-            console.error('chrome-overlay:v1:release', err?.message || err);
+            console.error(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, err?.message || err);
         }
     }
     return { ok: true };
 });
 
-ipcMain.handle('chrome-overlay:v1:post', (e, payload) => {
+ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) {
@@ -2030,21 +2035,21 @@ ipcMain.handle('chrome-overlay:v1:post', (e, payload) => {
         return { ok: false };
     }
     try {
-        context.chromeOverlayView.webContents.send('chrome-overlay:v1:patch', payload ?? {});
+        context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, payload ?? {});
     } catch (err) {
-        console.error('chrome-overlay:v1:post', err?.message || err);
+        console.error(C.IPC_INVOKE.CHROME_OVERLAY_POST, err?.message || err);
         return { ok: false };
     }
     return { ok: true };
 });
 
-ipcMain.on('chrome-overlay:v1:from-overlay', (e, data) => {
+ipcMain.on(C.IPC_SEND.CHROME_OVERLAY_FROM_OVERLAY, (e, data) => {
     const context = getWindowContextByChromeOverlaySender(e.sender);
     if (!context?.window?.webContents || context.window.webContents.isDestroyed()) return;
     try {
-        context.window.webContents.send('chrome-overlay:v1:host-event', data ?? {});
+        context.window.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_HOST, data ?? {});
     } catch (err) {
-        console.error('chrome-overlay:v1:from-overlay', err?.message || err);
+        console.error(C.IPC_SEND.CHROME_OVERLAY_FROM_OVERLAY, err?.message || err);
     }
 });
 
@@ -2057,20 +2062,20 @@ function handleShortcuts(event, input) {
 
     if (isCommandOrControlPressed && key === 'y') {
         event.preventDefault();
-        focusedShellWebContents()?.send('shortcut-history');
+        focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_HISTORY);
         return;
     }
 
     // Only handle Ctrl+Tab here, as others are handled by the Menu
     if (input.control && input.key === 'Tab') {
         event.preventDefault();
-        focusedShellWebContents()?.send('shortcut-switch-tab', { direction: input.shift ? -1 : 1 });
+        focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_SWITCH_TAB, { direction: input.shift ? -1 : 1 });
     }
 }
 
 function buildDevToolsTypographyCss() {
     let monoStack;
-    if (process.platform === 'darwin') {
+    if (process.platform === C.PLATFORM.DARWIN) {
         monoStack = "ui-monospace, 'SF Mono', Menlo, Monaco, 'Courier New', monospace";
     } else if (process.platform === 'win32') {
         monoStack = "'Cascadia Mono', 'Cascadia Code', Consolas, 'Courier New', monospace";
@@ -2096,7 +2101,7 @@ function installDevToolsTypographyOnOpen(webContents) {
 }
 
 // Logic to create a new Tab View
-function createTab(context, id, url = "app://newtab", isStealth = false, options = {}) {
+function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, options = {}) {
     if (!context) return;
     const shouldActivate = options.activate !== false;
     /** Stealth windows: one in-memory partition per window (Chrome-like incognito). Normal windows never use per-tab stealth. */
@@ -2335,22 +2340,28 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
 
     view.webContents.on('page-title-updated', (e, title) => {
         if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
-        context.window.webContents.send('tab-update', { id, title, url: getDisplayUrl(view.webContents.getURL()) });
+        const currentDisplayUrl = getDisplayUrl(view.webContents.getURL());
+        context.window.webContents.send(C.IPC_EVENT.TAB_UPDATE, { id, title, url: currentDisplayUrl });
+        if (!effectiveStealth && currentDisplayUrl && !currentDisplayUrl.startsWith('data:') && !isInternalPageUrl(currentDisplayUrl)) {
+            historyService.updateTitle(context.profileId, currentDisplayUrl, title).catch((err) => {
+                console.error('Failed to update history title:', err);
+            });
+        }
     });
 
     view.webContents.on('page-favicon-updated', (e, favicons) => {
         if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
-        context.window.webContents.send('tab-update', { id, favicon: favicons[0] || null, url: getDisplayUrl(view.webContents.getURL()) });
+        context.window.webContents.send(C.IPC_EVENT.TAB_UPDATE, { id, favicon: favicons[0] || null, url: getDisplayUrl(view.webContents.getURL()) });
     });
 
     view.webContents.on('did-start-loading', () => {
         if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
-        context.window.webContents.send('tab-update', { id, isLoading: true, url: getDisplayUrl(view.webContents.getURL()) });
+        context.window.webContents.send(C.IPC_EVENT.TAB_UPDATE, { id, isLoading: true, url: getDisplayUrl(view.webContents.getURL()) });
     });
 
     view.webContents.on('did-stop-loading', () => {
         if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
-        context.window.webContents.send('tab-update', { id, isLoading: false, url: getDisplayUrl(view.webContents.getURL()) });
+        context.window.webContents.send(C.IPC_EVENT.TAB_UPDATE, { id, isLoading: false, url: getDisplayUrl(view.webContents.getURL()) });
     });
 
     // Guard: after the Google homepage finishes loading its JS may attempt to
@@ -2384,17 +2395,31 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
     view.webContents.on('did-navigate', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
         recordCompatEvent(id, { type: 'navigated', url: displayUrl, rawUrl: targetUrl });
-        context.window.webContents.send('url-changed', { id, url: displayUrl });
+        context.window.webContents.send(C.IPC_EVENT.URL_CHANGED, { id, url: displayUrl });
         if (!effectiveStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
-            appendHistory(context.profileId, id, displayUrl, view.webContents.getTitle() || displayUrl);
+            historyService.recordVisit(context.profileId, {
+                tabId: id,
+                url: displayUrl,
+                title: view.webContents.getTitle() || displayUrl,
+                transition: consumeNextNavigationTransition(id),
+            }).catch((err) => {
+                console.error('Failed to record history:', err);
+            });
         }
     });
 
     view.webContents.on('did-navigate-in-page', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
-        context.window.webContents.send('url-changed', { id, url: displayUrl });
+        context.window.webContents.send(C.IPC_EVENT.URL_CHANGED, { id, url: displayUrl });
         if (!effectiveStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
-            appendHistory(context.profileId, id, displayUrl, view.webContents.getTitle() || displayUrl);
+            historyService.recordVisit(context.profileId, {
+                tabId: id,
+                url: displayUrl,
+                title: view.webContents.getTitle() || displayUrl,
+                transition: consumeNextNavigationTransition(id),
+            }).catch((err) => {
+                console.error('Failed to record in-page history:', err);
+            });
         }
     });
 
@@ -2468,16 +2493,38 @@ function createTab(context, id, url = "app://newtab", isStealth = false, options
 }
 
 // ─── HISTORY STORAGE ───────────────────────────────────────────────────────────
-let historyPath;
+const pendingTransitionsByTab = new Map();
 
-// Tracks the last-recorded {url, timestamp} per tab to deduplicate rapid
-// duplicate entries caused by did-navigate + did-navigate-in-page both firing
-// for a single Google search (Google uses pushState to normalise its URL).
-const lastRecordedByTab = new Map();
+function transitionFromNavigationSource(source) {
+    switch (String(source || '').toLowerCase()) {
+        case C.NAV_SOURCE.TYPED:
+        case C.NAV_SOURCE.SEARCH:
+        case C.NAV_SOURCE.KEYWORD:
+            return C.HISTORY_TRANSITION.TYPED;
+        case C.NAV_SOURCE.BOOKMARK:
+            return C.HISTORY_TRANSITION.BOOKMARK;
+        case C.NAV_SOURCE.RELOAD:
+            return C.HISTORY_TRANSITION.RELOAD;
+        case C.NAV_SOURCE.HISTORY:
+        case C.NAV_SOURCE.TOP_SITE:
+        case C.NAV_SOURCE.TOPSITE:
+        case C.NAV_SOURCE.LINK:
+        default:
+            return C.HISTORY_TRANSITION.LINK;
+    }
+}
 
-function getHistoryPath(profileId = defaultProfileId || 'default') {
-    const safeProfileId = String(profileId || 'default').replace(/[^a-zA-Z0-9-_]/g, '_');
-    return path.join(app.getPath('userData'), `history-${safeProfileId}.ndjson`);
+function markNextNavigationTransition(tabId, source) {
+    if (!tabId) return;
+    pendingTransitionsByTab.set(String(tabId), transitionFromNavigationSource(source));
+}
+
+function consumeNextNavigationTransition(tabId) {
+    if (!tabId) return C.HISTORY_TRANSITION.LINK;
+    const key = String(tabId);
+    const transition = pendingTransitionsByTab.get(key) || C.HISTORY_TRANSITION.LINK;
+    pendingTransitionsByTab.delete(key);
+    return transition;
 }
 
 /**
@@ -2487,10 +2534,10 @@ function getHistoryPath(profileId = defaultProfileId || 'default') {
 function isInternalPageUrl(url) {
     if (!url) return false;
     const ul = url.toLowerCase();
-    if (ul.startsWith('stealth://') || ul.startsWith('invisurf://')) return true;
-    if (url.startsWith('app://') && url.includes('history.html')) return true;
-    if (url.startsWith('app://') && url.includes('settings.html')) return true;
-    if (url.startsWith('app://') && url.includes('newtab')) return true;
+    if (ul.startsWith(C.URL.SCHEME_STEALTH) || ul.startsWith(C.URL.SCHEME_INVISURF)) return true;
+    if (url.startsWith(C.URL.SCHEME_APP) && url.includes(C.URL.PATH_HISTORY_HTML)) return true;
+    if (url.startsWith(C.URL.SCHEME_APP) && url.includes(C.URL.PATH_SETTINGS_HTML)) return true;
+    if (url.startsWith(C.URL.SCHEME_APP) && url.includes(C.URL.FRAGMENT_NEWTAB)) return true;
     return false;
 }
 
@@ -2611,7 +2658,7 @@ function sendChromeOverlayThemePatch(context) {
     const ov = context?.chromeOverlayView;
     if (!ov || ov.webContents.isDestroyed()) return;
     try {
-        ov.webContents.send('chrome-overlay:v1:patch', getChromeOverlayThemePatchForContext(context));
+        ov.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, getChromeOverlayThemePatchForContext(context));
     } catch (_) {
         /* overlay may be tearing down */
     }
@@ -2623,7 +2670,7 @@ function broadcastThemeApply() {
     for (const win of BrowserWindow.getAllWindows()) {
         if (!win || win.isDestroyed?.()) continue;
         try {
-            win.webContents.send('theme:apply', payload);
+            win.webContents.send(C.IPC_EVENT.THEME_APPLY, payload);
         } catch (_) {
             /* window may be closing */
         }
@@ -2672,12 +2719,12 @@ function saveSettings(data) {
     }
 }
 
-ipcMain.handle('settings:get', (e) => {
+ipcMain.handle(C.IPC_INVOKE.SETTINGS_GET, (e) => {
     if (!isSenderTrusted(e)) return SETTINGS_DEFAULTS;
     return loadSettings();
 });
 
-ipcMain.handle('settings:save', (e, data) => {
+ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, (e, data) => {
     if (!isSenderTrusted(e)) return false;
     const current = loadSettings();
     const patch = typeof data === 'object' && data ? data : {};
@@ -2697,13 +2744,13 @@ ipcMain.handle('settings:save', (e, data) => {
     return true;
 });
 
-ipcMain.handle('app:relaunch', (e) => {
+ipcMain.handle(C.IPC_INVOKE.APP_RELAUNCH, (e) => {
     if (!isSenderTrusted(e)) return;
     app.relaunch();
     app.exit(0);
 });
 
-ipcMain.handle('compatDiag:getReport', (e, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.COMPAT_GET_REPORT, (e, payload = {}) => {
     if (!isSenderTrusted(e)) return null;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return null;
@@ -2712,10 +2759,22 @@ ipcMain.handle('compatDiag:getReport', (e, payload = {}) => {
     return { ...report, activeTabId: context.activeTabId };
 });
 
-ipcMain.handle('compatDiag:clear', (e, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.COMPAT_CLEAR, (e, payload = {}) => {
     if (!isSenderTrusted(e)) return false;
     const tabId = payload && payload.tabId != null ? String(payload.tabId) : undefined;
     compatDiagnostics.clear(tabId);
+    return true;
+});
+
+ipcMain.handle(C.IPC_INVOKE.DEVTOOLS_UNDOCKED, (e) => {
+    if (!isSenderTrusted(e)) return false;
+    const { sender } = e;
+    if (!sender || sender.isDestroyed()) return false;
+    if (sender.isDevToolsOpened()) {
+        sender.devToolsWebContents?.focus();
+        return true;
+    }
+    sender.openDevTools({ mode: 'undocked', activate: true });
     return true;
 });
 
@@ -2767,7 +2826,7 @@ function findSessionWindowIdForProfile(decoded, profileId) {
     return undefined;
 }
 
-ipcMain.handle('session:load', (e) => {
+ipcMain.handle(C.IPC_INVOKE.SESSION_LOAD, async (e) => {
     if (!isSenderTrusted(e)) return null;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return null;
@@ -2778,8 +2837,7 @@ ipcMain.handle('session:load', (e) => {
     // 'clearHistory': wipe history file, then start fresh (no session restore)
     if (startupBehavior === 'clearHistory') {
         try {
-            const hp = getHistoryPath(context.profileId);
-            if (fs.existsSync(hp)) fs.unlinkSync(hp);
+            await historyService.clear(context.profileId, { since: null });
         } catch (err) {
             console.error('Failed to clear history on startup:', err);
         }
@@ -2819,7 +2877,7 @@ ipcMain.handle('session:load', (e) => {
     return null;
 });
 
-ipcMain.handle('session:save', (e, data) => {
+ipcMain.handle(C.IPC_INVOKE.SESSION_SAVE, (e, data) => {
     if (!isSenderTrusted(e)) return false;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return false;
@@ -2881,112 +2939,62 @@ ipcMain.handle('session:save', (e, data) => {
     return true;
 });
 
-function appendHistory(profileId, tabId, url, title) {
-    if (!url) return;
-    const ul = url.toLowerCase();
-    if (ul.startsWith('stealth://') || ul.startsWith('invisurf://')) return;
+ipcMain.handle(C.IPC_INVOKE.HISTORY_SEARCH, async (e, payload = {}) => {
+    if (!isSenderTrusted(e)) return { items: [], nextCursor: null, hasMore: false };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context) return { items: [], nextCursor: null, hasMore: false };
+    try {
+        return await historyService.search(context.profileId, payload || {});
+    } catch (error) {
+        console.error('Failed to search history:', error);
+        return { items: [], nextCursor: null, hasMore: false };
+    }
+});
 
-    // Skip all internal pages (NTP, history, settings)
-    if (isInternalPageUrl(url)) return;
-
-    // Ignore Google's homepage and its query parameter variants (but keep /search queries)
-    if (url.startsWith('https://www.google.com/') && !url.includes('/search')) return;
-
-    // Skip duplicate: same URL recorded for this tab within the last 3 seconds.
-    // This prevents did-navigate + did-navigate-in-page (Google pushState) from
-    // writing multiple entries for a single search.
-    const now = Date.now();
-    const last = lastRecordedByTab.get(tabId);
-    if (last && last.url === url && now - last.timestamp < 3000) return;
-    lastRecordedByTab.set(tabId, { url, timestamp: now });
-
-    const dataObj = JSON.stringify({ profileId, url, title, timestamp: now });
-    const payload = encryption.encrypt(dataObj);
-    const entry = JSON.stringify(payload) + '\n';
-    fs.appendFile(getHistoryPath(profileId), entry, (err) => {
-        if (err) console.error('Failed to append history:', err);
-    });
-}
-
-ipcMain.handle('history:get', async (e) => {
+ipcMain.handle(C.IPC_INVOKE.HISTORY_SUGGESTIONS, async (e, query) => {
     if (!isSenderTrusted(e)) return [];
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return [];
     try {
-        const p = getHistoryPath(context.profileId);
-        if (!fs.existsSync(p)) return [];
-        const content = fs.readFileSync(p, 'utf-8');
-        const lines = content.trim().split('\n');
-        return lines.filter(Boolean).map(l => {
-            try {
-                const parsed = JSON.parse(l);
-                if (parsed && parsed.encrypted !== undefined) {
-                    const dec = encryption.decrypt(parsed);
-                    return dec ? JSON.parse(dec) : null;
-                }
-                return parsed; // Fallback to legacy plaintext
-            } catch (err) {
-                return null;
-            }
-        }).filter(Boolean).reverse(); // latest first
-    } catch (e) {
-        console.error('Failed to load history:', e);
+        return await historyService.getSuggestions(context.profileId, { query, limit: 8 });
+    } catch (error) {
+        console.error('Failed to get history suggestions:', error);
         return [];
     }
 });
 
-ipcMain.handle('history:clear', async (e) => {
+ipcMain.handle(C.IPC_INVOKE.HISTORY_DELETE_VISITS, async (e, visitIds) => {
     if (!isSenderTrusted(e)) return false;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return false;
     try {
-        fs.writeFileSync(getHistoryPath(context.profileId), '', 'utf-8');
-        return true;
-    } catch (e) {
-        console.error('Failed to clear history:', e);
+        return await historyService.deleteVisits(context.profileId, visitIds);
+    } catch (error) {
+        console.error('Failed to delete history visits:', error);
         return false;
     }
 });
 
-ipcMain.handle('history:remove-items', async (e, timestamps) => {
+ipcMain.handle(C.IPC_INVOKE.HISTORY_DELETE_URLS, async (e, urls) => {
     if (!isSenderTrusted(e)) return false;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return false;
-    if (!Array.isArray(timestamps) || timestamps.length === 0) return true;
-
     try {
-        const historyFilePath = getHistoryPath(context.profileId);
-        if (!fs.existsSync(historyFilePath)) return true;
-
-        const removeSet = new Set(
-            timestamps
-                .map((value) => Number(value))
-                .filter((value) => Number.isFinite(value))
-        );
-        if (removeSet.size === 0) return true;
-
-        const content = fs.readFileSync(historyFilePath, 'utf-8');
-        const lines = content.split('\n').filter(Boolean);
-        const keptLines = lines.filter((line) => {
-            try {
-                const parsed = JSON.parse(line);
-                const decoded = (parsed && parsed.encrypted !== undefined)
-                    ? encryption.decrypt(parsed)
-                    : JSON.stringify(parsed);
-                if (!decoded) return false;
-                const item = JSON.parse(decoded);
-                return !removeSet.has(Number(item.timestamp));
-            } catch (error) {
-                // Keep unreadable legacy lines to avoid silent data loss.
-                return true;
-            }
-        });
-
-        const nextContent = keptLines.length > 0 ? `${keptLines.join('\n')}\n` : '';
-        fs.writeFileSync(historyFilePath, nextContent, 'utf-8');
-        return true;
+        return await historyService.deleteUrls(context.profileId, urls);
     } catch (error) {
-        console.error('Failed to remove history items:', error);
+        console.error('Failed to delete history URLs:', error);
+        return false;
+    }
+});
+
+ipcMain.handle(C.IPC_INVOKE.HISTORY_CLEAR, async (e, payload = {}) => {
+    if (!isSenderTrusted(e)) return false;
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context) return false;
+    try {
+        return await historyService.clear(context.profileId, payload || {});
+    } catch (error) {
+        console.error('Failed to clear history:', error);
         return false;
     }
 });
@@ -2998,7 +3006,7 @@ ipcMain.handle('history:remove-items', async (e, timestamps) => {
  * Forwards an omnibox:focus event to the browser shell so the real address bar
  * receives keyboard focus instead of the cosmetic NTP element.
  */
-ipcMain.on('omnibox:steal-focus', (e) => {
+ipcMain.on(C.IPC_SEND.OMNIBOX_STEAL_FOCUS, (e) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.activeTabId) return;
@@ -3010,59 +3018,13 @@ ipcMain.on('omnibox:steal-focus', (e) => {
  * Groups history entries by eTLD+1 domain, counts visits, and returns the top
  * entries with { url, title, domain } objects (deduplicated by domain).
  */
-ipcMain.handle('newtab:get-top-sites', async (e) => {
+ipcMain.handle(C.IPC_INVOKE.NTP_TOP_SITES, async (e) => {
     if (!isSenderTrusted(e)) return [];
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return [];
 
     try {
-        const historyFilePath = getHistoryPath(context.profileId);
-        if (!fs.existsSync(historyFilePath)) return [];
-
-        const content = fs.readFileSync(historyFilePath, 'utf-8');
-        const lines = content.trim().split('\n').filter(Boolean);
-
-        const domainMap = new Map(); // domain → { url, title, count }
-
-        for (const line of lines) {
-            let item;
-            try {
-                const parsed = JSON.parse(line);
-                if (parsed && parsed.encrypted !== undefined) {
-                    const dec = encryption.decrypt(parsed);
-                    item = dec ? JSON.parse(dec) : null;
-                } else {
-                    item = parsed;
-                }
-            } catch {
-                continue;
-            }
-
-            if (!item || !item.url) continue;
-            if (isInternalPageUrl(item.url)) continue;
-
-            let domain;
-            try {
-                const parsed = new URL(item.url);
-                domain = parsed.hostname.replace(/^www\./, '');
-            } catch {
-                continue;
-            }
-
-            if (!domain) continue;
-
-            if (domainMap.has(domain)) {
-                const existing = domainMap.get(domain);
-                existing.count += 1;
-            } else {
-                domainMap.set(domain, { url: item.url, title: item.title || domain, domain, count: 1 });
-            }
-        }
-
-        return Array.from(domainMap.values())
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 8)
-            .map(({ url, title, domain }) => ({ url, title, domain }));
+        return await historyService.getTopSites(context.profileId, 8);
     } catch (err) {
         console.error('Failed to get top sites:', err);
         return [];
@@ -3113,14 +3075,14 @@ function broadcastBookmarks(profileId) {
     }
 }
 
-ipcMain.handle('bookmarks:get', (e) => {
+ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_GET, (e) => {
     if (!isSenderTrusted(e)) return { bar: [] };
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return { bar: [] };
     return loadBookmarks(context.profileId);
 });
 
-ipcMain.handle('bookmarks:save', (e, data) => {
+ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_SAVE, (e, data) => {
     if (!isSenderTrusted(e)) return false;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return false;
@@ -3129,7 +3091,7 @@ ipcMain.handle('bookmarks:save', (e, data) => {
     return true;
 });
 
-ipcMain.handle('bookmarks:add', (event, item) => {
+ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_ADD, (event, item) => {
     if (!isSenderTrusted(event)) return { bar: [] };
     const context = getWindowContextByEventSender(event.sender);
     if (!context) return { bar: [] };
@@ -3144,7 +3106,7 @@ ipcMain.handle('bookmarks:add', (event, item) => {
             if (b.id === item.id) return false;
             if (b.type === 'bookmark' && normUrl(b.url || '') === itemNorm) return false;
 
-            if (b.type === 'folder' && b.children) {
+            if (b.type === C.BOOKMARK.TYPE_FOLDER && b.children) {
                 b.children = removeFromList(b.children);
             }
             return true;
@@ -3159,7 +3121,7 @@ ipcMain.handle('bookmarks:add', (event, item) => {
     return data;
 });
 
-ipcMain.handle('bookmarks:remove', (event, id) => {
+ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_REMOVE, (event, id) => {
     if (!isSenderTrusted(event)) return { bar: [] };
     const context = getWindowContextByEventSender(event.sender);
     if (!context) return { bar: [] };
@@ -3167,7 +3129,7 @@ ipcMain.handle('bookmarks:remove', (event, id) => {
     const removeFromList = (list) => {
         return list.filter(item => {
             if (item.id === id) return false;
-            if (item.type === 'folder' && item.children) {
+            if (item.type === C.BOOKMARK.TYPE_FOLDER && item.children) {
                 item.children = removeFromList(item.children);
             }
             return true;
@@ -3179,7 +3141,7 @@ ipcMain.handle('bookmarks:remove', (event, id) => {
     return data;
 });
 
-ipcMain.handle('bookmarks:reorder', (e, bar) => {
+ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_REORDER, (e, bar) => {
     if (!isSenderTrusted(e)) return false;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return false;
@@ -3190,7 +3152,7 @@ ipcMain.handle('bookmarks:reorder', (e, bar) => {
     return true;
 });
 
-ipcMain.handle('bookmarks:addFolder', (e, name) => {
+ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_ADD_FOLDER, (e, name) => {
     if (!isSenderTrusted(e)) return { bar: [] };
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return { bar: [] };
@@ -3202,7 +3164,7 @@ ipcMain.handle('bookmarks:addFolder', (e, name) => {
     return data;
 });
 
-ipcMain.handle('bookmarks:addToFolder', (e, folderId, item) => {
+ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_ADD_TO_FOLDER, (e, folderId, item) => {
     if (!isSenderTrusted(e)) return { bar: [] };
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return { bar: [] };
@@ -3217,7 +3179,7 @@ ipcMain.handle('bookmarks:addToFolder', (e, folderId, item) => {
             if (b.id === item.id) return false;
             if (b.type === 'bookmark' && normUrl(b.url || '') === itemNorm) return false;
 
-            if (b.type === 'folder' && b.children) {
+            if (b.type === C.BOOKMARK.TYPE_FOLDER && b.children) {
                 b.children = removeFromList(b.children);
             }
             return true;
@@ -3228,8 +3190,8 @@ ipcMain.handle('bookmarks:addToFolder', (e, folderId, item) => {
     // 2. Find target folder and add
     const findFolder = (list) => {
         for (const b of list) {
-            if (b.id === folderId && b.type === 'folder') return b;
-            if (b.type === 'folder' && b.children) {
+            if (b.id === folderId && b.type === C.BOOKMARK.TYPE_FOLDER) return b;
+            if (b.type === C.BOOKMARK.TYPE_FOLDER && b.children) {
                 const found = findFolder(b.children);
                 if (found) return found;
             }
@@ -3261,7 +3223,7 @@ function isSenderTrusted(event) {
 // Register a tab as sleeping: records its URL for deferred loading without
 // creating a WebContentsView. The view is created the first time the tab is
 // activated (see the switch-tab handler below).
-ipcMain.on('tab:sleep-register', (e, { id, url }) => {
+ipcMain.on(C.IPC_SEND.TAB_SLEEP_REGISTER, (e, { id, url }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
@@ -3273,14 +3235,14 @@ ipcMain.on('tab:sleep-register', (e, { id, url }) => {
 // WebContentsViews composite above the BrowserWindow shell HTML; shrinking bounds
 // is not always enough — removeChildView clears the native layer so portaled UIs
 // (tab context menu, bookmark editor, etc.) paint on top.
-ipcMain.handle('tab:hide-active', (e) => {
+ipcMain.handle(C.IPC_INVOKE.TAB_HIDE_ACTIVE, (e) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
     hideActiveTabViewForShellOverlay(context);
 });
 
-ipcMain.handle('tab:restore-active', (e) => {
+ipcMain.handle(C.IPC_INVOKE.TAB_RESTORE_ACTIVE, (e) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
@@ -3288,7 +3250,7 @@ ipcMain.handle('tab:restore-active', (e) => {
 });
 
 /** JPEG snapshot of the active tab for shell overlay (profile menu freeze). */
-ipcMain.handle('tab:capture-active-snapshot', async (e) => {
+ipcMain.handle(C.IPC_INVOKE.TAB_CAPTURE_SNAPSHOT, async (e) => {
     if (!isSenderTrusted(e)) return { dataUrl: null };
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return { dataUrl: null };
@@ -3302,7 +3264,7 @@ ipcMain.handle('tab:capture-active-snapshot', async (e) => {
         const buf = image.toJPEG(85);
         return { dataUrl: `data:image/jpeg;base64,${buf.toString('base64')}` };
     } catch (err) {
-        console.error('tab:capture-active-snapshot', err);
+        console.error(C.IPC_INVOKE.TAB_CAPTURE_SNAPSHOT, err);
         return { dataUrl: null };
     }
 });
@@ -3312,7 +3274,7 @@ ipcMain.handle('tab:capture-active-snapshot', async (e) => {
  * Keeps the thumbnail correct while ensuring shell UI (omnibox dropdown) is never
  * covered by the native tab layer.
  */
-ipcMain.handle('tab:prepare-shell-overlay', async (e) => {
+ipcMain.handle(C.IPC_INVOKE.TAB_PREPARE_SHELL_OVERLAY, async (e) => {
     if (!isSenderTrusted(e)) return { dataUrl: null };
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return { dataUrl: null };
@@ -3338,13 +3300,13 @@ ipcMain.handle('tab:prepare-shell-overlay', async (e) => {
     return { dataUrl };
 });
 
-ipcMain.handle('tab:move-to-new-window', async (e, { id, fallbackTabId }) => {
+ipcMain.handle(C.IPC_INVOKE.TAB_MOVE_NEW_WINDOW, async (e, { id, fallbackTabId }) => {
     if (!isSenderTrusted(e)) return { ok: false };
     if (!id || typeof id !== 'string') return { ok: false };
     try {
         return moveTabToDetachedWindow(id, fallbackTabId);
     } catch (err) {
-        console.error('tab:move-to-new-window', err);
+        console.error(C.IPC_INVOKE.TAB_MOVE_NEW_WINDOW, err);
         return { ok: false };
     }
 });
@@ -3353,7 +3315,7 @@ const TAB_STRIP_CONTEXT_MENU_MAX_ITEMS = 30;
 const TAB_STRIP_CONTEXT_MENU_ACTION_IDS = new Set([
     'newTabRight',
     'moveNewWindow',
-    'reload',
+    C.IPC_SEND.RELOAD,
     'duplicate',
     'togglePin',
     'toggleMuteSite',
@@ -3363,7 +3325,7 @@ const TAB_STRIP_CONTEXT_MENU_ACTION_IDS = new Set([
 ]);
 
 /** Native tab strip context menu: Menu.popup above WebContentsView; actions round-trip to shell. */
-ipcMain.handle('tab:strip-context-menu', (e, payload = {}) => {
+ipcMain.handle(C.IPC_INVOKE.TAB_STRIP_CONTEXT_MENU, (e, payload = {}) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const sender = e.sender;
     if (!sender || sender.isDestroyed()) return { ok: false };
@@ -3400,13 +3362,13 @@ ipcMain.handle('tab:strip-context-menu', (e, payload = {}) => {
             click: () => {
                 try {
                     if (!sender.isDestroyed()) {
-                        sender.send('tab-strip-context-menu:action', {
+                        sender.send(C.IPC_EVENT.TAB_STRIP_MENU_ACTION, {
                             tabId: capturedTabId,
                             id: capturedActionId,
                         });
                     }
                 } catch (err) {
-                    console.error('tab-strip-context-menu:action', err?.message || err);
+                    console.error(C.IPC_EVENT.TAB_STRIP_MENU_ACTION, err?.message || err);
                 }
             },
         });
@@ -3416,13 +3378,13 @@ ipcMain.handle('tab:strip-context-menu', (e, payload = {}) => {
         const menu = Menu.buildFromTemplate(template);
         menu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
     } catch (err) {
-        console.error('tab:strip-context-menu', err?.message || err);
+        console.error(C.IPC_INVOKE.TAB_STRIP_CONTEXT_MENU, err?.message || err);
         return { ok: false };
     }
     return { ok: true };
 });
 
-ipcMain.handle('tab:get-info', async (e, { id }) => {
+ipcMain.handle(C.IPC_INVOKE.TAB_GET_INFO, async (e, { id }) => {
     if (!isSenderTrusted(e)) return null;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return null;
@@ -3461,24 +3423,27 @@ ipcMain.handle('tab:get-info', async (e, { id }) => {
 });
 
 // ─── IPC LISTENERS ───────────────────────────────────────────────────────────
-ipcMain.on('new-tab', (e, { id, isStealth, url }) => {
+ipcMain.on(C.IPC_SEND.NEW_TAB, (e, { id, isStealth, url, source } = {}) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
 
     const resolvedUrl = resolveTabLoadUrl(url);
+    if (url && !isInternalPageUrl(url)) {
+        markNextNavigationTransition(id, source || 'link');
+    }
 
     const stealthTab = !!context.stealthWindow;
     createTab(context, id, resolvedUrl, stealthTab);
 
     // Notify the main React shell so it can add the tab to its state
     if (context.window && !context.window.webContents.isDestroyed()) {
-        context.window.webContents.send('tab-created', { id, isStealth: stealthTab, url: resolvedUrl });
+        context.window.webContents.send(C.IPC_EVENT.TAB_CREATED, { id, isStealth: stealthTab, url: resolvedUrl });
     }
     // Omnibox autofocus for blank/NTP is handled inside activateTabInContext() at the end of createTab().
 });
 
-ipcMain.on('switch-tab', (e, { id }) => {
+ipcMain.on(C.IPC_SEND.SWITCH_TAB, (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
@@ -3486,7 +3451,7 @@ ipcMain.on('switch-tab', (e, { id }) => {
     activateOrWakeTab(id);
 });
 
-ipcMain.on('tab-menu:sync-labels', (e, payload = {}) => {
+ipcMain.on(C.IPC_SEND.TAB_MENU_SYNC, (e, payload = {}) => {
     if (!isSenderTrusted(e)) return;
     if (typeof payload.muteSiteShowsUnmute === 'boolean') {
         tabMenuMuteSiteShowsUnmute = payload.muteSiteShowsUnmute;
@@ -3497,7 +3462,7 @@ ipcMain.on('tab-menu:sync-labels', (e, payload = {}) => {
     rebuildApplicationMenu();
 });
 
-ipcMain.on('tab:set-audio-muted', (e, { id, muted }) => {
+ipcMain.on(C.IPC_SEND.TAB_SET_AUDIO_MUTED, (e, { id, muted }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
@@ -3508,7 +3473,7 @@ ipcMain.on('tab:set-audio-muted', (e, { id, muted }) => {
     } catch (_) { }
 });
 
-ipcMain.on('close-tab', (e, { id }) => {
+ipcMain.on(C.IPC_SEND.CLOSE_TAB, (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
@@ -3548,12 +3513,13 @@ ipcMain.on('close-tab', (e, { id }) => {
         tabIdToWindowId.delete(id);
         if (context.activeTabId === id) context.activeTabId = null;
     }
-    lastRecordedByTab.delete(id);
+    pendingTransitionsByTab.delete(String(id));
+    historyService.clearTab(id);
     compatDiagnostics.clear(id);
     pushRecentlyClosedTab(context.profileId, recentlyClosedCandidate);
 });
 
-ipcMain.on('go-back', (e, { id }) => {
+ipcMain.on(C.IPC_SEND.GO_BACK, (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
@@ -3561,7 +3527,7 @@ ipcMain.on('go-back', (e, { id }) => {
     if (context.tabs[targetId]) context.tabs[targetId].webContents.navigationHistory.goBack();
 });
 
-ipcMain.on('go-forward', (e, { id }) => {
+ipcMain.on(C.IPC_SEND.GO_FORWARD, (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
@@ -3569,15 +3535,18 @@ ipcMain.on('go-forward', (e, { id }) => {
     if (context.tabs[targetId]) context.tabs[targetId].webContents.navigationHistory.goForward();
 });
 
-ipcMain.on('reload', (e, { id }) => {
+ipcMain.on(C.IPC_SEND.RELOAD, (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
     const targetId = id === 'current' ? context.activeTabId : id;
-    if (context.tabs[targetId]) context.tabs[targetId].webContents.reload();
+    if (context.tabs[targetId]) {
+        markNextNavigationTransition(targetId, C.IPC_SEND.RELOAD);
+        context.tabs[targetId].webContents.reload();
+    }
 });
 
-ipcMain.on('navigate', (e, { id, url }) => {
+ipcMain.on(C.IPC_SEND.NAVIGATE, (e, { id, url, source } = {}) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
@@ -3609,6 +3578,7 @@ ipcMain.on('navigate', (e, { id, url }) => {
         formattedUrl = `https://${formattedUrl}`;
     }
 
+    markNextNavigationTransition(targetId, source || 'link');
     context.tabs[targetId]?.webContents.loadURL(formattedUrl);
 });
 
@@ -3632,7 +3602,8 @@ function applyDockIconForSystemAppearance() {
     }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+    console.log("YOUR DATA IS HERE:", app.getPath('userData'));
     registerAppProtocolForSession(session.defaultSession, 'default');
     authPolicy.applyGoogleAuthPolicy(session.defaultSession); // Force auth checks for the default session
 
@@ -3667,7 +3638,24 @@ app.whenReady().then(() => {
         saveProfiles();
     }
 
+    for (const profile of profilesById.values()) {
+        try {
+            const result = await historyService.migrateOldHistory(profile.profileId);
+            if (result.didRun) {
+                console.log(`Migrated history for ${profile.profileId}: ${result.migrated} rows, ${result.skipped} skipped`);
+            }
+        } catch (error) {
+            console.error(`Failed to migrate history for ${profile.profileId}:`, error);
+        }
+    }
+
     const decodedSession = readDecodedSessionDoc();
     startupSessionDoc = decodedSession;
     createProfilePickerWindow();
+});
+
+app.on('before-quit', () => {
+    historyService.closeAll().catch((error) => {
+        console.error('Failed to close history databases:', error);
+    });
 });

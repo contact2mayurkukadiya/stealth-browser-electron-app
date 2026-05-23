@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTabOverlay } from '../context/TabOverlayContext';
+import { KEYBOARD, PLATFORM } from '../constants/conditionStrings.js';
 
 function matchesQuery(item, queryLower) {
   if (!queryLower) return true;
@@ -54,22 +55,22 @@ export default function CommandPaletteModal({ open, onClose, commands }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === KEYBOARD.ESCAPE) {
         e.preventDefault();
         onClose();
         return;
       }
-      if (e.key === 'ArrowDown') {
+      if (e.key === KEYBOARD.ARROW_DOWN) {
         e.preventDefault();
         safeSelect(selectedIndex + 1);
         return;
       }
-      if (e.key === 'ArrowUp') {
+      if (e.key === KEYBOARD.ARROW_UP) {
         e.preventDefault();
         safeSelect(selectedIndex - 1);
         return;
       }
-      if (e.key === 'Enter' && filtered[selectedIndex]) {
+      if (e.key === KEYBOARD.ENTER && filtered[selectedIndex]) {
         e.preventDefault();
         filtered[selectedIndex].run();
         onClose();
@@ -87,7 +88,7 @@ export default function CommandPaletteModal({ open, onClose, commands }) {
   if (!open) return null;
 
   const platform = window.electronAPI?.platform;
-  const shortcutHint = platform === 'darwin' ? '⇧⌘P' : 'Shift+Ctrl+P';
+  const shortcutHint = platform === PLATFORM.DARWIN ? '⇧⌘P' : 'Shift+Ctrl+P';
 
   return (
     <div className="search-tabs-overlay" role="dialog" aria-label="Search menu commands">
@@ -103,7 +104,7 @@ export default function CommandPaletteModal({ open, onClose, commands }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') e.stopPropagation();
+              if (e.key === KEYBOARD.ARROW_DOWN || e.key === KEYBOARD.ARROW_UP) e.stopPropagation();
             }}
           />
           <span className="search-tabs-shortcut-hint">{shortcutHint}</span>

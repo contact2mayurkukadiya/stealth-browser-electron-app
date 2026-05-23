@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { KEYBOARD } from '../../constants/conditionStrings.js';
 
-// Time range options; null means "All time" → call historyClear()
+// Time range options; null means "All time".
 const TIME_RANGES = [
   { label: 'Last 15 min',   ms: 15 * 60 * 1000 },
   { label: 'Last hour',     ms: 60 * 60 * 1000 },
@@ -24,7 +25,7 @@ export default function ClearDataModal({ onClear, onClose }) {
     firstChipRef.current?.focus();
 
     const handleKeyDown = (e) => {
-      if (e.key === 'Tab') {
+      if (e.key === KEYBOARD.TAB) {
         const focusable = Array.from(
           document.querySelector('.h-modal')?.querySelectorAll(
             'button:not(:disabled), input:not(:disabled), [tabindex="0"]'

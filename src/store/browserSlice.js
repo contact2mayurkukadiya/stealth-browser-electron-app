@@ -1,7 +1,8 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { URL as URL_C } from '../constants/conditionStrings.js';
 
 // The canonical URL for new tabs — resolved by main.js to the actual newtab.html.
-const NTP_URL = 'app://newtab';
+const NTP_URL = URL_C.NTP_DISPLAY;
 
 /**
  * Returns true when a URL represents the custom New Tab Page.
@@ -11,7 +12,7 @@ const NTP_URL = 'app://newtab';
 function isNtpUrl(url) {
   if (!url) return false;
   const lower = url.toLowerCase();
-  return lower === 'app://newtab' || lower.startsWith('app://localhost/dist/newtab');
+  return lower === URL_C.NTP_DISPLAY || lower.startsWith(URL_C.NTP_LOCALHOST_PREFIX);
 }
 
 function tabChromeDefaults() {

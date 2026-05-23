@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { profileInitials, profileAvatarBackground } from '../utils/profileAvatar';
 import './ProfileAvatar.css';
+import { PROFILE } from '../constants/conditionStrings.js';
 
 /**
  * Circular avatar: custom image when available, else initials on colored background.
@@ -48,7 +49,7 @@ export default function ProfileAvatar({
     };
   }, [profile?.profileId, profile?.hasCustomAvatar, profile?.updatedAt, imageOverride]);
 
-  const presetInset = showImg && imgSrc && profile?.avatarSource === 'preset';
+  const presetInset = showImg && imgSrc && profile?.avatarSource === PROFILE.AVATAR_PRESET;
 
   return (
     <span

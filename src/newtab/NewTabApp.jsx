@@ -4,6 +4,7 @@ import { logoIcognitoDarkSvg, logoPurpleDarkSvg, logoPurpleLightSvg } from '../c
 import { useChromeTheme } from '../hooks/useChromeTheme';
 import { useInvsurfDocumentFavicon } from '../hooks/useInvsurfLogoFavicon';
 import './NewTabApp.css';
+import { KEYBOARD, NTP_TILE } from '../constants/conditionStrings.js';
 
 // ── Icons (Material-like, inlined for CSP / offline) ────────────────────────
 
@@ -93,12 +94,12 @@ function SiteShortcutCard({ site }) {
   const letter = (site.title || domain || '?')[0].toUpperCase();
 
   const handleClick = useCallback(() => {
-    window.electronAPI?.navigate('current', site.url);
+    window.electronAPI?.navigate('current', site.url, { source: 'top-site' });
   }, [site.url]);
 
   const handleKeyDown = useCallback(
     (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (e.key === KEYBOARD.ENTER || e.key === KEYBOARD.SPACE) {
         e.preventDefault();
         handleClick();
       }
@@ -138,7 +139,7 @@ function PresetShortcutCard({ shortcut }) {
   const { title, url, Icon } = shortcut;
 
   const open = useCallback(() => {
-    window.electronAPI?.navigate('current', url);
+    window.electronAPI?.navigate('current', url, { source: 'top-site' });
   }, [url]);
 
   return (
@@ -163,7 +164,7 @@ function ShortcutGrid({ topSites }) {
     <section className="ntp-shortcuts" aria-label="Most frequent links">
       <div className="ntp-shortcuts__grid">
         {tiles.map((tile) =>
-          tile.kind === 'site' ? (
+          tile.kind === NTP_TILE.SITE ? (
             <SiteShortcutCard key={tile.key} site={tile.site} />
           ) : (
             <PresetShortcutCard key={tile.key} shortcut={tile.shortcut} />

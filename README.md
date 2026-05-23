@@ -224,3 +224,19 @@ npm run start
 - Internal pages use `invisurf://...` display URLs (legacy sessions may still carry `stealth://...`; main treats them as aliases).
 - Session/history data are encrypted before writing.
 - Tab metadata in Redux is separate from actual `WebContentsView` lifecycle in main process.
+
+## Upcomming Features
+
+- Profiles/History/Settings/Bookmarks Export and import
+- Profiles/History/Settings/Bookmarks Server Sync
+- Restore tabs
+- Restore Previous Windows which is closed recently.
+- Tab Groups
+- Extension Support
+- Download/Permission Popups
+- Split Tabs
+- InBuilt VPN
+- InBuild AdBlocker
+- Omnibox Fixes
+- Auto-complete menu item fix - show netiv query instead of url.
+- 

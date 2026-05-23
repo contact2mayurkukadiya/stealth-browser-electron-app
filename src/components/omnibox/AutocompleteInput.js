@@ -1,3 +1,5 @@
+import { URL as URL_C, INPUT_KIND } from '../../constants/conditionStrings.js';
+
 /**
  * AutocompleteInput — classifies raw omnibox text and builds navigation/search URLs.
  *
@@ -8,18 +10,18 @@
  */
 
 const KEYWORD_SHORTCUTS = {
-  yt:  'https://www.youtube.com/results?search_query=',
-  gh:  'https://github.com/search?q=',
+  yt: 'https://www.youtube.com/results?search_query=',
+  gh: 'https://github.com/search?q=',
   mdn: 'https://developer.mozilla.org/search?q=',
-  so:  'https://stackoverflow.com/search?q=',
+  so: 'https://stackoverflow.com/search?q=',
   npm: 'https://www.npmjs.com/search?q=',
 };
 
 /** Search engine base URLs — mirrors the map in main.js. */
 const SEARCH_ENGINE_URLS = {
-  google:     'https://www.google.com/search?q=',
-  bing:       'https://www.bing.com/search?q=',
-  brave:      'https://search.brave.com/search?q=',
+  google: 'https://www.google.com/search?q=',
+  bing: 'https://www.bing.com/search?q=',
+  brave: 'https://search.brave.com/search?q=',
   duckDuckGo: 'https://duckduckgo.com/?q=',
 };
 
@@ -61,17 +63,17 @@ function looksLikeUrl(text) {
  */
 export function classifyInput(text) {
   const trimmed = (text || '').trim();
-  if (!trimmed) return 'search';
+  if (!trimmed) return INPUT_KIND.SEARCH;
 
   // Keyword: "yt foo" — keyword token + space + query
   const spaceIdx = trimmed.indexOf(' ');
   if (spaceIdx > 0) {
     const keyword = trimmed.slice(0, spaceIdx).toLowerCase();
-    if (KEYWORD_SHORTCUTS[keyword]) return 'keyword';
+    if (KEYWORD_SHORTCUTS[keyword]) return INPUT_KIND.KEYWORD;
   }
 
-  if (looksLikeUrl(trimmed)) return 'url';
-  return 'search';
+  if (looksLikeUrl(trimmed)) return INPUT_KIND.URL;
+  return INPUT_KIND.SEARCH;
 }
 
 /**
@@ -84,11 +86,11 @@ export function classifyInput(text) {
  */
 export function toNavigateUrl(text, engine = 'google') {
   const trimmed = (text || '').trim();
-  if (!trimmed) return 'app://newtab';
+  if (!trimmed) return URL_C.NTP_DISPLAY;
 
   const kind = classifyInput(trimmed);
 
-  if (kind === 'keyword') {
+  if (kind === INPUT_KIND.KEYWORD) {
     const spaceIdx = trimmed.indexOf(' ');
     const keyword = trimmed.slice(0, spaceIdx).toLowerCase();
     const query = trimmed.slice(spaceIdx + 1).trim();
@@ -96,7 +98,7 @@ export function toNavigateUrl(text, engine = 'google') {
     return base + encodeURIComponent(query);
   }
 
-  if (kind === 'url') {
+  if (kind === INPUT_KIND.URL) {
     if (SCHEME_RE.test(trimmed)) return trimmed;
     if (LOCALHOST_RE.test(trimmed)) return `http://${trimmed}`;
     return `https://${trimmed}`;

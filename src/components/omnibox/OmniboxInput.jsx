@@ -5,6 +5,13 @@ import './omnibox.css';
 import AutocompleteController from './AutocompleteController.js';
 import { toNavigateUrl } from './AutocompleteInput.js';
 import { useChromeOverlay } from '../../context/ChromeOverlayContext.jsx';
+import { buildDisplayParts } from '../../utils/omniboxDisplayUrl.js';
+import {
+  URL as URL_C,
+  KEYBOARD,
+  OVERLAY,
+  DOM_EVENT,
+} from '../../constants/conditionStrings.js';
 
 // ── SVG icons ──────────────────────────────────────────────────────────────
 
@@ -30,28 +37,6 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-function buildDisplayParts(url) {
-  if (!url || url.startsWith('app://') || url === 'New Tab') return null;
-  try {
-    const urlObj = new URL(url);
-    const protocol = urlObj.protocol + '//';
-    let displayUrl = url.replace(protocol, '');
-    if (displayUrl.endsWith('/') && displayUrl.split('/').length === 2) {
-      displayUrl = displayUrl.slice(0, -1);
-    }
-    const domain = urlObj.hostname;
-    const idx = displayUrl.indexOf(domain);
-    if (idx === -1) return { prefix: '', domain: displayUrl, suffix: '' };
-    return {
-      prefix: displayUrl.substring(0, idx),
-      domain,
-      suffix: displayUrl.substring(idx + domain.length),
-    };
-  } catch {
-    return { prefix: '', domain: url, suffix: '' };
-  }
 }
 
 function serializeSuggestionsForOverlay(list) {
@@ -190,18 +175,18 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   useEffect(() => {
     const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
       if (!chromeOmniboxActiveRef.current) return;
-      if (data?.type === 'dismiss') {
+      if (data?.type === OVERLAY.DISMISS) {
         closeDropdown();
         return;
       }
-      if (data?.type === 'omniboxSuggestPick') {
+      if (data?.type === OVERLAY.OMNIBOX_SUGGEST_PICK) {
         const index = Number(data.index);
         if (!Number.isFinite(index) || index < 0) return;
         const list = suggestionsRef.current;
         const suggestion = list[index];
         if (!suggestion?.url) return;
         if (!currentTabId) return;
-        window.electronAPI.navigate(currentTabId, suggestion.url);
+        window.electronAPI.navigate(currentTabId, suggestion.url, { source: suggestion.type });
         closeDropdown();
         inputRef.current?.blur();
       }
@@ -260,9 +245,9 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     });
   }, [controller]);
 
-  const navigateTo = useCallback((url) => {
+  const navigateTo = useCallback((url, source = 'typed') => {
     if (!currentTabId) return;
-    window.electronAPI.navigate(currentTabId, url);
+    window.electronAPI.navigate(currentTabId, url, { source });
     closeDropdown();
     inputRef.current?.blur();
   }, [currentTabId, closeDropdown]);
@@ -277,8 +262,8 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
         });
       });
     };
-    window.addEventListener('omnibox:request-focus', onRequestFocus);
-    return () => window.removeEventListener('omnibox:request-focus', onRequestFocus);
+    window.addEventListener(DOM_EVENT.OMNIBOX_REQUEST_FOCUS, onRequestFocus);
+    return () => window.removeEventListener(DOM_EVENT.OMNIBOX_REQUEST_FOCUS, onRequestFocus);
   }, [currentTabId]);
 
   const handleFocus = useCallback(() => {
@@ -323,7 +308,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   const handleKeyDown = useCallback((e) => {
     const { key } = e;
 
-    if (key === 'ArrowDown') {
+    if (key === KEYBOARD.ARROW_DOWN) {
       e.preventDefault();
       if (!showDropdown || suggestions.length === 0) return;
       if (!isNavigatingRef.current) {
@@ -337,7 +322,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
       return;
     }
 
-    if (key === 'ArrowUp') {
+    if (key === KEYBOARD.ARROW_UP) {
       e.preventDefault();
       if (!showDropdown || suggestions.length === 0) return;
       if (!isNavigatingRef.current) {
@@ -351,19 +336,19 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
       return;
     }
 
-    if (key === 'Enter') {
+    if (key === KEYBOARD.ENTER) {
       e.preventDefault();
       if (selectedIndex >= 0 && suggestions[selectedIndex]) {
-        navigateTo(suggestions[selectedIndex].url);
+        navigateTo(suggestions[selectedIndex].url, suggestions[selectedIndex].type);
       } else if (ghostSuffix) {
-        navigateTo(inputValue + ghostSuffix);
+        navigateTo(inputValue + ghostSuffix, 'typed');
       } else {
-        navigateTo(toNavigateUrl(inputValue, searchEngine));
+        navigateTo(toNavigateUrl(inputValue, searchEngine), 'typed');
       }
       return;
     }
 
-    if (key === 'Escape') {
+    if (key === KEYBOARD.ESCAPE) {
       e.preventDefault();
       closeDropdown();
       setInputValue(displayUrl);
@@ -371,7 +356,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
       return;
     }
 
-    if (key === 'Tab') {
+    if (key === KEYBOARD.TAB) {
       if (ghostSuffix) {
         e.preventDefault();
         const completed = inputValue + ghostSuffix;
@@ -382,7 +367,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
       return;
     }
 
-    if (key === 'Backspace' && ghostSuffix) {
+    if (key === KEYBOARD.BACKSPACE && ghostSuffix) {
       e.preventDefault();
       setGhostSuffix('');
     }
@@ -393,8 +378,8 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   ]);
 
   const isSecure = isFocused
-    ? inputValue.startsWith('https://')
-    : displayUrl.startsWith('https://');
+    ? inputValue.startsWith(URL_C.SCHEME_HTTPS)
+    : displayUrl.startsWith(URL_C.SCHEME_HTTPS);
 
   const displayParts = buildDisplayParts(displayUrl);
 
