@@ -48,9 +48,7 @@ function encrypt(text) {
         }
     } catch (err) {
         console.error('Encryption failed:', err);
-        return { encrypted: false, data: text }; // Should we fail hard? Returning plaintext is dangerous but prevents total app break if unrecoverable.
-        // Returning plaintext if encryption fails is risky. Better to throw, but per user request "without breaking a feature". 
-        // We'll throw so it can be handled by the caller.
+        throw err;
     }
 }
 

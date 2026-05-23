@@ -3603,7 +3603,6 @@ function applyDockIconForSystemAppearance() {
 }
 
 app.whenReady().then(async () => {
-    console.log("YOUR DATA IS HERE:", app.getPath('userData'));
     registerAppProtocolForSession(session.defaultSession, 'default');
     authPolicy.applyGoogleAuthPolicy(session.defaultSession); // Force auth checks for the default session
 

@@ -219,7 +219,7 @@ class HistoryService {
                      SET title = COALESCE(NULLIF(?, ''), title),
                          visit_count = visit_count + 1,
                          typed_count = typed_count + ?,
-                         last_visit_time = ?,
+                         last_visit_time = MAX(last_visit_time, ?),
                          hidden = 0
                      WHERE id = ?`,
                         [title || '', stableTransition === 'TYPED' ? 1 : 0, now, row.id],
