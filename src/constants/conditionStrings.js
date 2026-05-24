@@ -85,6 +85,7 @@ export const OVERLAY = freeze({
   SELECT_PROFILE: 'selectProfile',
   EDIT_PROFILE: 'editProfile',
   ADD_PROFILE: 'addProfile',
+  APP_MENU_COMMAND: 'appMenuCommand',
 });
 
 /** app:run-menu-command and palette command ids */
@@ -273,6 +274,10 @@ export const IPC_INVOKE = freeze({
   PROFILE_GET_AVATAR: 'profile:getAvatarDataUrl',
   PROFILE_DELETE: 'profile:delete',
   PROFILE_OPEN_WINDOW: 'profile:open-window',
+  PROFILE_PICKER_OPEN: 'profile:picker-open',
+  PROFILE_CLOSE_CURRENT: 'profile:close-current',
+  RECENTLY_CLOSED_LIST: 'recently-closed:list',
+  RECENTLY_CLOSED_RESTORE: 'recently-closed:restore',
   CHROME_OVERLAY_RESET: 'chrome-overlay:v1:reset',
   CHROME_OVERLAY_ACQUIRE: 'chrome-overlay:v1:acquire',
   CHROME_OVERLAY_RELEASE: 'chrome-overlay:v1:release',

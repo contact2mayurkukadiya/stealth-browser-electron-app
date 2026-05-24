@@ -22,6 +22,10 @@ const C = Object.freeze({
         "PROFILE_GET_AVATAR": "profile:getAvatarDataUrl",
         "PROFILE_DELETE": "profile:delete",
         "PROFILE_OPEN_WINDOW": "profile:open-window",
+        "PROFILE_PICKER_OPEN": "profile:picker-open",
+        "PROFILE_CLOSE_CURRENT": "profile:close-current",
+        "RECENTLY_CLOSED_LIST": "recently-closed:list",
+        "RECENTLY_CLOSED_RESTORE": "recently-closed:restore",
         "CHROME_OVERLAY_RESET": "chrome-overlay:v1:reset",
         "CHROME_OVERLAY_ACQUIRE": "chrome-overlay:v1:acquire",
         "CHROME_OVERLAY_RELEASE": "chrome-overlay:v1:release",
@@ -245,6 +249,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
             profileId,
             closeProfilePicker: options.closeProfilePicker === true,
         }),
+    profilePickerOpen: () => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_PICKER_OPEN),
+    profileCloseCurrent: () => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_CLOSE_CURRENT),
+    recentlyClosedList: () => ipcRenderer.invoke(C.IPC_INVOKE.RECENTLY_CLOSED_LIST),
+    recentlyClosedRestore: (closedAt) => ipcRenderer.invoke(C.IPC_INVOKE.RECENTLY_CLOSED_RESTORE, { closedAt }),
 
     // Session
     sessionSave: (data) => ipcRenderer.invoke(C.IPC_INVOKE.SESSION_SAVE, data),

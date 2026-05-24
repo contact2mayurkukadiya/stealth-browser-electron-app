@@ -650,7 +650,13 @@ function AppShell() {
         onDragEnd={handleDragEnd}
         onTabStripContextMenu={handleTabStripContextMenu}
       />
-      <NavBar currentTabId={currentTabId} onOpenSettings={handleOpenSettings} searchEngine={searchEngine} />
+      <NavBar
+        currentTabId={currentTabId}
+        onNewTab={createTab}
+        onOpenHistory={handleOpenHistory}
+        onOpenSettings={handleOpenSettings}
+        searchEngine={searchEngine}
+      />
       <BookmarkBar currentTabId={currentTabId} />
     </div>
   );

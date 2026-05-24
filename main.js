@@ -133,6 +133,7 @@ let defaultProfileId = null;
 /** Session document (schema v2) used when opening the first window after the profile picker. */
 let startupSessionDoc = null;
 let profilePickerWindow = null;
+let appIsQuitting = false;
 
 const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
 let generatedTabCounter = 0;
@@ -711,6 +712,7 @@ if (!app.isPackaged) {
 }
 
 app.on('before-quit', () => {
+    appIsQuitting = true;
     for (const watcher of devFileWatchers) {
         try { watcher.close(); } catch (_) { }
     }
@@ -940,6 +942,9 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         windowBootstrapById.delete(context.windowId);
         if (mainWindow === window) {
             mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed()) || null;
+        }
+        if (!appIsQuitting && windowContextsById.size === 0) {
+            createProfilePickerWindow();
         }
     });
 
@@ -2349,6 +2354,58 @@ ipcMain.handle(C.IPC_INVOKE.PROFILE_OPEN_WINDOW, (event, payload = {}) => {
         }
     }
     return { windowId: created.windowId, profileId: profile.profileId };
+});
+
+ipcMain.handle(C.IPC_INVOKE.PROFILE_PICKER_OPEN, (event) => {
+    if (!isSenderTrusted(event)) return { ok: false };
+    createProfilePickerWindow();
+    return { ok: true };
+});
+
+ipcMain.handle(C.IPC_INVOKE.PROFILE_CLOSE_CURRENT, (event) => {
+    if (!isSenderTrusted(event)) return { ok: false };
+    const context = getWindowContextByEventSender(event.sender);
+    const profileId = context?.profileId;
+    if (!profileId) return { ok: false };
+    const targets = Array.from(windowContextsById.values()).filter((ctx) => (
+        ctx?.profileId === profileId &&
+        ctx.window &&
+        !ctx.window.isDestroyed()
+    ));
+    if (targets.length === 0) {
+        if (windowContextsById.size === 0) createProfilePickerWindow();
+        return { ok: true };
+    }
+    for (const target of targets) {
+        try {
+            target.window.close();
+        } catch (err) {
+            console.error(C.IPC_INVOKE.PROFILE_CLOSE_CURRENT, err?.message || err);
+        }
+    }
+    return { ok: true, closed: targets.length };
+});
+
+ipcMain.handle(C.IPC_INVOKE.RECENTLY_CLOSED_LIST, (event) => {
+    if (!isSenderTrusted(event)) return [];
+    const context = getWindowContextByEventSender(event.sender) || getWindowContextForShellFallback();
+    if (!context?.profileId) return [];
+    const stack = getOrCreateRecentlyClosedForProfile(context.profileId);
+    return stack.slice(0, 15).map((entry) => ({
+        type: entry?.type === 'window' ? 'window' : 'tab',
+        label: recentlyClosedEntryLabel(entry),
+        subtitle: entry?.type === 'window'
+            ? `${entry?.tabs?.length || 0} tabs`
+            : (entry?.url || ''),
+        closedAt: entry?.closedAt || null,
+    }));
+});
+
+ipcMain.handle(C.IPC_INVOKE.RECENTLY_CLOSED_RESTORE, (event, payload = {}) => {
+    if (!isSenderTrusted(event)) return { ok: false };
+    const closedAt = typeof payload?.closedAt === 'number' ? payload.closedAt : null;
+    restoreRecentlyClosed(closedAt);
+    return { ok: true };
 });
 
 
@@ -4318,6 +4375,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
+    appIsQuitting = true;
     appLogger.info('app:before-quit', {
         windowCount: BrowserWindow.getAllWindows().length,
     });

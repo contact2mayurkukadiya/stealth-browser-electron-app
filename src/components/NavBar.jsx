@@ -4,12 +4,24 @@ import { useTabOverlay } from '../context/TabOverlayContext';
 import { useChromeOverlay } from '../context/ChromeOverlayContext';
 import { setBookmarks } from '../store/bookmarksSlice';
 import { collectFolderOptions } from '../utils/bookmarkFolderList';
+import { profileAvatarBackground, profileInitials } from '../utils/profileAvatar';
 import OmniboxInput from './omnibox/OmniboxInput';
 import ProfileMenuButton from './ProfileMenuButton';
 import ProfileEditorModal from './ProfileEditorModal';
 import { BOOKMARK, OVERLAY, PROFILE } from '../constants/conditionStrings.js';
 import {
   bookmarkStarFilledSvg,
+  menuAddProfileSvg,
+  menuCloseProfileSvg,
+  menuEditProfileSvg,
+  menuHistorySvg,
+  menuManageProfilesSvg,
+  menuNewTabSvg,
+  menuNewWindowSvg,
+  menuProfileSvg,
+  menuSettingsSvg,
+  menuStealthWindowSvg,
+  menuTabSvg,
   navBackSvg,
   navForwardSvg,
   navReloadSvg,
@@ -64,7 +76,13 @@ function isValidFolderId(folderId, bar) {
   return collectFolderOptions(bar).some((f) => f.id === folderId);
 }
 
-export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'google' }) {
+export default function NavBar({
+  currentTabId,
+  onNewTab,
+  onOpenHistory,
+  onOpenSettings,
+  searchEngine = 'google',
+}) {
   const dispatch = useDispatch();
   const { beginOverlay, endOverlay } = useTabOverlay();
   const { reset, acquire, release, post } = useChromeOverlay();
@@ -90,21 +108,95 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
 
   const [profiles, setProfiles] = useState([]);
   const [currentProfile, setCurrentProfile] = useState(null);
+  const [recentlyClosed, setRecentlyClosed] = useState([]);
+  const [recentHistory, setRecentHistory] = useState([]);
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileEditorMode, setProfileEditorMode] = useState('create');
+  const [appMenuOpen, setAppMenuOpen] = useState(false);
+  const appMenuOpenRef = useRef(false);
+  const pendingOwnAppMenuResetRef = useRef(false);
+  const appMenuAnchorRef = useRef(null);
+  const profilesRef = useRef([]);
+  const currentProfileRef = useRef(null);
+  const recentlyClosedRef = useRef([]);
+  const recentHistoryRef = useRef([]);
+  const profileAvatarsRef = useRef({});
 
   const loadProfiles = useCallback(async () => {
     const [allProfiles, activeProfile] = await Promise.all([
       window.electronAPI.profileList?.() || [],
       window.electronAPI.profileGetCurrent?.(),
     ]);
-    setProfiles(Array.isArray(allProfiles) ? allProfiles : []);
+    const nextProfiles = Array.isArray(allProfiles) ? allProfiles : [];
+    profilesRef.current = nextProfiles;
+    currentProfileRef.current = activeProfile || null;
+    setProfiles(nextProfiles);
     setCurrentProfile(activeProfile || null);
+    return { profiles: nextProfiles, currentProfile: activeProfile || null };
   }, []);
 
   useEffect(() => {
     loadProfiles();
   }, [loadProfiles]);
+  appMenuOpenRef.current = appMenuOpen;
+
+  const isMac = window.electronAPI?.platform === 'darwin';
+  const shortcut = useCallback((mac, other) => (isMac ? mac : other), [isMac]);
+
+  const loadRecentlyClosed = useCallback(async () => {
+    try {
+      const rows = await window.electronAPI.recentlyClosedList?.();
+      const next = Array.isArray(rows) ? rows : [];
+      recentlyClosedRef.current = next;
+      setRecentlyClosed(next);
+      return next;
+    } catch {
+      recentlyClosedRef.current = [];
+      setRecentlyClosed([]);
+      return [];
+    }
+  }, []);
+
+  const loadRecentHistory = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.historySearch?.({ query: '', limit: 8, cursor: null });
+      const next = Array.isArray(result?.items) ? result.items : [];
+      recentHistoryRef.current = next;
+      setRecentHistory(next);
+      return next;
+    } catch {
+      recentHistoryRef.current = [];
+      setRecentHistory([]);
+      return [];
+    }
+  }, []);
+
+  const loadProfileAvatars = useCallback(async (profileList) => {
+    const next = {};
+    await Promise.all((profileList || []).map(async (profile) => {
+      if (!profile?.profileId) return;
+      if (!profile.hasCustomAvatar) return;
+      try {
+        const result = await window.electronAPI.profileGetAvatarDataUrl?.(profile.profileId);
+        if (result?.dataUrl) next[profile.profileId] = result.dataUrl;
+      } catch {
+        // Initials fallback below is enough if an avatar cannot be read.
+      }
+    }));
+    profileAvatarsRef.current = next;
+    return next;
+  }, []);
+
+  const buildProfileAvatarPayload = useCallback((profile) => {
+    if (!profile?.profileId) return null;
+    const label = profile.displayName || profile.profileId;
+    return {
+      src: profileAvatarsRef.current[profile.profileId] || null,
+      initials: profileInitials(label),
+      background: profileAvatarBackground(profile.profileId),
+      preset: profile.avatarSource === PROFILE.AVATAR_PRESET,
+    };
+  }, []);
 
   useEffect(() => {
     if (!profileEditorOpen) return undefined;
@@ -171,10 +263,226 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
     }
   }, [reset, acquire, release, postStarEditorPatch]);
 
+  const handleAddProfile = useCallback(() => {
+    setProfileEditorMode('create');
+    setProfileEditorOpen(true);
+  }, []);
+
+  const handleEditCurrentProfile = useCallback(() => {
+    if (!currentProfile) return;
+    setProfileEditorMode('edit');
+    setProfileEditorOpen(true);
+  }, [currentProfile]);
+
+  const handleBack = () => window.electronAPI.goBack(currentTabId);
+  const handleForward = () => window.electronAPI.goForward(currentTabId);
+  const handleReload = () => window.electronAPI.reload(currentTabId);
+
+  const handleBookmark = useCallback(async (e) => {
+    if (!canBookmark) return;
+
+    const btn = e.currentTarget;
+    btn.classList.remove('pop');
+    void btn.offsetWidth;
+    btn.classList.add('pop');
+    btn.addEventListener('animationend', () => btn.classList.remove('pop'), { once: true });
+
+    if (starEditorActiveRef.current) {
+      void closeStarBookmarkEditor();
+      return;
+    }
+
+    const bookmarkDraft = existingBookmark
+      ? {
+          ...existingBookmark,
+          folderId: findFolderIdForBookmark(existingBookmark.id, bookmarksData.bar),
+          url: currentUrl,
+        }
+      : {
+          title: tab?.title || currentUrl,
+          url: currentUrl,
+          favicon: tab?.favicon ?? null,
+          folderId: 'root',
+        };
+
+    await openStarBookmarkEditor(btn, bookmarkDraft);
+  }, [
+    canBookmark,
+    closeStarBookmarkEditor,
+    openStarBookmarkEditor,
+    existingBookmark,
+    bookmarksData.bar,
+    tab,
+    currentUrl,
+  ]);
+
+  const handleProfileEditorSaved = useCallback(
+    async ({ mode, profile }) => {
+      await loadProfiles();
+      if (mode === PROFILE.MODE_CREATE && profile?.profileId) {
+        await window.electronAPI.profileOpenWindow?.(profile.profileId);
+      }
+      setProfileEditorOpen(false);
+    },
+    [loadProfiles],
+  );
+
+  const handleOpenProfileWindow = useCallback(async (profileId) => {
+    if (!profileId) return;
+    await window.electronAPI.profileOpenWindow?.(profileId);
+  }, []);
+
+  const closeAppMenu = useCallback(async () => {
+    if (!appMenuOpenRef.current) return;
+    appMenuOpenRef.current = false;
+    setAppMenuOpen(false);
+    try {
+      await release();
+    } catch (err) {
+      console.error('app menu overlay release', err);
+    }
+  }, [release]);
+
+  const postAppMenuPatch = useCallback(async () => {
+    if (!appMenuAnchorRef.current) return;
+    const { left, top, width, height } = appMenuAnchorRef.current;
+    const menuLeft = Math.max(8, Math.min(left + width - 320, window.innerWidth - 328));
+    const menuTop = Math.round(top + height + 6);
+    const profileList = profilesRef.current.length ? profilesRef.current : profiles;
+    const activeProfile = currentProfileRef.current || currentProfile;
+    const closedRows = recentlyClosedRef.current.length ? recentlyClosedRef.current : recentlyClosed;
+    const historyItems = recentHistoryRef.current.length ? recentHistoryRef.current : recentHistory;
+    const activeProfileLabel = activeProfile?.displayName || activeProfile?.profileId || 'Profile';
+    const activeProfileAvatar = buildProfileAvatarPayload(activeProfile);
+    const profileRows = [
+      { header: true, label: `Signed in as ${activeProfileLabel}`, avatar: activeProfileAvatar, highlight: true },
+      { type: 'separator' },
+      { iconSrc: menuEditProfileSvg, label: 'Customize Your Chrome', commandId: 'customizeCurrentProfile' },
+      { iconSrc: menuCloseProfileSvg, label: 'Close This Profile', commandId: 'closeCurrentProfile' },
+      { type: 'separator' },
+      { header: true, label: 'Other Chrome Profiles' },
+      ...profileList
+        .filter((p) => p?.profileId && p.profileId !== activeProfile?.profileId)
+        .map((p) => ({
+          avatar: buildProfileAvatarPayload(p),
+          label: p.displayName || p.profileId,
+          commandId: 'openProfile',
+          profileId: p.profileId,
+        })),
+      { type: 'separator' },
+      { iconSrc: menuAddProfileSvg, label: 'Add New Profile', commandId: 'addProfile' },
+      { iconSrc: menuManageProfilesSvg, label: 'Manage Chrome Profiles', commandId: 'manageProfiles' },
+    ];
+    const historyRows = [
+      { iconSrc: menuHistorySvg, label: 'Open History Page', shortcut: shortcut('⌘Y', 'Ctrl+Y'), commandId: 'openHistoryPage' },
+      { iconSrc: menuHistorySvg, label: 'Show History in Side Panel', commandId: 'historySidePanel', disabled: true },
+      { type: 'separator' },
+      { header: true, label: 'Recent Tabs' },
+      ...(closedRows.length ? closedRows.map((row) => ({
+        iconSrc: row.type === 'window' ? menuNewWindowSvg : menuTabSvg,
+        label: row.label || row.subtitle || 'Recently closed',
+        shortcut: row.type === 'window' ? 'Window' : '',
+        commandId: 'restoreRecentlyClosed',
+        closedAt: row.closedAt,
+      })) : [{ label: 'No recently closed tabs', disabled: true }]),
+      { type: 'separator' },
+      { header: true, label: 'Recent History' },
+      ...(historyItems.length ? historyItems.map((row) => ({
+        iconSrc: menuHistorySvg,
+        label: row.title || row.url || 'History entry',
+        shortcut: '',
+        commandId: 'openHistoryEntry',
+        url: row.url,
+      })) : [{ label: 'No recent history', disabled: true }]),
+    ];
+
+    await post({
+      kind: 'appMenu',
+      menuRect: { left: menuLeft, top: menuTop, width: 320 },
+      items: [
+        { iconSrc: menuNewTabSvg, label: 'New Tab', shortcut: shortcut('⌘T', 'Ctrl+T'), commandId: 'newTab' },
+        { iconSrc: menuNewWindowSvg, label: 'New Window', shortcut: shortcut('⌘N', 'Ctrl+N'), commandId: 'newWindow' },
+        { iconSrc: menuStealthWindowSvg, label: 'New Incognito Window', shortcut: shortcut('⇧⌘N', 'Ctrl+Shift+N'), commandId: 'newStealthWindow' },
+        { type: 'separator' },
+        { label: activeProfileLabel, avatar: activeProfileAvatar, submenuKey: 'profile', highlight: true },
+        { iconSrc: menuHistorySvg, label: 'History', submenuKey: 'history' },
+        { type: 'separator' },
+        { iconSrc: menuSettingsSvg, label: 'Settings', shortcut: shortcut('⌘,', 'Ctrl+,'), commandId: 'openSettings' },
+      ],
+      submenus: {
+        profile: profileRows,
+        history: historyRows,
+      },
+    });
+  }, [buildProfileAvatarPayload, currentProfile, profiles, recentHistory, recentlyClosed, post, shortcut]);
+
+  const openAppMenu = useCallback(async (e) => {
+    const anchor = e.currentTarget?.getBoundingClientRect?.();
+    if (!anchor) return;
+    appMenuAnchorRef.current = anchor;
+    if (appMenuOpenRef.current) {
+      await closeAppMenu();
+      return;
+    }
+    const { profiles: nextProfiles } = await loadProfiles();
+    await Promise.all([
+      loadProfileAvatars(nextProfiles),
+      loadRecentlyClosed(),
+      loadRecentHistory(),
+    ]);
+    pendingOwnAppMenuResetRef.current = true;
+    try {
+      await reset();
+      await acquire();
+      appMenuOpenRef.current = true;
+      setAppMenuOpen(true);
+      await postAppMenuPatch();
+    } catch (err) {
+      console.error('app menu overlay open', err);
+      appMenuOpenRef.current = false;
+      setAppMenuOpen(false);
+      try {
+        await release();
+      } catch (_) {
+        // ignore
+      }
+    } finally {
+      pendingOwnAppMenuResetRef.current = false;
+    }
+  }, [acquire, closeAppMenu, loadProfileAvatars, loadProfiles, loadRecentlyClosed, loadRecentHistory, postAppMenuPatch, release, reset]);
+
   useEffect(() => {
     const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
-      if (!starEditorActiveRef.current) return;
       const t = data?.type;
+      if (appMenuOpenRef.current) {
+        if (t === OVERLAY.DISMISS) {
+          void closeAppMenu();
+          return;
+        }
+        if (t === OVERLAY.APP_MENU_COMMAND) {
+          const commandId = data?.commandId;
+          if (commandId === 'newTab') onNewTab?.();
+          else if (commandId === 'newWindow') {
+            if (currentProfile?.profileId) window.electronAPI.createWindow?.(currentProfile.profileId);
+          } else if (commandId === 'newStealthWindow') window.electronAPI.createStealthWindow?.();
+          else if (commandId === 'openSettings') onOpenSettings?.();
+          else if (commandId === 'openHistoryPage') onOpenHistory?.();
+          else if (commandId === 'openProfile' && data?.profileId) window.electronAPI.profileOpenWindow?.(data.profileId);
+          else if (commandId === 'addProfile') handleAddProfile();
+          else if (commandId === 'manageProfiles') window.electronAPI.profilePickerOpen?.();
+          else if (commandId === 'customizeCurrentProfile') handleEditCurrentProfile();
+          else if (commandId === 'closeCurrentProfile') window.electronAPI.profileCloseCurrent?.();
+          else if (commandId === 'restoreRecentlyClosed' && data?.closedAt) {
+            window.electronAPI.recentlyClosedRestore?.(data.closedAt);
+          } else if (commandId === 'openHistoryEntry' && data?.url && currentTabId) {
+            window.electronAPI.navigate(currentTabId, data.url, { source: 'history' });
+          }
+          void closeAppMenu();
+          return;
+        }
+      }
+
+      if (!starEditorActiveRef.current) return;
       if (t === OVERLAY.DISMISS) {
         void closeStarBookmarkEditor();
         return;
@@ -258,11 +566,26 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
       }
     });
     return typeof unsub === 'function' ? unsub : undefined;
-  }, [closeStarBookmarkEditor, dispatch, postStarEditorPatch]);
+  }, [
+    closeAppMenu,
+    closeStarBookmarkEditor,
+    currentProfile?.profileId,
+    dispatch,
+    handleAddProfile,
+    handleEditCurrentProfile,
+    onNewTab,
+    onOpenHistory,
+    onOpenSettings,
+    postStarEditorPatch,
+  ]);
 
   useEffect(() => {
     const unsub = window.electronAPI?.onChromeOverlaySuperseded?.(() => {
-      if (pendingOwnStarResetRef.current) return;
+      if (pendingOwnStarResetRef.current || pendingOwnAppMenuResetRef.current) return;
+      if (appMenuOpenRef.current) {
+        appMenuOpenRef.current = false;
+        setAppMenuOpen(false);
+      }
       if (starEditorActiveRef.current) {
         starEditorActiveRef.current = false;
       }
@@ -270,74 +593,10 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
     return typeof unsub === 'function' ? unsub : undefined;
   }, []);
 
-  const handleBack = () => window.electronAPI.goBack(currentTabId);
-  const handleForward = () => window.electronAPI.goForward(currentTabId);
-  const handleReload = () => window.electronAPI.reload(currentTabId);
-
-  const handleBookmark = useCallback(async (e) => {
-    if (!canBookmark) return;
-
-    const btn = e.currentTarget;
-    btn.classList.remove('pop');
-    void btn.offsetWidth;
-    btn.classList.add('pop');
-    btn.addEventListener('animationend', () => btn.classList.remove('pop'), { once: true });
-
-    if (starEditorActiveRef.current) {
-      void closeStarBookmarkEditor();
-      return;
-    }
-
-    const bookmarkDraft = existingBookmark
-      ? {
-          ...existingBookmark,
-          folderId: findFolderIdForBookmark(existingBookmark.id, bookmarksData.bar),
-          url: currentUrl,
-        }
-      : {
-          title: tab?.title || currentUrl,
-          url: currentUrl,
-          favicon: tab?.favicon ?? null,
-          folderId: 'root',
-        };
-
-    await openStarBookmarkEditor(btn, bookmarkDraft);
-  }, [
-    canBookmark,
-    closeStarBookmarkEditor,
-    openStarBookmarkEditor,
-    existingBookmark,
-    bookmarksData.bar,
-    tab,
-    currentUrl,
-  ]);
-
-  const handleAddProfile = useCallback(() => {
-    setProfileEditorMode('create');
-    setProfileEditorOpen(true);
-  }, []);
-
-  const handleEditCurrentProfile = useCallback(() => {
-    if (!currentProfile) return;
-    setProfileEditorMode('edit');
-    setProfileEditorOpen(true);
-  }, [currentProfile]);
-
-  const handleProfileEditorSaved = useCallback(
-    async ({ mode, profile }) => {
-      await loadProfiles();
-      if (mode === PROFILE.MODE_CREATE && profile?.profileId) {
-        await window.electronAPI.profileOpenWindow?.(profile.profileId);
-      }
-      setProfileEditorOpen(false);
-    },
-    [loadProfiles],
-  );
-
-  const handleOpenProfileWindow = useCallback(async (profileId) => {
-    if (!profileId) return;
-    await window.electronAPI.profileOpenWindow?.(profileId);
-  }, []);
+  useEffect(() => {
+    if (!appMenuOpen) return;
+    void postAppMenuPatch();
+  }, [appMenuOpen, postAppMenuPatch]);
 
   return (
     <div className="nav-bar">
@@ -359,8 +618,10 @@ export default function NavBar({ currentTabId, onOpenSettings, searchEngine = 'g
       <button
         id="more-btn"
         className="btn"
-        title="Settings"
-        onClick={onOpenSettings}
+        title="Customize and control InviSurf"
+        aria-expanded={appMenuOpen}
+        aria-haspopup="menu"
+        onClick={openAppMenu}
       >
         {MORE_ICON}
       </button>
