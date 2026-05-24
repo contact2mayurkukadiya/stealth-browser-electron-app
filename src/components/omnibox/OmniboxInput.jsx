@@ -79,6 +79,11 @@ function mapRecentHistoryItems(items) {
     }));
 }
 
+function suggestionDisplayValue(suggestion) {
+  if (!suggestion) return '';
+  return suggestion.url || suggestion.text || '';
+}
+
 export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'google' }) {
   const tab = tabsData[currentTabId];
   const displayUrl = tab && !tab.isNewTab ? (tab.url || '') : '';
@@ -89,6 +94,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   const [draftValue, setDraftValue] = useState(displayUrl);
   const [hasUncommittedDraft, setHasUncommittedDraft] = useState(false);
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const [overlayAnchorVersion, setOverlayAnchorVersion] = useState(0);
   const [suggestions, setSuggestions] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [ghostSuffix, setGhostSuffix] = useState('');
@@ -113,12 +119,17 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   const draftValueRef = useRef(draftValue);
   const ghostSuffixRef = useRef('');
   const committedDraftPendingRef = useRef(false);
+  /** Committed navigate URL shown until Redux receives url-changed. */
+  const pendingCommittedUrlRef = useRef('');
   const recentHistoryFallbackRef = useRef([]);
   const recentFallbackSeqRef = useRef(0);
   const recentFallbackKeyRef = useRef(null);
+  const activeSuggestionQueryRef = useRef(null);
+  const suggestionCacheRef = useRef({ query: null, suggestions: [], ghostSuffix: '' });
   /** Skip refocusing overlay B on every suggestion/draft post after the first open. */
   const omniboxOverlayFocusSentRef = useRef(false);
   const displayUrlRef = useRef(displayUrl);
+  const navigationBaseRef = useRef('');
   const prevTabLoadingRef = useRef(false);
 
   const controller = useMemo(() => new AutocompleteController(), []);
@@ -130,9 +141,15 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   ghostSuffixRef.current = ghostSuffix;
   displayUrlRef.current = displayUrl;
 
-  const barDisplayValue = (hasUncommittedDraft && !committedDraftPendingRef.current)
-    ? draftValue
-    : displayUrl;
+  const barDisplayValue = (() => {
+    if (hasUncommittedDraft && !committedDraftPendingRef.current) {
+      return draftValue;
+    }
+    if (committedDraftPendingRef.current && pendingCommittedUrlRef.current) {
+      return pendingCommittedUrlRef.current;
+    }
+    return displayUrl;
+  })();
 
   const closeOmniboxChrome = useCallback(async () => {
     if (!chromeOverlayHeldRef.current) {
@@ -173,6 +190,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
       if (!overlayOpenRef.current) return;
       if (String(draftValueRef.current || '').trim() !== key) return;
       if (suggestionsRef.current.length > 0) return;
+      suggestionCacheRef.current = { query: queryText, suggestions: mapped, ghostSuffix: '' };
       setSuggestions(mapped);
       setGhostSuffix('');
       if (!isNavigatingRef.current) setSelectedIndex(-1);
@@ -185,10 +203,12 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     void loadRecentHistoryFallback('', false);
   }, [loadRecentHistoryFallback]);
 
-  const closeOverlay = useCallback(() => {
+  const closeOverlay = useCallback((options = {}) => {
+    const preserveDraft = options?.preserveDraft === true;
     overlayOpenRef.current = false;
     omniboxOverlayFocusSentRef.current = false;
-    setHasUncommittedDraft(false);
+    activeSuggestionQueryRef.current = null;
+    setHasUncommittedDraft(preserveDraft);
     suppressOverlayOnNextAFocusRef.current = false;
     setOverlayOpen(false);
     setSuggestions([]);
@@ -202,6 +222,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
 
   const commitNavigation = useCallback((url, source = 'typed') => {
     if (!currentTabId || !url) return;
+    pendingCommittedUrlRef.current = url;
     committedDraftPendingRef.current = true;
     setHasUncommittedDraft(false);
     suppressOverlayOnNextAFocusRef.current = false;
@@ -212,23 +233,47 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     inputRef.current?.blur();
   }, [currentTabId, closeOverlay]);
 
-  const runQuery = useCallback((text) => {
-    const trimmed = text.trim();
+  const applyCachedSuggestions = useCallback((query) => {
+    const cached = suggestionCacheRef.current;
+    if (cached.query !== query) return false;
+    activeSuggestionQueryRef.current = query;
+    setSuggestions(cached.suggestions);
+    setGhostSuffix(cached.ghostSuffix);
+    if (!isNavigatingRef.current) setSelectedIndex(-1);
+    return true;
+  }, []);
+
+  const runQuery = useCallback((text, options = {}) => {
+    const query = String(text || '');
+    if (options.preferCache && applyCachedSuggestions(query)) return;
+    activeSuggestionQueryRef.current = query;
+    const trimmed = query.trim();
     if (!trimmed) {
       setSuggestions(recentHistoryFallbackRef.current);
       setGhostSuffix('');
+      suggestionCacheRef.current = {
+        query,
+        suggestions: recentHistoryFallbackRef.current,
+        ghostSuffix: '',
+      };
       if (!overlayOpenRef.current) return;
       void loadRecentHistoryFallback('', true);
       return;
     }
 
     controller.query(text, (merged, ghost) => {
+      if (activeSuggestionQueryRef.current !== query) return;
       if (merged.length > 0) {
         recentFallbackKeyRef.current = null;
         recentFallbackSeqRef.current += 1;
       } else {
         setSuggestions(recentHistoryFallbackRef.current);
         setGhostSuffix('');
+        suggestionCacheRef.current = {
+          query,
+          suggestions: recentHistoryFallbackRef.current,
+          ghostSuffix: '',
+        };
         if (!isNavigatingRef.current) {
           setSelectedIndex(-1);
         }
@@ -236,14 +281,16 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
         return;
       }
       setSuggestions(merged);
-      setGhostSuffix(ghost || '');
+      const nextGhost = ghost || '';
+      setGhostSuffix(nextGhost);
+      suggestionCacheRef.current = { query, suggestions: merged, ghostSuffix: nextGhost };
       if (!isNavigatingRef.current) {
         setSelectedIndex(-1);
       }
     });
-  }, [controller, loadRecentHistoryFallback]);
+  }, [applyCachedSuggestions, controller, loadRecentHistoryFallback]);
 
-  const openOverlay = useCallback((initialValue, selection) => {
+  const openOverlay = useCallback((initialValue, selection, options = {}) => {
     if (isInternalDisplayUrl(displayUrl)) return;
     const value = initialValue ?? draftValueRef.current ?? displayUrl;
     overlaySessionBaseRef.current = value;
@@ -259,7 +306,15 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     overlayOpenRef.current = true;
     omniboxOverlayFocusSentRef.current = false;
     setOverlayOpen(true);
-    runQuery(value);
+    const shouldShowRecentHistory = !value.trim();
+    if (options.queryOnOpen || shouldShowRecentHistory) {
+      runQuery(value, { preferCache: options.preferCache });
+      return;
+    }
+    activeSuggestionQueryRef.current = null;
+    setSuggestions([]);
+    setGhostSuffix('');
+    setSelectedIndex(-1);
   }, [displayUrl, runQuery]);
 
   const navigateFromDraft = useCallback((value, selIdx) => {
@@ -351,6 +406,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     };
   }, [
     overlayOpen,
+    overlayAnchorVersion,
     suggestions,
     selectedIndex,
     draftValue,
@@ -363,13 +419,41 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   ]);
 
   useEffect(() => {
+    if (!overlayOpen) return undefined;
+    let frame = 0;
+    const refreshAnchor = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        setOverlayAnchorVersion((version) => version + 1);
+      });
+    };
+    window.addEventListener('resize', refreshAnchor);
+    const observer = typeof ResizeObserver !== 'undefined' && containerRef.current
+      ? new ResizeObserver(refreshAnchor)
+      : null;
+    if (observer && containerRef.current) observer.observe(containerRef.current);
+    refreshAnchor();
+    return () => {
+      window.removeEventListener('resize', refreshAnchor);
+      if (observer) observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [overlayOpen]);
+
+  useEffect(() => {
     const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
       if (data?.type === OVERLAY.DISMISS) {
         const base = overlaySessionBaseRef.current;
         const current = draftValueRef.current;
         const edited = overlayEditedRef.current || current !== base;
-        closeOverlay();
-        if (edited) revertDraftToDisplayUrl();
+        const preserveDraft = (data.reason === 'outside' || data.reason === 'blur') && edited;
+        if (preserveDraft) {
+          draftValueRef.current = current;
+          setDraftValue(current);
+        }
+        closeOverlay({ preserveDraft });
+        if (edited && !preserveDraft) revertDraftToDisplayUrl();
         setIsFocused(false);
         return;
       }
@@ -421,11 +505,20 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
           if (list.length === 0) return;
           if (!isNavigatingRef.current) {
             isNavigatingRef.current = true;
+            navigationBaseRef.current = draftValueRef.current;
             controller.lockList();
           }
           setSelectedIndex((prev) => {
-            const next = prev + 1;
-            return next >= list.length ? 0 : next;
+            const next = prev + 1 >= list.length ? 0 : prev + 1;
+            const val = suggestionDisplayValue(list[next]);
+            if (val) {
+              draftValueRef.current = val;
+              setDraftValue(val);
+              setGhostSuffix('');
+              selectionRef.current = { start: val.length, end: val.length };
+              overlayEditedRef.current = true;
+            }
+            return next;
           });
           return;
         }
@@ -434,11 +527,31 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
           if (list.length === 0) return;
           if (!isNavigatingRef.current) {
             isNavigatingRef.current = true;
+            navigationBaseRef.current = draftValueRef.current;
             controller.lockList();
           }
           setSelectedIndex((prev) => {
-            if (prev <= 0) return prev === 0 ? -1 : list.length - 1;
-            return prev - 1;
+            let next;
+            if (prev <= 0) {
+              next = prev === 0 ? -1 : list.length - 1;
+            } else {
+              next = prev - 1;
+            }
+            if (next >= 0 && list[next]) {
+              const val = suggestionDisplayValue(list[next]);
+              draftValueRef.current = val;
+              setDraftValue(val);
+              setGhostSuffix('');
+              selectionRef.current = { start: val.length, end: val.length };
+              overlayEditedRef.current = true;
+            } else if (next === -1) {
+              const base = navigationBaseRef.current || overlaySessionBaseRef.current;
+              draftValueRef.current = base;
+              setDraftValue(base);
+              setGhostSuffix('');
+              selectionRef.current = { start: base.length, end: base.length };
+            }
+            return next;
           });
           return;
         }
@@ -473,6 +586,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
       if (!chromeOverlayHeldRef.current && !chromeOmniboxActiveRef.current) return;
       overlayOpenRef.current = false;
       omniboxOverlayFocusSentRef.current = false;
+    activeSuggestionQueryRef.current = null;
       setOverlayOpen(false);
       setSuggestions([]);
       setGhostSuffix('');
@@ -486,10 +600,17 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
 
   useEffect(() => {
     if (committedDraftPendingRef.current) {
-      draftValueRef.current = displayUrl;
-      setDraftValue(displayUrl);
       if (displayUrl) {
         committedDraftPendingRef.current = false;
+        pendingCommittedUrlRef.current = '';
+        draftValueRef.current = displayUrl;
+        setDraftValue(displayUrl);
+        return;
+      }
+      const pending = pendingCommittedUrlRef.current;
+      if (pending) {
+        draftValueRef.current = pending;
+        setDraftValue(pending);
       }
       return;
     }
@@ -513,6 +634,9 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     if (!currentTabId) return;
     overlayRunIdRef.current += 1;
     committedDraftPendingRef.current = false;
+    pendingCommittedUrlRef.current = '';
+    activeSuggestionQueryRef.current = null;
+    suggestionCacheRef.current = { query: null, suggestions: [], ghostSuffix: '' };
     setHasUncommittedDraft(false);
     suppressOverlayOnNextAFocusRef.current = true;
     aOnlyFocusUntilUserEditRef.current = false;
@@ -584,13 +708,18 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
       return;
     }
 
-    const initial = hasUncommittedDraft ? draftValue : displayUrl;
+    const initial = (hasUncommittedDraft || committedDraftPendingRef.current)
+      ? draftValue
+      : displayUrl;
     setDraftValue(initial);
     if (isInternalDisplayUrl(initial)) {
       return;
     }
     const caret = initial.length;
-    openOverlay(initial, { start: caret, end: caret });
+    openOverlay(initial, { start: caret, end: caret }, {
+      queryOnOpen: !initial.trim(),
+      preferCache: true,
+    });
   }, [displayUrl, draftValue, hasUncommittedDraft, openOverlay]);
 
   const handleMouseUp = useCallback(() => {
@@ -603,7 +732,8 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     setIsFocused(false);
     if (overlayOpenRef.current) return;
     if (
-      !committedDraftPendingRef.current
+      !hasUncommittedDraft
+      && !committedDraftPendingRef.current
       && draftValueRef.current !== displayUrlRef.current
     ) {
       revertDraftToDisplayUrl();
@@ -625,7 +755,7 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
 
     if (!overlayOpenRef.current) {
       overlayEditedRef.current = true;
-      openOverlay(val, sel);
+      openOverlay(val, sel, { queryOnOpen: true, preferCache: true });
       return;
     }
     runQuery(val);
@@ -669,7 +799,10 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
         aOnlyFocusUntilUserEditRef.current = false;
         const sel = readSelection(inputRef.current);
         selectionRef.current = sel;
-        openOverlay(inputRef.current?.value ?? draftValue, sel);
+        openOverlay(inputRef.current?.value ?? draftValue, sel, {
+          queryOnOpen: true,
+          preferCache: true,
+        });
       }
     }
   }, [

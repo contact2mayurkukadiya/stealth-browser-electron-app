@@ -9,7 +9,7 @@ import ReactDOM from 'react-dom';
 import '../components/omnibox/omnibox.css';
 import AutocompleteController from '../components/omnibox/AutocompleteController.js';
 import { toNavigateUrl } from '../components/omnibox/AutocompleteInput.js';
-import { BOOKMARK, KEYBOARD, OMNIBOX_SUGGESTION } from '../constants/conditionStrings.js';
+import { BOOKMARK, KEYBOARD, OMNIBOX_SUGGESTION, URL as URL_C } from '../constants/conditionStrings.js';
 
 // ── Mirrors OmniboxInput suggestion row markup (kept local for the NTP bundle) ─
 
@@ -121,6 +121,20 @@ function SuggestionRow({ suggestion, query, isSelected, onMouseDown, onMouseEnte
   );
 }
 
+function mapRecentHistoryItems(items) {
+  return (Array.isArray(items) ? items : [])
+    .filter((entry) => entry && entry.url)
+    .slice(0, 6)
+    .map((entry, index) => ({
+      text: entry.title || entry.url,
+      url: entry.url,
+      type: OMNIBOX_SUGGESTION.HISTORY,
+      score: Math.max(1, 120 - index),
+      description: entry.title && entry.title !== entry.url ? entry.url : '',
+      favicon: entry.favicon || null,
+    }));
+}
+
 const SearchIcon = () => (
   <svg className="ntp-search-box__icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="11" cy="11" r="7" />
@@ -159,6 +173,9 @@ export default function NtpSearchBox() {
   const dropdownRef = useRef(null);
   const didSelectRef = useRef(false);
   const isNavigatingRef = useRef(false);
+  const isFocusedRef = useRef(false);
+  const recentHistoryFallbackRef = useRef([]);
+  const recentFallbackSeqRef = useRef(0);
 
   const controller = useMemo(() => new AutocompleteController(), []);
   useEffect(() => () => controller.dispose(), [controller]);
@@ -169,11 +186,36 @@ export default function NtpSearchBox() {
     }).catch(() => {});
   }, []);
 
+  const loadRecentHistoryFallback = useCallback(async (applyToDropdown = false) => {
+    const seq = ++recentFallbackSeqRef.current;
+    try {
+      const result = await window.electronAPI?.historySearch?.({ query: '', limit: 6 });
+      if (seq !== recentFallbackSeqRef.current) return;
+      const mapped = mapRecentHistoryItems(result?.items);
+      recentHistoryFallbackRef.current = mapped;
+      if (!applyToDropdown) return;
+      if (!isFocusedRef.current) return;
+      if (inputRef.current?.value?.trim()) return;
+      setSuggestions(mapped);
+      setGhostSuffix('');
+      setShowDropdown(mapped.length > 0);
+      if (!isNavigatingRef.current) setSelectedIndex(-1);
+    } catch (err) {
+      console.warn('[NtpSearchBox] Failed to load recent history fallback:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRecentHistoryFallback(false);
+  }, [loadRecentHistoryFallback]);
+
   const runQuery = useCallback((text) => {
     if (!text.trim()) {
-      setSuggestions([]);
+      setSuggestions(recentHistoryFallbackRef.current);
       setGhostSuffix('');
-      setShowDropdown(false);
+      setShowDropdown(recentHistoryFallbackRef.current.length > 0);
+      if (!isNavigatingRef.current) setSelectedIndex(-1);
+      void loadRecentHistoryFallback(true);
       return;
     }
 
@@ -183,7 +225,7 @@ export default function NtpSearchBox() {
       setShowDropdown(merged.length > 0);
       if (!isNavigatingRef.current) setSelectedIndex(-1);
     });
-  }, [controller]);
+  }, [controller, loadRecentHistoryFallback]);
 
   const closeDropdown = useCallback(() => {
     setShowDropdown(false);
@@ -223,6 +265,7 @@ export default function NtpSearchBox() {
   }, [showDropdown, closeDropdown]);
 
   const handleFocus = useCallback(() => {
+    isFocusedRef.current = true;
     setIsFocused(true);
     didSelectRef.current = false;
     setTimeout(() => {
@@ -231,10 +274,11 @@ export default function NtpSearchBox() {
         didSelectRef.current = true;
       }
     }, 0);
-    if (inputValue.trim()) runQuery(inputValue);
+    runQuery(inputValue);
   }, [inputValue, runQuery]);
 
   const handleBlur = useCallback(() => {
+    isFocusedRef.current = false;
     setIsFocused(false);
     setInputValue('');
     setGhostSuffix('');
@@ -375,7 +419,7 @@ export default function NtpSearchBox() {
       )
     : null;
 
-  const fieldIcon = isFocused && effectiveInputValue.startsWith(C.URL.SCHEME_HTTPS) ? <LockIcon /> : <SearchIcon />;
+  const fieldIcon = isFocused && effectiveInputValue.startsWith(URL_C.SCHEME_HTTPS) ? <LockIcon /> : <SearchIcon />;
 
   return (
     <div className="ntp-search-box" ref={containerRef}>

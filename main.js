@@ -817,6 +817,9 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         chromeOverlayView: null,
         /** Ref-count for chrome-overlay:v1 acquire/release from trusted shell. */
         chromeOverlayAcquireCount: 0,
+        chromeOverlayOmniboxMode: false,
+        chromeOverlayBlurDismissPending: false,
+        lastOmniboxOverlayPatch: null,
     };
     windowContextsById.set(window.id, context);
 
@@ -938,6 +941,9 @@ function createChromeOverlayLayer(context) {
     overlayView.webContents.once('did-finish-load', () => {
         sendChromeOverlayThemePatch(context);
     });
+    overlayView.webContents.on('blur', () => {
+        dismissOmniboxChromeOverlayOnBlur(context);
+    });
     overlayView.webContents.loadURL('app://localhost/chrome-overlay.html').catch((err) => {
         console.error('chrome-overlay load', err);
     });
@@ -971,14 +977,65 @@ function ensureChromeOverlayOnTop(context) {
     }
 }
 
-function layoutChromeOverlayBounds(context) {
-    if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return;
-    if (context.chromeOverlayAcquireCount <= 0) return;
-    const { width, height } = context.window.getContentBounds();
+/** Match chrome-overlay.html omnibox panel layout for hit-target sizing. */
+function computeOmniboxOverlayBounds(context, patch) {
+    const dr = patch?.dropdownRect || {};
+    const pad = 8;
+    const shadowMargin = 12;
+    const { width: windowW, height: windowH } = context.window.getContentBounds();
+    let w = Math.round(Number(dr.width) || 320);
+    let inputH = Math.round(Number(dr.height) || 34);
+    let left = Math.round(Number(dr.left) || 0);
+    let top = Math.round(Number(dr.top) || 0);
+    w = Math.max(200, Math.min(w, windowW - 2 * pad));
+    left = Math.max(pad, Math.min(left, windowW - w - pad));
+    top = Math.max(pad, Math.min(top, windowH - 120 - pad));
+
+    const items = Array.isArray(patch?.items) ? patch.items.slice(0, 24) : [];
+    const rowHeight = 50;
+    const scrollPad = 6;
+    const maxScrollH = Math.min(412, Math.floor(windowH * 0.7));
+    let scrollH = 0;
+    if (items.length > 0) {
+        scrollH = Math.min(items.length * rowHeight, maxScrollH);
+    } else if (String(patch?.query || '').trim()) {
+        scrollH = 36;
+    }
+    const panelH = inputH + scrollPad + scrollH;
+    const panelHeight = Math.min(panelH, windowH - top - pad);
+    const x = Math.max(0, left - shadowMargin);
+    const y = Math.max(0, top - shadowMargin);
+    const width = Math.min(windowW - x, w + (left - x) + shadowMargin);
+    const height = Math.min(windowH - y, panelHeight + (top - y) + shadowMargin);
+    return {
+        x,
+        y,
+        width,
+        height: Math.max(inputH + (top - y), height),
+    };
+}
+
+function layoutChromeOverlayBounds(context, patch) {
+    if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return null;
+    if (context.chromeOverlayAcquireCount <= 0) return null;
+    let bounds;
+    if (patch?.kind === 'omniboxSuggestions') {
+        context.lastOmniboxOverlayPatch = patch;
+        bounds = computeOmniboxOverlayBounds(context, patch);
+        context.chromeOverlayOmniboxMode = true;
+    } else if (context.chromeOverlayOmniboxMode && context.lastOmniboxOverlayPatch) {
+        bounds = computeOmniboxOverlayBounds(context, context.lastOmniboxOverlayPatch);
+    } else {
+        context.chromeOverlayOmniboxMode = false;
+        const { width, height } = context.window.getContentBounds();
+        bounds = { x: 0, y: 0, width, height };
+    }
     try {
-        context.chromeOverlayView.setBounds({ x: 0, y: 0, width, height });
+        context.chromeOverlayView.setBounds(bounds);
+        return bounds;
     } catch (err) {
         console.error('layoutChromeOverlayBounds', err?.message || err);
+        return null;
     }
 }
 
@@ -994,6 +1051,31 @@ function focusChromeOverlayWebContents(context) {
     } catch (err) {
         console.error('focusChromeOverlayWebContents', err?.message || err);
     }
+}
+
+function dismissOmniboxChromeOverlayOnBlur(context) {
+    if (!context?.chromeOverlayOmniboxMode) return;
+    if (context.chromeOverlayAcquireCount <= 0) return;
+    if (context.chromeOverlayBlurDismissPending) return;
+    if (!context.window?.webContents || context.window.webContents.isDestroyed()) return;
+    context.chromeOverlayBlurDismissPending = true;
+    setImmediate(() => {
+        try {
+            if (!context.chromeOverlayOmniboxMode) return;
+            if (context.chromeOverlayAcquireCount <= 0) return;
+            if (!context.window?.webContents || context.window.webContents.isDestroyed()) return;
+            context.window.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_HOST, {
+                type: 'dismiss',
+                reason: 'blur',
+            });
+        } catch (err) {
+            console.error('chrome-overlay:v1:blur-dismiss', err?.message || err);
+        } finally {
+            setTimeout(() => {
+                context.chromeOverlayBlurDismissPending = false;
+            }, 0);
+        }
+    });
 }
 
 function getWindowContextByChromeOverlaySender(sender) {
@@ -1988,6 +2070,9 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RESET, (e) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.chromeOverlayView) return { ok: false };
     context.chromeOverlayAcquireCount = 0;
+    context.chromeOverlayOmniboxMode = false;
+    context.lastOmniboxOverlayPatch = null;
+    context.chromeOverlayBlurDismissPending = false;
     try {
         if (!context.chromeOverlayView.webContents.isDestroyed()) {
             context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
@@ -2027,6 +2112,9 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, (e) => {
     }
     if (context.chromeOverlayAcquireCount <= 0) {
         context.chromeOverlayAcquireCount = 0;
+        context.chromeOverlayOmniboxMode = false;
+        context.lastOmniboxOverlayPatch = null;
+        context.chromeOverlayBlurDismissPending = false;
         try {
             if (!context.chromeOverlayView.webContents.isDestroyed()) {
                 context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
@@ -2054,6 +2142,11 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
     }
     const patch = payload ?? {};
     try {
+        if (patch.kind === 'omniboxSuggestions') {
+            const overlayBounds = layoutChromeOverlayBounds(context, patch);
+            if (overlayBounds) patch.overlayBounds = overlayBounds;
+            ensureChromeOverlayOnTop(context);
+        }
         context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
     } catch (err) {
         console.error(C.IPC_INVOKE.CHROME_OVERLAY_POST, err?.message || err);
@@ -3035,15 +3128,15 @@ ipcMain.handle(C.IPC_INVOKE.HISTORY_CLEAR, async (e, payload = {}) => {
 // ─── NEW TAB PAGE IPC ─────────────────────────────────────────────────────────
 
 /**
- * omnibox:steal-focus — sent by the NTP fakebox when clicked.
- * Forwards an omnibox:focus event to the browser shell so the real address bar
- * receives keyboard focus instead of the cosmetic NTP element.
+ * omnibox:steal-focus — legacy NTP fakebox focus bridge.
+ * The NTP now has an in-page search box, so do not open the chrome overlay here;
+ * on transparent-overlay builds that can visually cover the New Tab content.
  */
 ipcMain.on(C.IPC_SEND.OMNIBOX_STEAL_FOCUS, (e) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.activeTabId) return;
-    sendOmniboxFocusToShell(context, context.activeTabId, true, true);
+    sendOmniboxFocusToShell(context, context.activeTabId, true, false);
 });
 
 /**
