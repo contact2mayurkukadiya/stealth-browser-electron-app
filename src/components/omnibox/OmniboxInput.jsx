@@ -715,9 +715,21 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     }
   }, []);
 
+  const selectShellInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input || document.activeElement !== input || overlayOpenRef.current) return;
+      try {
+        input.select();
+        didSelectRef.current = true;
+      } catch (_) { /* ignore */ }
+    });
+  }, []);
+
   const handleFocus = useCallback(() => {
     setIsFocused(true);
     didSelectRef.current = false;
+    selectShellInput();
 
     if (aOnlyFocusUntilUserEditRef.current) {
       return;
@@ -731,16 +743,17 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
     const initial = (hasUncommittedDraft || committedDraftPendingRef.current)
       ? draftValue
       : displayUrl;
+    const initialSelection = { start: 0, end: initial.length };
+    selectionRef.current = initialSelection;
     setDraftValue(initial);
     if (isInternalDisplayUrl(initial)) {
       return;
     }
-    const caret = initial.length;
-    openOverlay(initial, { start: caret, end: caret }, {
+    openOverlay(initial, initialSelection, {
       queryOnOpen: !initial.trim(),
       preferCache: true,
     });
-  }, [displayUrl, draftValue, hasUncommittedDraft, openOverlay]);
+  }, [displayUrl, draftValue, hasUncommittedDraft, openOverlay, selectShellInput]);
 
   const handleMouseUp = useCallback(() => {
     if (isFocused && didSelectRef.current) {
