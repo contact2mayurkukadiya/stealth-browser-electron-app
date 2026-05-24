@@ -71,6 +71,10 @@
       display: block;
     }
 
+    #panel.co-panel--app-menu {
+      overflow: visible;
+    }
+
     #submenu {
       position: fixed;
       display: none;
@@ -146,17 +150,18 @@
     }
 
     .co-row__icon {
-      width: 16px;
+      width: 24px;
       height: 16px;
       text-align: center;
       opacity: 0.9;
-      flex: 0 0 16px;
+      flex: 0 0 24px;
     }
 
     .co-row__icon-img {
       display: block;
       width: 16px;
       height: 16px;
+      margin: 0 auto;
       object-fit: contain;
     }
 
@@ -758,7 +763,7 @@
         omniboxOverlayInput = null;
         omniboxOverlayScroll = null;
         backdrop.classList.remove('co-visible', 'co-backdrop--omnibox');
-        panel.classList.remove('co-visible', 'co-panel--editor', 'co-panel--omnibox', 'co-panel--folder-menu');
+        panel.classList.remove('co-visible', 'co-panel--editor', 'co-panel--omnibox', 'co-panel--folder-menu', 'co-panel--app-menu');
         panel.style.width = '';
         panel.style.minWidth = '';
         panel.style.maxWidth = '';
@@ -1785,6 +1790,9 @@
         panel.style.width = width + 'px';
         panel.style.minWidth = width + 'px';
         panel.style.maxWidth = width + 'px';
+        panel.style.maxHeight = Math.max(240, window.innerHeight - top - 8) + 'px';
+        panel.style.overflow = 'visible';
+        panel.classList.add('co-panel--app-menu');
 
         const items = Array.isArray(payload.items) ? payload.items : [];
         items.forEach(function (it) {

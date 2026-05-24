@@ -1605,6 +1605,56 @@ function openDevToolsForActiveTab(panel) {
     }
 }
 
+function openDownloadsFolder() {
+    try {
+        const downloadsPath = app.getPath('downloads');
+        shell.openPath(downloadsPath).catch((error) => {
+            console.error('Failed to open downloads folder:', error?.message || error);
+        });
+        return true;
+    } catch (error) {
+        console.error('Failed to resolve downloads folder:', error?.message || error);
+        return false;
+    }
+}
+
+function printActiveTab() {
+    const activeView = getActiveTabView();
+    if (!activeView || activeView.webContents.isDestroyed()) return false;
+    activeView.webContents.print({}, (success, failureReason) => {
+        if (!success && failureReason) {
+            console.error('Print failed:', failureReason);
+        }
+    });
+    return true;
+}
+
+function triggerFindInActiveTab() {
+    const activeView = getActiveTabView();
+    if (!activeView || activeView.webContents.isDestroyed()) return false;
+    try {
+        activeView.webContents.focus();
+        const modifier = process.platform === 'darwin' ? 'meta' : 'control';
+        activeView.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'F', modifiers: [modifier] });
+        activeView.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'F', modifiers: [modifier] });
+        return true;
+    } catch (error) {
+        console.error('Find shortcut failed:', error?.message || error);
+        return false;
+    }
+}
+
+function searchActiveTabWithGoogleLens() {
+    const activeView = getActiveTabView();
+    const currentUrl = activeView && !activeView.webContents.isDestroyed()
+        ? activeView.webContents.getURL()
+        : '';
+    const lensUrl = currentUrl && /^https?:\/\//i.test(currentUrl)
+        ? `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(currentUrl)}`
+        : 'https://lens.google.com/';
+    return openUrlInNewTab(lensUrl, { background: false });
+}
+
 function canStoreRecentlyClosedUrl(rawUrl) {
     const displayUrl = toDisplayUrl(rawUrl);
     const resolvedUrl = resolveInternalPageUrl(displayUrl);
@@ -1935,6 +1985,11 @@ function buildApplicationMenu() {
                     accelerator: 'CmdOrCtrl+W',
                     click: () => focusedShellWebContents()?.send(C.IPC_EVENT.SHORTCUT_CLOSE_TAB)
                 },
+                {
+                    label: 'Print...',
+                    accelerator: 'CmdOrCtrl+P',
+                    click: () => printActiveTab(),
+                },
                 { type: 'separator' },
                 { role: 'quit' }
             ]
@@ -2149,6 +2204,14 @@ function runMenuCommandFromPalette(commandId) {
             if (focused && !focused.isDestroyed()) focused.selectAll();
             return true;
         }
+        case C.MENU_COMMAND.OPEN_DOWNLOADS:
+            return openDownloadsFolder();
+        case C.MENU_COMMAND.PRINT_ACTIVE_TAB:
+            return printActiveTab();
+        case C.MENU_COMMAND.FIND_IN_PAGE:
+            return triggerFindInActiveTab();
+        case C.MENU_COMMAND.SEARCH_WITH_GOOGLE_LENS:
+            return searchActiveTabWithGoogleLens();
         default:
             return false;
     }
@@ -2578,6 +2641,12 @@ function handleShortcuts(event, input) {
     if (isCommandOrControlPressed && input.shift && key === 't') {
         event.preventDefault();
         restoreRecentlyClosed();
+        return;
+    }
+
+    if (isCommandOrControlPressed && !input.shift && key === 'p') {
+        event.preventDefault();
+        printActiveTab();
         return;
     }
 

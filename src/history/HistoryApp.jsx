@@ -72,6 +72,18 @@ export default function HistoryApp() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    const maybeOpenClearModal = () => {
+      if (window.location.hash === '#clearBrowsingData') {
+        setShowClearModal(true);
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    };
+    maybeOpenClearModal();
+    window.addEventListener('hashchange', maybeOpenClearModal);
+    return () => window.removeEventListener('hashchange', maybeOpenClearModal);
+  }, []);
+
   const fetchHistory = useCallback(async ({ reset = false, nextCursor = null, query = searchTerm } = {}) => {
     const requestId = ++requestIdRef.current;
     if (reset) setIsLoading(true);

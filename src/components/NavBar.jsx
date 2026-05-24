@@ -12,12 +12,21 @@ import { BOOKMARK, OVERLAY, PROFILE } from '../constants/conditionStrings.js';
 import {
   bookmarkStarFilledSvg,
   menuAddProfileSvg,
+  menuBookmarksSvg,
   menuCloseProfileSvg,
+  menuCopySvg,
+  menuCutSvg,
+  menuDeleteDataSvg,
+  menuDownloadsSvg,
   menuEditProfileSvg,
+  menuFindSvg,
   menuHistorySvg,
+  menuLensSvg,
   menuManageProfilesSvg,
   menuNewTabSvg,
   menuNewWindowSvg,
+  menuPasteSvg,
+  menuPrintSvg,
   menuProfileSvg,
   menuSettingsSvg,
   menuStealthWindowSvg,
@@ -76,10 +85,29 @@ function isValidFolderId(folderId, bar) {
   return collectFolderOptions(bar).some((f) => f.id === folderId);
 }
 
+function flattenBookmarkMenuItems(items, depth = 0, out = []) {
+  if (!Array.isArray(items) || out.length >= 12) return out;
+  for (const item of items) {
+    if (!item || out.length >= 12) continue;
+    if (item.type === BOOKMARK.TYPE_BOOKMARK && item.url) {
+      out.push({
+        iconSrc: menuBookmarksSvg,
+        label: `${depth > 0 ? '  '.repeat(depth) : ''}${item.title || item.url}`,
+        commandId: 'openBookmark',
+        url: item.url,
+      });
+    } else if (item.type === BOOKMARK.TYPE_FOLDER && Array.isArray(item.children)) {
+      flattenBookmarkMenuItems(item.children, depth + 1, out);
+    }
+  }
+  return out;
+}
+
 export default function NavBar({
   currentTabId,
   onNewTab,
   onOpenHistory,
+  onDeleteBrowsingData,
   onOpenSettings,
   searchEngine = 'google',
 }) {
@@ -105,11 +133,11 @@ export default function NavBar({
   const pendingOwnStarResetRef = useRef(false);
   const starAnchorRef = useRef(null);
   const starEditorSessionRef = useRef({ url: '', bookmarkId: null, favicon: null });
+  const moreBtnRef = useRef(null);
 
   const [profiles, setProfiles] = useState([]);
   const [currentProfile, setCurrentProfile] = useState(null);
   const [recentlyClosed, setRecentlyClosed] = useState([]);
-  const [recentHistory, setRecentHistory] = useState([]);
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileEditorMode, setProfileEditorMode] = useState('create');
   const [appMenuOpen, setAppMenuOpen] = useState(false);
@@ -119,7 +147,6 @@ export default function NavBar({
   const profilesRef = useRef([]);
   const currentProfileRef = useRef(null);
   const recentlyClosedRef = useRef([]);
-  const recentHistoryRef = useRef([]);
   const profileAvatarsRef = useRef({});
 
   const loadProfiles = useCallback(async () => {
@@ -153,20 +180,6 @@ export default function NavBar({
     } catch {
       recentlyClosedRef.current = [];
       setRecentlyClosed([]);
-      return [];
-    }
-  }, []);
-
-  const loadRecentHistory = useCallback(async () => {
-    try {
-      const result = await window.electronAPI.historySearch?.({ query: '', limit: 8, cursor: null });
-      const next = Array.isArray(result?.items) ? result.items : [];
-      recentHistoryRef.current = next;
-      setRecentHistory(next);
-      return next;
-    } catch {
-      recentHistoryRef.current = [];
-      setRecentHistory([]);
       return [];
     }
   }, []);
@@ -263,6 +276,30 @@ export default function NavBar({
     }
   }, [reset, acquire, release, postStarEditorPatch]);
 
+  const openBookmarkEditorForCurrentPage = useCallback(async (anchorEl) => {
+    if (!canBookmark || !anchorEl) return;
+    const bookmarkDraft = existingBookmark
+      ? {
+          ...existingBookmark,
+          folderId: findFolderIdForBookmark(existingBookmark.id, bookmarksData.bar),
+          url: currentUrl,
+        }
+      : {
+          title: tab?.title || currentUrl,
+          url: currentUrl,
+          favicon: tab?.favicon ?? null,
+          folderId: 'root',
+        };
+    await openStarBookmarkEditor(anchorEl, bookmarkDraft);
+  }, [
+    bookmarksData.bar,
+    canBookmark,
+    currentUrl,
+    existingBookmark,
+    openStarBookmarkEditor,
+    tab,
+  ]);
+
   const handleAddProfile = useCallback(() => {
     setProfileEditorMode('create');
     setProfileEditorOpen(true);
@@ -292,28 +329,11 @@ export default function NavBar({
       return;
     }
 
-    const bookmarkDraft = existingBookmark
-      ? {
-          ...existingBookmark,
-          folderId: findFolderIdForBookmark(existingBookmark.id, bookmarksData.bar),
-          url: currentUrl,
-        }
-      : {
-          title: tab?.title || currentUrl,
-          url: currentUrl,
-          favicon: tab?.favicon ?? null,
-          folderId: 'root',
-        };
-
-    await openStarBookmarkEditor(btn, bookmarkDraft);
+    await openBookmarkEditorForCurrentPage(btn);
   }, [
     canBookmark,
     closeStarBookmarkEditor,
-    openStarBookmarkEditor,
-    existingBookmark,
-    bookmarksData.bar,
-    tab,
-    currentUrl,
+    openBookmarkEditorForCurrentPage,
   ]);
 
   const handleProfileEditorSaved = useCallback(
@@ -351,9 +371,9 @@ export default function NavBar({
     const profileList = profilesRef.current.length ? profilesRef.current : profiles;
     const activeProfile = currentProfileRef.current || currentProfile;
     const closedRows = recentlyClosedRef.current.length ? recentlyClosedRef.current : recentlyClosed;
-    const historyItems = recentHistoryRef.current.length ? recentHistoryRef.current : recentHistory;
     const activeProfileLabel = activeProfile?.displayName || activeProfile?.profileId || 'Profile';
     const activeProfileAvatar = buildProfileAvatarPayload(activeProfile);
+    const bookmarkRows = flattenBookmarkMenuItems(bookmarksData.bar);
     const profileRows = [
       { header: true, label: `Signed in as ${activeProfileLabel}`, avatar: activeProfileAvatar, highlight: true },
       { type: 'separator' },
@@ -385,15 +405,19 @@ export default function NavBar({
         commandId: 'restoreRecentlyClosed',
         closedAt: row.closedAt,
       })) : [{ label: 'No recently closed tabs', disabled: true }]),
+    ];
+    const bookmarkRowsForMenu = [
+      { iconSrc: menuBookmarksSvg, label: existingBookmark ? 'Edit bookmark for this tab' : 'Bookmark this tab', commandId: 'bookmarkCurrentTab', disabled: !canBookmark },
       { type: 'separator' },
-      { header: true, label: 'Recent History' },
-      ...(historyItems.length ? historyItems.map((row) => ({
-        iconSrc: menuHistorySvg,
-        label: row.title || row.url || 'History entry',
-        shortcut: '',
-        commandId: 'openHistoryEntry',
-        url: row.url,
-      })) : [{ label: 'No recent history', disabled: true }]),
+      { header: true, label: 'Bookmarks' },
+      ...(bookmarkRows.length ? bookmarkRows : [{ label: 'No bookmarks yet', disabled: true }]),
+    ];
+    const findRows = [
+      { iconSrc: menuFindSvg, label: 'Find...', shortcut: shortcut('⌘F', 'Ctrl+F'), commandId: 'findInPage' },
+      { type: 'separator' },
+      { iconSrc: menuCutSvg, label: 'Cut', shortcut: shortcut('⌘X', 'Ctrl+X'), commandId: 'cut' },
+      { iconSrc: menuCopySvg, label: 'Copy', shortcut: shortcut('⌘C', 'Ctrl+C'), commandId: 'copy' },
+      { iconSrc: menuPasteSvg, label: 'Paste', shortcut: shortcut('⌘V', 'Ctrl+V'), commandId: 'paste' },
     ];
 
     await post({
@@ -406,15 +430,24 @@ export default function NavBar({
         { type: 'separator' },
         { label: activeProfileLabel, avatar: activeProfileAvatar, submenuKey: 'profile', highlight: true },
         { iconSrc: menuHistorySvg, label: 'History', submenuKey: 'history' },
+        { iconSrc: menuDownloadsSvg, label: 'Downloads', shortcut: shortcut('⌥⌘L', 'Ctrl+J'), commandId: 'openDownloads' },
+        { iconSrc: menuBookmarksSvg, label: 'Bookmarks and Lists', submenuKey: 'bookmarks' },
+        { iconSrc: menuDeleteDataSvg, label: 'Delete Browsing Data...', shortcut: shortcut('⇧⌘⌫', 'Ctrl+Shift+Del'), commandId: 'deleteBrowsingData' },
+        { type: 'separator' },
+        { iconSrc: menuPrintSvg, label: 'Print...', shortcut: shortcut('⌘P', 'Ctrl+P'), commandId: 'print' },
+        { iconSrc: menuLensSvg, label: 'Search this tab with Google Lens', commandId: 'searchWithGoogleLens' },
+        { iconSrc: menuFindSvg, label: 'Find and Edit', submenuKey: 'find' },
         { type: 'separator' },
         { iconSrc: menuSettingsSvg, label: 'Settings', shortcut: shortcut('⌘,', 'Ctrl+,'), commandId: 'openSettings' },
       ],
       submenus: {
         profile: profileRows,
         history: historyRows,
+        bookmarks: bookmarkRowsForMenu,
+        find: findRows,
       },
     });
-  }, [buildProfileAvatarPayload, currentProfile, profiles, recentHistory, recentlyClosed, post, shortcut]);
+  }, [bookmarksData.bar, buildProfileAvatarPayload, canBookmark, currentProfile, existingBookmark, profiles, recentlyClosed, post, shortcut]);
 
   const openAppMenu = useCallback(async (e) => {
     const anchor = e.currentTarget?.getBoundingClientRect?.();
@@ -428,7 +461,6 @@ export default function NavBar({
     await Promise.all([
       loadProfileAvatars(nextProfiles),
       loadRecentlyClosed(),
-      loadRecentHistory(),
     ]);
     pendingOwnAppMenuResetRef.current = true;
     try {
@@ -449,7 +481,7 @@ export default function NavBar({
     } finally {
       pendingOwnAppMenuResetRef.current = false;
     }
-  }, [acquire, closeAppMenu, loadProfileAvatars, loadProfiles, loadRecentlyClosed, loadRecentHistory, postAppMenuPatch, release, reset]);
+  }, [acquire, closeAppMenu, loadProfileAvatars, loadProfiles, loadRecentlyClosed, postAppMenuPatch, release, reset]);
 
   useEffect(() => {
     const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
@@ -467,6 +499,14 @@ export default function NavBar({
           } else if (commandId === 'newStealthWindow') window.electronAPI.createStealthWindow?.();
           else if (commandId === 'openSettings') onOpenSettings?.();
           else if (commandId === 'openHistoryPage') onOpenHistory?.();
+          else if (commandId === 'openDownloads') window.electronAPI.runMenuCommand?.('open-downloads');
+          else if (commandId === 'deleteBrowsingData') onDeleteBrowsingData?.();
+          else if (commandId === 'print') window.electronAPI.runMenuCommand?.('print-active-tab');
+          else if (commandId === 'searchWithGoogleLens') window.electronAPI.runMenuCommand?.('search-with-google-lens');
+          else if (commandId === 'findInPage') window.electronAPI.runMenuCommand?.('find-in-page');
+          else if (commandId === 'cut') window.electronAPI.runMenuCommand?.('edit-cut');
+          else if (commandId === 'copy') window.electronAPI.runMenuCommand?.('edit-copy');
+          else if (commandId === 'paste') window.electronAPI.runMenuCommand?.('edit-paste');
           else if (commandId === 'openProfile' && data?.profileId) window.electronAPI.profileOpenWindow?.(data.profileId);
           else if (commandId === 'addProfile') handleAddProfile();
           else if (commandId === 'manageProfiles') window.electronAPI.profilePickerOpen?.();
@@ -474,8 +514,16 @@ export default function NavBar({
           else if (commandId === 'closeCurrentProfile') window.electronAPI.profileCloseCurrent?.();
           else if (commandId === 'restoreRecentlyClosed' && data?.closedAt) {
             window.electronAPI.recentlyClosedRestore?.(data.closedAt);
-          } else if (commandId === 'openHistoryEntry' && data?.url && currentTabId) {
-            window.electronAPI.navigate(currentTabId, data.url, { source: 'history' });
+          } else if (commandId === 'openBookmark' && data?.url && currentTabId) {
+            window.electronAPI.navigate(currentTabId, data.url, { source: 'bookmark' });
+          } else if (commandId === 'bookmarkCurrentTab') {
+            const anchor = moreBtnRef.current;
+            void closeAppMenu().then(() => {
+              setTimeout(() => {
+                if (anchor) void openBookmarkEditorForCurrentPage(anchor);
+              }, 0);
+            });
+            return;
           }
           void closeAppMenu();
           return;
@@ -573,9 +621,11 @@ export default function NavBar({
     dispatch,
     handleAddProfile,
     handleEditCurrentProfile,
+    onDeleteBrowsingData,
     onNewTab,
     onOpenHistory,
     onOpenSettings,
+    openBookmarkEditorForCurrentPage,
     postStarEditorPatch,
   ]);
 
@@ -616,6 +666,7 @@ export default function NavBar({
       </button>
 
       <button
+        ref={moreBtnRef}
         id="more-btn"
         className="btn"
         title="Customize and control InviSurf"

@@ -399,6 +399,23 @@ function AppShell() {
     openSingletonTab(URL_C.HISTORY_NAVIGATE, URL_C.HISTORY_DISPLAY);
   }, [openSingletonTab]);
 
+  const handleDeleteBrowsingData = useCallback(() => {
+    const { tabs, tabOrder } = stateRef.current;
+    const existingId = tabOrder.find(id => tabs[id]?.url === URL_C.HISTORY_DISPLAY);
+    const targetUrl = `${URL_C.HISTORY_LOAD}#clearBrowsingData`;
+    if (existingId) {
+      dispatch(setCurrentTab(existingId));
+      window.electronAPI.switchTab(existingId);
+      window.electronAPI.navigate(existingId, targetUrl);
+      return;
+    }
+    const st = stealthWindowRef.current;
+    const id = 'tab-' + Date.now();
+    dispatch(addTab({ id, isStealth: st, initialUrl: null }));
+    window.electronAPI.newTab(id, st, null);
+    setTimeout(() => window.electronAPI.navigate(id, targetUrl), 50);
+  }, [dispatch]);
+
   const paletteCommands = useMemo(
     () =>
       buildCommandPaletteCommands({
@@ -654,6 +671,7 @@ function AppShell() {
         currentTabId={currentTabId}
         onNewTab={createTab}
         onOpenHistory={handleOpenHistory}
+        onDeleteBrowsingData={handleDeleteBrowsingData}
         onOpenSettings={handleOpenSettings}
         searchEngine={searchEngine}
       />
