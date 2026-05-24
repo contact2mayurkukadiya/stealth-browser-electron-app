@@ -1417,7 +1417,7 @@ function toDisplayUrl(rawUrl) {
     if (!rawUrl) return '';
     if (rawUrl.startsWith(C.URL.SCHEME_APP) && rawUrl.includes(C.URL.FRAGMENT_HISTORY)) return C.URL.HISTORY_DISPLAY;
     if (rawUrl.startsWith(C.URL.SCHEME_APP) && rawUrl.includes(C.URL.FRAGMENT_SETTINGS)) return C.URL.SETTINGS_DISPLAY;
-    if (rawUrl.startsWith(C.URL.SCHEME_APP) && rawUrl.includes(C.URL.FRAGMENT_NEWTAB)) return C.URL.NTP_DISPLAY;
+    if (rawUrl.startsWith(C.URL.SCHEME_APP) && rawUrl.includes(C.URL.FRAGMENT_NEWTAB)) return '';
     return rawUrl;
 }
 

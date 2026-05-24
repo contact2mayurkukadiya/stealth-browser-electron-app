@@ -1,5 +1,18 @@
 import { URL as URL_C } from '../constants/conditionStrings.js';
 
+/** True when the URL is a new-tab sentinel and must not appear in the omnibox. */
+export function isNtpOmniboxUrl(url) {
+  if (url == null || !String(url).trim()) return true;
+  const lower = String(url).trim().toLowerCase();
+  if (lower === URL_C.NTP_DISPLAY || lower.startsWith(URL_C.NTP_LOCALHOST_PREFIX)) return true;
+  return lower.startsWith(URL_C.SCHEME_APP) && lower.includes(URL_C.FRAGMENT_NEWTAB);
+}
+
+/** Omnibox bar value — never shows internal new-tab pseudo-URLs. */
+export function toOmniboxBarValue(url) {
+  return isNtpOmniboxUrl(url) ? '' : String(url || '');
+}
+
 /**
  * Splits a tab URL into omnibox overlay segments for unfocused display.
  * @returns {{ prefix: string, domain: string, suffix: string } | null}

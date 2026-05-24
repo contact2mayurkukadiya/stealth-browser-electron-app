@@ -5,7 +5,7 @@ import './omnibox.css';
 import AutocompleteController from './AutocompleteController.js';
 import { toNavigateUrl } from './AutocompleteInput.js';
 import { useChromeOverlay } from '../../context/ChromeOverlayContext.jsx';
-import { buildDisplayParts } from '../../utils/omniboxDisplayUrl.js';
+import { buildDisplayParts, isNtpOmniboxUrl, toOmniboxBarValue } from '../../utils/omniboxDisplayUrl.js';
 import {
   URL as URL_C,
   KEYBOARD,
@@ -143,10 +143,10 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
 
   const barDisplayValue = (() => {
     if (hasUncommittedDraft && !committedDraftPendingRef.current) {
-      return draftValue;
+      return toOmniboxBarValue(draftValue);
     }
     if (committedDraftPendingRef.current && pendingCommittedUrlRef.current) {
-      return pendingCommittedUrlRef.current;
+      return toOmniboxBarValue(pendingCommittedUrlRef.current);
     }
     return displayUrl;
   })();
@@ -221,7 +221,13 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   }, [controller, closeOmniboxChrome]);
 
   const commitNavigation = useCallback((url, source = 'typed') => {
-    if (!currentTabId || !url) return;
+    if (!currentTabId) return;
+    if (!url || isNtpOmniboxUrl(url)) {
+      closeOverlay();
+      setIsFocused(false);
+      inputRef.current?.blur();
+      return;
+    }
     pendingCommittedUrlRef.current = url;
     committedDraftPendingRef.current = true;
     setHasUncommittedDraft(false);
@@ -329,8 +335,22 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
       commitNavigation(completed, 'typed');
       return;
     }
-    commitNavigation(toNavigateUrl(value, searchEngine), 'typed', value);
-  }, [commitNavigation, searchEngine]);
+    const trimmed = String(value || '').trim();
+    if (!trimmed) {
+      closeOverlay();
+      setIsFocused(false);
+      inputRef.current?.blur();
+      return;
+    }
+    const target = toNavigateUrl(value, searchEngine);
+    if (!target) {
+      closeOverlay();
+      setIsFocused(false);
+      inputRef.current?.blur();
+      return;
+    }
+    commitNavigation(target, 'typed');
+  }, [commitNavigation, closeOverlay, searchEngine]);
 
   useEffect(() => {
     if (!overlayOpen || !containerRef.current) {
@@ -600,17 +620,17 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
 
   useEffect(() => {
     if (committedDraftPendingRef.current) {
-      if (displayUrl) {
+      const pending = pendingCommittedUrlRef.current;
+      if (displayUrl || isNtpOmniboxUrl(pending)) {
         committedDraftPendingRef.current = false;
         pendingCommittedUrlRef.current = '';
         draftValueRef.current = displayUrl;
         setDraftValue(displayUrl);
         return;
       }
-      const pending = pendingCommittedUrlRef.current;
       if (pending) {
-        draftValueRef.current = pending;
-        setDraftValue(pending);
+        draftValueRef.current = toOmniboxBarValue(pending);
+        setDraftValue(toOmniboxBarValue(pending));
       }
       return;
     }

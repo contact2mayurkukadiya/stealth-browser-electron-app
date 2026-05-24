@@ -1,16 +1,15 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { URL as URL_C } from '../constants/conditionStrings.js';
 
-// The canonical URL for new tabs — resolved by main.js to the actual newtab.html.
-const NTP_URL = URL_C.NTP_DISPLAY;
+// Empty URL in Redux means “new tab” — main.js resolves to newtab.html on load.
+const NTP_URL = '';
 
 /**
  * Returns true when a URL represents the custom New Tab Page.
- * Covers both the short form (stored in Redux / session) and the resolved
- * app:// path that comes back via url-changed after navigation.
+ * Covers empty sentinel, legacy app://newtab, and resolved app://localhost paths.
  */
 function isNtpUrl(url) {
-  if (!url) return false;
+  if (!url || !String(url).trim()) return true;
   const lower = url.toLowerCase();
   return lower === URL_C.NTP_DISPLAY || lower.startsWith(URL_C.NTP_LOCALHOST_PREFIX);
 }

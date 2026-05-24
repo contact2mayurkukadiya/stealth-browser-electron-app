@@ -65,7 +65,7 @@ function AppShell() {
         .filter(id => tabs[id] && !tabs[id].isStealth)
         .map(id => ({
           id,
-          url: tabs[id].url || URL_C.NTP_DISPLAY,
+          url: tabs[id].url || '',
           // Persist display metadata so sleeping tabs can show the right
           // title and favicon immediately on the next session restore.
           title: tabs[id].title || URL_C.NEW_TAB_LABEL,

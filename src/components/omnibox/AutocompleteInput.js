@@ -1,4 +1,4 @@
-import { URL as URL_C, INPUT_KIND } from '../../constants/conditionStrings.js';
+import { INPUT_KIND } from '../../constants/conditionStrings.js';
 
 /**
  * AutocompleteInput — classifies raw omnibox text and builds navigation/search URLs.
@@ -86,7 +86,7 @@ export function classifyInput(text) {
  */
 export function toNavigateUrl(text, engine = 'google') {
   const trimmed = (text || '').trim();
-  if (!trimmed) return URL_C.NTP_DISPLAY;
+  if (!trimmed) return null;
 
   const kind = classifyInput(trimmed);
 
