@@ -36,6 +36,23 @@ body {
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
   scrollbar-color: var(--chrome-scrollbar-thumb, #9aa0a6) var(--chrome-scrollbar-track, #e8eaed);
+  --settings-border: rgba(0, 0, 0, 0.08);
+  --settings-border-strong: #dadce0;
+  --settings-muted-text: #5f6368;
+  --settings-hover-bg: #f1f3f4;
+  --settings-subtle-bg: #f8f9fa;
+  --settings-modal-overlay: rgba(0, 0, 0, 0.38);
+  --settings-danger-bg: #fce8e6;
+  --settings-danger-fg: #a50e0e;
+  --settings-chip-bg: #fff;
+  --settings-chip-fg: #3c4043;
+  --settings-chip-selected-bg: #e8f0fe;
+  --settings-chip-selected-fg: #174ea6;
+  --settings-crash-row-hover: #eef3fd;
+  --settings-crash-row-active: #e8f0fe;
+  --settings-crash-popover-bg: #fff;
+  --settings-code-bg: #f8f9fa;
+  --settings-code-fg: #202124;
 }
 
 /* Chromium scrollbars: thumb must never match track (contrast via semantic tokens) */
@@ -384,6 +401,387 @@ body {
   stroke-width: 1.8;
 }
 
+.diag-copy-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Crash report viewer ───────────────────────────────────────────────── */
+.crash-log-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: var(--settings-modal-overlay);
+}
+
+.crash-log-modal {
+  width: min(1100px, 96vw);
+  height: min(720px, 88vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--chrome-content-surface, #fff);
+  color: var(--chrome-fg, #202124);
+  border-radius: 14px;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+}
+
+.crash-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--settings-border);
+}
+
+.crash-log-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.crash-log-subtitle {
+  margin: 3px 0 0;
+  max-width: 720px;
+  overflow: hidden;
+  color: var(--settings-muted-text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crash-log-header-actions,
+.crash-log-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crash-log-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--settings-muted-text);
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.crash-log-close:hover {
+  background: var(--settings-hover-bg);
+  color: var(--chrome-fg, #202124);
+}
+
+.crash-log-error {
+  padding: 10px 18px;
+  background: var(--settings-danger-bg);
+  color: var(--settings-danger-fg);
+  font-size: 12px;
+  border-bottom: 1px solid var(--settings-border);
+}
+
+.crash-log-body {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 285px 1fr;
+}
+
+.crash-log-sidebar {
+  min-width: 0;
+  overflow: auto;
+  border-right: 1px solid var(--settings-border);
+  background: var(--settings-subtle-bg);
+}
+
+.crash-log-empty-list {
+  padding: 20px;
+  color: var(--settings-muted-text);
+  font-size: 13px;
+}
+
+.crash-log-file-row {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--settings-border);
+}
+
+.crash-log-file-row:hover {
+  background: var(--settings-crash-row-hover);
+}
+
+.crash-log-file-row--active {
+  background: var(--settings-crash-row-active);
+  box-shadow: inset 3px 0 0 #1a73e8;
+}
+
+.crash-log-file {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 8px 13px 16px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.crash-log-file:hover {
+  background: transparent;
+}
+
+.crash-log-file__date {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--chrome-fg, #202124);
+}
+
+.crash-log-file__name,
+.crash-log-file__meta {
+  overflow: hidden;
+  color: var(--settings-muted-text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crash-log-menu-btn {
+  width: 34px;
+  border: none;
+  background: transparent;
+  color: var(--settings-muted-text);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.crash-log-menu-btn:hover {
+  color: #1a73e8;
+}
+
+.crash-log-popover {
+  position: absolute;
+  top: 34px;
+  right: 8px;
+  z-index: 2;
+  min-width: 116px;
+  padding: 6px;
+  border: 1px solid var(--settings-border-strong);
+  border-radius: 8px;
+  background: var(--settings-crash-popover-bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.crash-log-popover__item {
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--chrome-fg, #202124);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.crash-log-popover__item:hover {
+  background: var(--settings-hover-bg);
+}
+
+.crash-log-popover__item--danger {
+  color: var(--settings-danger-fg);
+}
+
+.crash-log-preview {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--chrome-content-surface, #fff);
+}
+
+.crash-log-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--settings-muted-text);
+  font-size: 14px;
+}
+
+.crash-log-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--settings-border);
+}
+
+.crash-log-preview-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.crash-log-preview-title span,
+.crash-log-preview-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crash-log-preview-title span {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.crash-log-preview-title small {
+  color: var(--settings-muted-text);
+  font-size: 11px;
+}
+
+.crash-log-copy {
+  position: static;
+  flex: 0 0 auto;
+}
+
+.crash-log-pre {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--settings-code-bg);
+  color: var(--settings-code-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Clear crash logs modal ─────────────────────────────────────────────── */
+.clear-logs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--settings-modal-overlay);
+}
+
+.clear-logs-modal {
+  width: min(460px, 92vw);
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--chrome-content-surface, #fff);
+  color: var(--chrome-fg, #202124);
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.32);
+}
+
+.clear-logs-title {
+  margin: 0;
+  padding: 20px 22px 12px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.clear-logs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 22px 18px;
+}
+
+.clear-logs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--settings-border-strong);
+  border-radius: 999px;
+  background: var(--settings-chip-bg);
+  color: var(--settings-chip-fg);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.clear-logs-chip:hover {
+  background: var(--settings-hover-bg);
+}
+
+.clear-logs-chip--selected {
+  border-color: #1a73e8;
+  background: var(--settings-chip-selected-bg);
+  color: var(--settings-chip-selected-fg);
+}
+
+.clear-logs-chip svg {
+  width: 14px;
+  height: 14px;
+}
+
+.clear-logs-items {
+  margin: 0 22px 18px;
+  border-radius: 8px;
+  background: var(--settings-subtle-bg);
+}
+
+.clear-logs-item {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+}
+
+.clear-logs-item input {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+.clear-logs-item__label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.clear-logs-item__desc {
+  margin: 4px 0 0;
+  color: var(--settings-muted-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.clear-logs-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px 20px;
+}
+
+.clear-logs-delete {
+  background: #d93025;
+}
+
+.clear-logs-delete:hover:not(:disabled) {
+  background: #b3261e;
+}
+
 /* ── Appearance: brightness + accent (Chrome-like) ────────────────────────── */
 .settings-card--appearance {
   padding: 20px 24px 24px;
@@ -576,6 +974,23 @@ body {
     background: var(--chrome-content-bg, #292a2d);
     color: var(--chrome-fg, #e8eaed);
     scrollbar-color: var(--chrome-scrollbar-thumb, #6b6b6b) var(--chrome-scrollbar-track, #1a1a1a);
+    --settings-border: #3c4043;
+    --settings-border-strong: #5f6368;
+    --settings-muted-text: #9aa0a6;
+    --settings-hover-bg: #3c4043;
+    --settings-subtle-bg: #292a2d;
+    --settings-modal-overlay: rgba(0, 0, 0, 0.62);
+    --settings-danger-bg: rgba(244, 67, 54, 0.16);
+    --settings-danger-fg: #f28b82;
+    --settings-chip-bg: #202124;
+    --settings-chip-fg: #e8eaed;
+    --settings-chip-selected-bg: rgba(138, 180, 248, 0.16);
+    --settings-chip-selected-fg: #aecbfa;
+    --settings-crash-row-hover: rgba(255, 255, 255, 0.06);
+    --settings-crash-row-active: rgba(138, 180, 248, 0.14);
+    --settings-crash-popover-bg: #202124;
+    --settings-code-bg: #11171d;
+    --settings-code-fg: #d6e2ee;
   }
 
   .settings-page {
@@ -766,6 +1181,46 @@ body {
   }
 }
 
+html[data-forced-appearance="light"] body {
+  --settings-border: rgba(0, 0, 0, 0.08);
+  --settings-border-strong: #dadce0;
+  --settings-muted-text: #5f6368;
+  --settings-hover-bg: #f1f3f4;
+  --settings-subtle-bg: #f8f9fa;
+  --settings-modal-overlay: rgba(0, 0, 0, 0.38);
+  --settings-danger-bg: #fce8e6;
+  --settings-danger-fg: #a50e0e;
+  --settings-chip-bg: #fff;
+  --settings-chip-fg: #3c4043;
+  --settings-chip-selected-bg: #e8f0fe;
+  --settings-chip-selected-fg: #174ea6;
+  --settings-crash-row-hover: #eef3fd;
+  --settings-crash-row-active: #e8f0fe;
+  --settings-crash-popover-bg: #fff;
+  --settings-code-bg: #f8f9fa;
+  --settings-code-fg: #202124;
+}
+
+html[data-forced-appearance="dark"] body {
+  --settings-border: #3c4043;
+  --settings-border-strong: #5f6368;
+  --settings-muted-text: #9aa0a6;
+  --settings-hover-bg: #3c4043;
+  --settings-subtle-bg: #292a2d;
+  --settings-modal-overlay: rgba(0, 0, 0, 0.62);
+  --settings-danger-bg: rgba(244, 67, 54, 0.16);
+  --settings-danger-fg: #f28b82;
+  --settings-chip-bg: #202124;
+  --settings-chip-fg: #e8eaed;
+  --settings-chip-selected-bg: rgba(138, 180, 248, 0.16);
+  --settings-chip-selected-fg: #aecbfa;
+  --settings-crash-row-hover: rgba(255, 255, 255, 0.06);
+  --settings-crash-row-active: rgba(138, 180, 248, 0.14);
+  --settings-crash-popover-bg: #202124;
+  --settings-code-bg: #11171d;
+  --settings-code-fg: #d6e2ee;
+}
+
 /*
  * Stealth window settings: InvSurf dark chrome (#253035 / #2f3c42 tokens set in JS).
  * Mirrors prefers-dark UI even when OS is light — `body.settings-stealth-ui` is toggled in SettingsApp.jsx.
@@ -774,6 +1229,23 @@ body.settings-stealth-ui {
   background: var(--chrome-content-bg, #253035);
   color: var(--chrome-fg, #e8eaed);
   scrollbar-color: var(--chrome-scrollbar-thumb, #6b7780) var(--chrome-scrollbar-track, #1e2a30);
+  --settings-border: rgba(74, 97, 107, 0.45);
+  --settings-border-strong: #5f6368;
+  --settings-muted-text: #9aa0a6;
+  --settings-hover-bg: #3c4043;
+  --settings-subtle-bg: #253035;
+  --settings-modal-overlay: rgba(0, 0, 0, 0.62);
+  --settings-danger-bg: rgba(244, 67, 54, 0.16);
+  --settings-danger-fg: #f28b82;
+  --settings-chip-bg: #2f3c42;
+  --settings-chip-fg: #e8eaed;
+  --settings-chip-selected-bg: rgba(138, 180, 248, 0.16);
+  --settings-chip-selected-fg: #aecbfa;
+  --settings-crash-row-hover: rgba(255, 255, 255, 0.06);
+  --settings-crash-row-active: rgba(138, 180, 248, 0.14);
+  --settings-crash-popover-bg: #2f3c42;
+  --settings-code-bg: #1e2a30;
+  --settings-code-fg: #d6e2ee;
 }
 
 body.settings-stealth-ui .settings-page {

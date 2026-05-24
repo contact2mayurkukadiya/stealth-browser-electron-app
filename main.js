@@ -16,6 +16,7 @@ const dialog = electron.dialog || electronMain.dialog;
 const protocol = electron.protocol || electronMain.protocol;
 const net = electron.net || electronMain.net;
 const clipboard = electron.clipboard;
+const shell = electron.shell || electronMain.shell;
 const webContents = electron.webContents;
 const session = electron.session || electronMain.session;
 const screen = electron.screen;
@@ -25,14 +26,20 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const encryption = require('./encryption');
+const { createAppLogger } = require('./appLogger');
 const compatDiagnostics = require('./compatibilityDiagnostics');
 const authPolicy = require('./authPolicy'); // <--- ADD THIS
 const { HistoryService } = require('./historyService');
 const chromeTheme = require(path.join(__dirname, 'src', 'theme', 'chromeTheme.cjs'));
 const C = require(path.join(__dirname, 'src', 'constants', 'conditionStrings.cjs'));
+const appLogger = createAppLogger({ app, encryptionModule: encryption });
 
 process.on('uncaughtException', (error) => {
     const message = error?.stack || error?.message || String(error);
+    appLogger.fatal('main:uncaught-exception', {
+        error: appLogger.serializeError(error),
+        logFile: appLogger.getCurrentLogFile(),
+    });
     try {
         const electronDialog = require('electron').dialog;
         if (electronDialog && typeof electronDialog.showErrorBox === 'function') {
@@ -47,6 +54,33 @@ process.on('uncaughtException', (error) => {
         app.quit();
     }
 });
+
+process.on('unhandledRejection', (reason) => {
+    appLogger.error('main:unhandled-rejection', {
+        error: appLogger.serializeError(reason),
+    });
+});
+
+if (app && typeof app.on === 'function') {
+    app.on('render-process-gone', (_event, contents, details) => {
+        appLogger.error('electron:render-process-gone', {
+            reason: details?.reason,
+            exitCode: details?.exitCode,
+            webContentsId: contents?.id,
+            url: contents && !contents.isDestroyed?.() ? contents.getURL?.() : '',
+        });
+    });
+
+    app.on('child-process-gone', (_event, details) => {
+        appLogger.error('electron:child-process-gone', {
+            type: details?.type,
+            reason: details?.reason,
+            exitCode: details?.exitCode,
+            serviceName: details?.serviceName,
+            name: details?.name,
+        });
+    });
+}
 
 const appProtocolInstalledSessions = new WeakSet();
 const historyService = new HistoryService({ app, encryptionModule: encryption });
@@ -822,6 +856,13 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         lastOmniboxOverlayPatch: null,
     };
     windowContextsById.set(window.id, context);
+    appLogger.info('window:create', {
+        windowId: context.windowId,
+        browserWindowId: window.id,
+        profileId: context.profileId,
+        stealthWindow: context.stealthWindow,
+        partition,
+    });
 
     if (stealthWindow) {
         window.setTitle('InviSurf — Stealth');
@@ -852,6 +893,13 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
     window.on('close', () => {
         const windowSnapshot = captureClosedWindowSnapshot(context);
+        appLogger.info('window:close', {
+            windowId: context.windowId,
+            profileId: context.profileId,
+            stealthWindow: context.stealthWindow,
+            tabCount: Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length,
+            capturedRecentlyClosedTabs: windowSnapshot?.tabs?.length || 0,
+        });
         if (windowSnapshot) {
             pushRecentlyClosedEntry(context.profileId, windowSnapshot);
         }
@@ -883,6 +931,11 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     });
 
     window.on('closed', () => {
+        appLogger.info('window:closed', {
+            windowId: context.windowId,
+            profileId: context.profileId,
+            browserWindowId: window.id,
+        });
         windowContextsById.delete(window.id);
         windowBootstrapById.delete(context.windowId);
         if (mainWindow === window) {
@@ -1703,6 +1756,13 @@ function pushRecentlyClosedEntry(profileId, entry) {
     if (stack.length > MAX_RECENTLY_CLOSED_TABS) {
         stack.length = MAX_RECENTLY_CLOSED_TABS;
     }
+    appLogger.info('recently-closed:push', {
+        profileId,
+        type: normalized.type,
+        url: normalized.url,
+        tabCount: normalized.tabs?.length || undefined,
+        stackSize: stack.length,
+    });
     rebuildApplicationMenu();
 }
 
@@ -1720,6 +1780,13 @@ function restoreRecentlyClosedTabInContext(context, entry) {
     createTab(context, newTabId, resolvedUrl, stealthTab, {
         activate: true,
         navigationHistory: entry.history,
+    });
+    appLogger.info('recently-closed:restore-tab', {
+        windowId: context.windowId,
+        profileId: context.profileId,
+        tabId: newTabId,
+        url: entry.url,
+        historyLength: entry.history?.entries?.length || 0,
     });
 
     if (context.window && !context.window.webContents.isDestroyed()) {
@@ -1743,6 +1810,12 @@ function restoreRecentlyClosedWindowEntry(entry) {
             tabs: entry.tabs,
             activeTabId: entry.activeTabId,
         },
+    });
+    appLogger.info('recently-closed:restore-window', {
+        profileId,
+        windowId: targetContext.windowId,
+        tabCount: entry.tabs.length,
+        activeTabId: entry.activeTabId,
     });
     return true;
 }
@@ -1786,6 +1859,12 @@ function restoreRecentlyClosed(closedAt = null) {
     const [entry] = stack.splice(targetIndex, 1);
     rebuildApplicationMenu();
     if (!entry) return;
+    appLogger.info('recently-closed:restore', {
+        profileId,
+        type: entry.type,
+        closedAt: entry.closedAt,
+        remaining: stack.length,
+    });
 
     if (entry.type === 'window') {
         restoreRecentlyClosedWindowEntry(entry);
@@ -2408,6 +2487,24 @@ ipcMain.on(C.IPC_SEND.CHROME_OVERLAY_FROM_OVERLAY, (e, data) => {
     }
 });
 
+ipcMain.on(C.IPC_SEND.APP_LOG, (e, payload = {}) => {
+    if (!isSenderTrusted(e)) return;
+    const context = getWindowContextByEventSender(e.sender) || getWindowContextByChromeOverlaySender(e.sender);
+    const level = payload.level === 'fatal' || payload.level === 'error' || payload.level === 'warn'
+        ? payload.level
+        : 'info';
+    const event = typeof payload.event === 'string' && payload.event.trim()
+        ? payload.event.trim()
+        : 'renderer:log';
+    const data = {
+        ...(payload.data && typeof payload.data === 'object' ? payload.data : {}),
+        windowId: context?.windowId || null,
+        profileId: context?.profileId || null,
+        senderUrl: e.senderFrame?.url || e.sender?.getURL?.() || '',
+    };
+    appLogger[level](event, data);
+});
+
 // Helper to handle keyboard shortcuts across different WebContents
 function handleShortcuts(event, input) {
     if (input.type !== 'keyDown') return;
@@ -2480,6 +2577,15 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
 
     context.tabs[id] = view;
     tabIdToWindowId.set(id, context.window.id);
+    appLogger.info('tab:create', {
+        windowId: context.windowId,
+        profileId: context.profileId,
+        tabId: id,
+        url,
+        isStealth: !!isStealth,
+        shouldActivate,
+        restoresHistory: !!options.navigationHistory,
+    });
     // Active tabs are attached via activateTabInContext() so only one tab view is in the
     // hierarchy at a time (avoids stacked views stealing hit-testing until switch-tab runs).
     if (!shouldActivate) {
@@ -2490,6 +2596,12 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     const webContentsNumericId = view.webContents.id;
     webContentsIdToTabId.set(webContentsNumericId, id);
     view.webContents.on('destroyed', () => {
+        appLogger.info('tab:webcontents-destroyed', {
+            windowId: context.windowId,
+            profileId: context.profileId,
+            tabId: id,
+            webContentsId: webContentsNumericId,
+        });
         webContentsIdToTabId.delete(webContentsNumericId);
     });
 
@@ -2504,8 +2616,21 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     // ─── Security guards for tab content (Rules 13, 14) ────
     // Convert safe popup/new-tab intents into app tabs; block everything else.
     view.webContents.setWindowOpenHandler(({ url: targetUrl, disposition }) => {
+        appLogger.info('tab:window-open-request', {
+            windowId: context.windowId,
+            profileId: context.profileId,
+            tabId: id,
+            url: targetUrl,
+            disposition,
+        });
         if (!isAllowedTabNavigationUrl(targetUrl)) {
             console.warn(`[Security] Blocked popup/open to: ${targetUrl}`);
+            appLogger.warn('security:blocked-window-open', {
+                windowId: context.windowId,
+                profileId: context.profileId,
+                tabId: id,
+                url: targetUrl,
+            });
             return { action: 'deny' };
         }
 
@@ -2520,6 +2645,12 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
         const allowed = isAllowedTabNavigationUrl(targetUrl);
         if (!allowed) {
             console.warn(`[Security] Blocked navigation to: ${targetUrl}`);
+            appLogger.warn('security:blocked-navigation', {
+                windowId: context.windowId,
+                profileId: context.profileId,
+                tabId: id,
+                url: targetUrl,
+            });
             event.preventDefault();
         }
     });
@@ -2553,6 +2684,14 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
             : 'Blocked because the redirect target matches known tracking/csync redirect patterns.';
 
         console.warn(`[RedirectGuard] Blocked redirect to ${targetUrl}. Reason: ${reasonText}`);
+        appLogger.warn('security:blocked-redirect', {
+            windowId: context.windowId,
+            profileId: context.profileId,
+            tabId: id,
+            fromUrl: view.webContents.getURL(),
+            targetUrl,
+            reason: reasonText,
+        });
         recordCompatEvent(id, {
             type: 'redirect-blocked',
             fromUrl: view.webContents.getURL(),
@@ -2755,6 +2894,12 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     // Use these flags to temporarily hold the title until page load completes or URL changes
     view.webContents.on('did-navigate', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
+        appLogger.info('tab:navigate', {
+            windowId: context.windowId,
+            profileId: context.profileId,
+            tabId: id,
+            url: displayUrl,
+        });
         recordCompatEvent(id, { type: 'navigated', url: displayUrl, rawUrl: targetUrl });
         context.window.webContents.send(C.IPC_EVENT.URL_CHANGED, { id, url: displayUrl });
         if (!effectiveStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
@@ -2771,6 +2916,12 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
 
     view.webContents.on('did-navigate-in-page', (event, targetUrl) => {
         let displayUrl = getDisplayUrl(targetUrl);
+        appLogger.info('tab:navigate-in-page', {
+            windowId: context.windowId,
+            profileId: context.profileId,
+            tabId: id,
+            url: displayUrl,
+        });
         context.window.webContents.send(C.IPC_EVENT.URL_CHANGED, { id, url: displayUrl });
         if (!effectiveStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
             historyService.recordVisit(context.profileId, {
@@ -2794,6 +2945,14 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
         if (errorCode === -3) return;
 
         console.log(`Navigation failed: ${validatedURL} (${errorCode}: ${errorDescription})`);
+        appLogger.warn('tab:load-failed', {
+            windowId: context.windowId,
+            profileId: context.profileId,
+            tabId: id,
+            url: validatedURL,
+            errorCode,
+            errorDescription,
+        });
 
         recordCompatEvent(id, {
             type: 'load-failed',
@@ -3128,8 +3287,79 @@ ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, (e, data) => {
 
 ipcMain.handle(C.IPC_INVOKE.APP_RELAUNCH, (e) => {
     if (!isSenderTrusted(e)) return;
+    appLogger.info('app:relaunch-requested', {});
     app.relaunch();
     app.exit(0);
+});
+
+ipcMain.handle(C.IPC_INVOKE.APP_LOG_INFO, (e) => {
+    if (!isSenderTrusted(e)) return null;
+    return {
+        encrypted: true,
+        directory: appLogger.getLogDir(),
+        currentFile: appLogger.getCurrentLogFile(),
+        retentionDaysApprox: 14,
+    };
+});
+
+ipcMain.handle(C.IPC_INVOKE.APP_LOG_FILES, (e) => {
+    if (!isSenderTrusted(e)) return { files: [] };
+    return {
+        encrypted: true,
+        directory: appLogger.getLogDir(),
+        files: appLogger.listLogFiles(),
+    };
+});
+
+ipcMain.handle(C.IPC_INVOKE.APP_LOG_READ, (e, { filePath } = {}) => {
+    if (!isSenderTrusted(e)) return { ok: false, error: 'Untrusted sender' };
+    try {
+        const records = appLogger.readEncryptedLogFile(filePath);
+        const text = JSON.stringify(records, null, 2);
+        return {
+            ok: true,
+            filePath,
+            records,
+            text,
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error?.message || String(error),
+        };
+    }
+});
+
+ipcMain.handle(C.IPC_INVOKE.APP_LOG_REVEAL, (e, { filePath } = {}) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    if (!appLogger.isLogFilePath(filePath) || !fs.existsSync(filePath)) {
+        return { ok: false, error: 'Log file not found' };
+    }
+    try {
+        shell?.showItemInFolder?.(filePath);
+        return { ok: true };
+    } catch (error) {
+        return { ok: false, error: error?.message || String(error) };
+    }
+});
+
+ipcMain.handle(C.IPC_INVOKE.APP_LOG_DELETE, (e, { filePath } = {}) => {
+    if (!isSenderTrusted(e)) return { ok: false, error: 'Untrusted sender' };
+    if (!appLogger.isLogFilePath(filePath)) {
+        return { ok: false, error: 'Invalid log file path' };
+    }
+    const deleted = appLogger.deleteLogFile(filePath);
+    return { ok: deleted };
+});
+
+ipcMain.handle(C.IPC_INVOKE.APP_LOG_CLEAR, (e, { since = null } = {}) => {
+    if (!isSenderTrusted(e)) return { ok: false, error: 'Untrusted sender' };
+    try {
+        const result = appLogger.clearLogFiles({ since });
+        return { ok: true, ...result };
+    } catch (error) {
+        return { ok: false, error: error?.message || String(error) };
+    }
 });
 
 ipcMain.handle(C.IPC_INVOKE.COMPAT_GET_REPORT, (e, payload = {}) => {
@@ -3816,6 +4046,14 @@ ipcMain.on(C.IPC_SEND.NEW_TAB, (e, { id, isStealth, url, source, history } = {})
     if (!context) return;
 
     const resolvedUrl = resolveTabLoadUrl(url);
+    appLogger.info('ipc:new-tab', {
+        windowId: context.windowId,
+        profileId: context.profileId,
+        tabId: id,
+        url: resolvedUrl,
+        source,
+        restoresHistory: !!history,
+    });
     if (url && !isInternalPageUrl(url)) {
         markNextNavigationTransition(id, source || 'link');
     }
@@ -3837,6 +4075,12 @@ ipcMain.on(C.IPC_SEND.SWITCH_TAB, (e, { id }) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
     if (!context.tabs[id] && !context.sleepingTabs[id]) return; // Truly unknown tab — don't blank the window
+    appLogger.info('ipc:switch-tab', {
+        windowId: context.windowId,
+        profileId: context.profileId,
+        tabId: id,
+        wasSleeping: !!context.sleepingTabs[id],
+    });
     activateOrWakeTab(id);
 });
 
@@ -3868,6 +4112,13 @@ ipcMain.on(C.IPC_SEND.CLOSE_TAB, (e, { id }) => {
     if (!context) return;
 
     const tabSnapshot = captureClosedTabSnapshot(context, id);
+    appLogger.info('ipc:close-tab', {
+        windowId: context.windowId,
+        profileId: context.profileId,
+        tabId: id,
+        captured: !!tabSnapshot,
+        url: tabSnapshot?.url || null,
+    });
 
     // Clean up sleeping metadata regardless of whether a view was ever created.
     delete context.sleepingTabs[id];
@@ -3909,6 +4160,11 @@ ipcMain.on(C.IPC_SEND.GO_BACK, (e, { id }) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
     const targetId = id === 'current' ? context.activeTabId : id;
+    appLogger.info('ipc:go-back', {
+        windowId: context.windowId,
+        profileId: context.profileId,
+        tabId: targetId,
+    });
     if (context.tabs[targetId]) context.tabs[targetId].webContents.navigationHistory.goBack();
 });
 
@@ -3917,6 +4173,11 @@ ipcMain.on(C.IPC_SEND.GO_FORWARD, (e, { id }) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
     const targetId = id === 'current' ? context.activeTabId : id;
+    appLogger.info('ipc:go-forward', {
+        windowId: context.windowId,
+        profileId: context.profileId,
+        tabId: targetId,
+    });
     if (context.tabs[targetId]) context.tabs[targetId].webContents.navigationHistory.goForward();
 });
 
@@ -3926,6 +4187,12 @@ ipcMain.on(C.IPC_SEND.RELOAD, (e, { id }) => {
     if (!context) return;
     const targetId = id === 'current' ? context.activeTabId : id;
     if (context.tabs[targetId]) {
+        appLogger.info('ipc:reload', {
+            windowId: context.windowId,
+            profileId: context.profileId,
+            tabId: targetId,
+            url: context.tabs[targetId].webContents.getURL(),
+        });
         markNextNavigationTransition(targetId, C.IPC_SEND.RELOAD);
         context.tabs[targetId].webContents.reload();
     }
@@ -3939,6 +4206,13 @@ ipcMain.on(C.IPC_SEND.NAVIGATE, (e, { id, url, source } = {}) => {
 
     const targetId = id === 'current' ? context.activeTabId : id;
     if (!context.tabs[targetId]) return;
+    appLogger.info('ipc:navigate-request', {
+        windowId: context.windowId,
+        profileId: context.profileId,
+        tabId: targetId,
+        url,
+        source,
+    });
 
     let formattedUrl = url.trim();
 
@@ -3988,6 +4262,11 @@ function applyDockIconForSystemAppearance() {
 }
 
 app.whenReady().then(async () => {
+    appLogger.info('app:ready', {
+        logDir: appLogger.getLogDir(),
+        logFile: appLogger.getCurrentLogFile(),
+        isPackaged: app.isPackaged,
+    });
     registerAppProtocolForSession(session.defaultSession, 'default');
     authPolicy.applyGoogleAuthPolicy(session.defaultSession); // Force auth checks for the default session
 
@@ -4039,7 +4318,13 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
+    appLogger.info('app:before-quit', {
+        windowCount: BrowserWindow.getAllWindows().length,
+    });
     historyService.closeAll().catch((error) => {
+        appLogger.error('history:close-failed', {
+            error: appLogger.serializeError(error),
+        });
         console.error('Failed to close history databases:', error);
     });
 });

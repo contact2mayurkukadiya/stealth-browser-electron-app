@@ -52,6 +52,19 @@ const APPEARANCE_MODE_SEGMENTS = [
   { value: 'automatic', label: 'Device', title: 'Match your system light or dark mode' },
 ];
 
+const LOG_CLEAR_RANGES = [
+  { label: 'Last 30 min', ms: 30 * 60 * 1000 },
+  { label: 'Last hour', ms: 60 * 60 * 1000 },
+  { label: 'Last 24 hours', ms: 24 * 60 * 60 * 1000 },
+  { label: 'All time', ms: null },
+];
+
+const CHECK_ICON = (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+  </svg>
+);
+
 function Toggle({ checked, onChange }) {
   return (
     <button
@@ -81,6 +94,92 @@ function RadioRow({ option, checked, onChange, groupName = 'radio-group' }) {
         <span className="radio-row__desc">{option.description}</span>
       </div>
     </label>
+  );
+}
+
+function formatLogTimestamp(value) {
+  if (!value) return 'Unknown date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ClearLogsModal({ onClear, onClose }) {
+  const [selectedRangeMs, setSelectedRangeMs] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await onClear(selectedRangeMs);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <div
+      className="clear-logs-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="clear-logs-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="clear-logs-modal">
+        <h2 id="clear-logs-title" className="clear-logs-title">Delete crash reports</h2>
+        <div className="clear-logs-chips" role="group" aria-label="Time range">
+          {LOG_CLEAR_RANGES.map((range) => {
+            const selected = range.ms === selectedRangeMs;
+            return (
+              <button
+                key={range.label}
+                type="button"
+                className={`clear-logs-chip${selected ? ' clear-logs-chip--selected' : ''}`}
+                aria-pressed={selected}
+                onClick={() => setSelectedRangeMs(range.ms)}
+              >
+                {selected && CHECK_ICON}
+                {range.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="clear-logs-items">
+          <div className="clear-logs-item">
+            <input type="checkbox" checked readOnly />
+            <div>
+              <div className="clear-logs-item__label">Encrypted crash and activity logs</div>
+              <p className="clear-logs-item__desc">
+                Deletes log files created within the selected time range.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="clear-logs-footer">
+          <button type="button" className="diag-btn diag-btn--secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="diag-btn clear-logs-delete" onClick={handleDelete} disabled={isDeleting}>
+            {isDeleting ? 'Deleting…' : 'Delete logs'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -196,6 +295,104 @@ export default function SettingsApp() {
   const copyDiagReport = useCallback(() => {
     window.electronAPI.clipboardWriteText(diagReportText);
   }, [diagReportText]);
+
+  const [crashModalOpen, setCrashModalOpen] = useState(false);
+  const [crashLogFiles, setCrashLogFiles] = useState([]);
+  const [crashLogDirectory, setCrashLogDirectory] = useState('');
+  const [crashLogLoading, setCrashLogLoading] = useState(false);
+  const [selectedCrashLogPath, setSelectedCrashLogPath] = useState('');
+  const [selectedCrashLogText, setSelectedCrashLogText] = useState('');
+  const [selectedCrashLogLoading, setSelectedCrashLogLoading] = useState(false);
+  const [crashLogError, setCrashLogError] = useState('');
+  const [clearLogsOpen, setClearLogsOpen] = useState(false);
+  const [fileMenuPath, setFileMenuPath] = useState('');
+
+  const selectedCrashLog = useMemo(
+    () => crashLogFiles.find((file) => file.path === selectedCrashLogPath) || null,
+    [crashLogFiles, selectedCrashLogPath],
+  );
+
+  const refreshCrashLogs = useCallback(async () => {
+    setCrashLogLoading(true);
+    setCrashLogError('');
+    try {
+      const result = await window.electronAPI.appLogFiles();
+      const files = Array.isArray(result?.files) ? result.files : [];
+      setCrashLogFiles(files);
+      setCrashLogDirectory(result?.directory || '');
+      if (selectedCrashLogPath && !files.some((file) => file.path === selectedCrashLogPath)) {
+        setSelectedCrashLogPath('');
+        setSelectedCrashLogText('');
+      }
+    } catch (err) {
+      setCrashLogError(String(err?.message || err));
+    } finally {
+      setCrashLogLoading(false);
+    }
+  }, [selectedCrashLogPath]);
+
+  const openCrashLogsModal = useCallback(() => {
+    setCrashModalOpen(true);
+    refreshCrashLogs();
+  }, [refreshCrashLogs]);
+
+  const selectCrashLogFile = useCallback(async (file) => {
+    if (!file?.path) return;
+    setSelectedCrashLogPath(file.path);
+    setSelectedCrashLogText('');
+    setSelectedCrashLogLoading(true);
+    setCrashLogError('');
+    try {
+      const result = await window.electronAPI.appLogRead(file.path);
+      if (!result?.ok) throw new Error(result?.error || 'Failed to read log file');
+      setSelectedCrashLogText(result.text || '');
+    } catch (err) {
+      setCrashLogError(String(err?.message || err));
+    } finally {
+      setSelectedCrashLogLoading(false);
+    }
+  }, []);
+
+  const revealSelectedCrashLog = useCallback(async () => {
+    if (!selectedCrashLogPath) return;
+    await window.electronAPI.appLogReveal(selectedCrashLogPath);
+  }, [selectedCrashLogPath]);
+
+  const copySelectedCrashLog = useCallback(() => {
+    if (!selectedCrashLogText) return;
+    window.electronAPI.clipboardWriteText(selectedCrashLogText);
+  }, [selectedCrashLogText]);
+
+  const deleteCrashLogFile = useCallback(async (filePath) => {
+    if (!filePath) return;
+    setCrashLogError('');
+    const result = await window.electronAPI.appLogDelete(filePath);
+    if (!result?.ok) {
+      setCrashLogError(result?.error || 'Failed to delete log file');
+      return;
+    }
+    setFileMenuPath('');
+    if (filePath === selectedCrashLogPath) {
+      setSelectedCrashLogPath('');
+      setSelectedCrashLogText('');
+    }
+    await refreshCrashLogs();
+  }, [refreshCrashLogs, selectedCrashLogPath]);
+
+  const clearCrashLogsByRange = useCallback(async (rangeMs) => {
+    const since = rangeMs == null ? null : Date.now() - rangeMs;
+    setCrashLogError('');
+    const result = await window.electronAPI.appLogClear({ since });
+    if (!result?.ok) {
+      setCrashLogError(result?.error || 'Failed to clear log files');
+      return;
+    }
+    setClearLogsOpen(false);
+    setSelectedCrashLogPath('');
+    setSelectedCrashLogText('');
+    setFileMenuPath('');
+    await refreshCrashLogs();
+  }, [refreshCrashLogs]);
 
   const handleCompatibilityDiagnosticsChange = useCallback(async (value) => {
     await persist({ ...settings, compatibilityDiagnosticsEnabled: value });
@@ -450,7 +647,182 @@ export default function SettingsApp() {
             )}
           </div>
         </section>
+
+        {/* ── Crash reports ─────────────────────────────────────────────── */}
+        <section className="settings-section">
+          <h2 className="settings-section__title">Crash reports</h2>
+          <div className="settings-card">
+            <div className="setting-row">
+              <div className="setting-row__text">
+                <span className="setting-row__label">Encrypted app logs</span>
+                <span className="setting-row__desc">
+                  View encrypted crash and activity logs stored on this machine. Previews are decrypted locally for debugging.
+                </span>
+              </div>
+              <button
+                type="button"
+                className="diag-btn"
+                onClick={openCrashLogsModal}
+              >
+                Crash reports
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
+
+      {crashModalOpen && (
+        <div
+          className="crash-log-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="crash-log-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setCrashModalOpen(false);
+          }}
+        >
+          <div className="crash-log-modal">
+            <div className="crash-log-header">
+              <div>
+                <h2 id="crash-log-title" className="crash-log-title">Crash reports</h2>
+                <p className="crash-log-subtitle">
+                  {crashLogDirectory || 'Encrypted local logs'}
+                </p>
+              </div>
+              <div className="crash-log-header-actions">
+                <button
+                  type="button"
+                  className="diag-btn diag-btn--secondary"
+                  onClick={refreshCrashLogs}
+                  disabled={crashLogLoading}
+                >
+                  {crashLogLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+                <button
+                  type="button"
+                  className="diag-btn diag-btn--secondary"
+                  onClick={() => setClearLogsOpen(true)}
+                >
+                  Clear logs
+                </button>
+                <button
+                  type="button"
+                  className="crash-log-close"
+                  onClick={() => setCrashModalOpen(false)}
+                  aria-label="Close crash reports"
+                  title="Close"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            {crashLogError && (
+              <div className="crash-log-error" role="alert">{crashLogError}</div>
+            )}
+
+            <div className="crash-log-body">
+              <aside className="crash-log-sidebar" aria-label="Log files">
+                {crashLogLoading && crashLogFiles.length === 0 ? (
+                  <div className="crash-log-empty-list">Loading logs…</div>
+                ) : crashLogFiles.length === 0 ? (
+                  <div className="crash-log-empty-list">No log files yet.</div>
+                ) : (
+                  crashLogFiles.map((file) => (
+                    <div
+                      key={file.path}
+                      className={`crash-log-file-row${file.path === selectedCrashLogPath ? ' crash-log-file-row--active' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        className="crash-log-file"
+                        onClick={() => {
+                          setFileMenuPath('');
+                          selectCrashLogFile(file);
+                        }}
+                      >
+                        <span className="crash-log-file__date">{formatLogTimestamp(file.modifiedAt)}</span>
+                        <span className="crash-log-file__name">{file.name}</span>
+                        <span className="crash-log-file__meta">{formatBytes(file.size)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="crash-log-menu-btn"
+                        aria-label={`Open actions for ${file.name}`}
+                        title="More"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setFileMenuPath((current) => (current === file.path ? '' : file.path));
+                        }}
+                      >
+                        ⋮
+                      </button>
+                      {fileMenuPath === file.path && (
+                        <div className="crash-log-popover">
+                          <button
+                            type="button"
+                            className="crash-log-popover__item crash-log-popover__item--danger"
+                            onClick={() => deleteCrashLogFile(file.path)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </aside>
+
+              <section className="crash-log-preview">
+                {!selectedCrashLogPath ? (
+                  <div className="crash-log-placeholder">Choose file to view</div>
+                ) : (
+                  <>
+                    <div className="crash-log-preview-header">
+                      <div className="crash-log-preview-title">
+                        <span>{selectedCrashLog?.name || 'Selected log'}</span>
+                        <small>{selectedCrashLog ? formatLogTimestamp(selectedCrashLog.modifiedAt) : ''}</small>
+                      </div>
+                      <div className="crash-log-preview-actions">
+                        <button
+                          type="button"
+                          className="diag-btn diag-btn--secondary"
+                          onClick={revealSelectedCrashLog}
+                        >
+                          Show in folder
+                        </button>
+                        <button
+                          type="button"
+                          className="diag-copy-icon-btn crash-log-copy"
+                          onClick={copySelectedCrashLog}
+                          disabled={!selectedCrashLogText}
+                          aria-label="Copy log preview"
+                          title="Copy content"
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="9" y="9" width="10" height="10" rx="2" ry="2" />
+                            <rect x="5" y="5" width="10" height="10" rx="2" ry="2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <pre className="crash-log-pre" aria-label="Crash log preview">
+                      {selectedCrashLogLoading ? 'Loading log preview…' : selectedCrashLogText}
+                    </pre>
+                  </>
+                )}
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clearLogsOpen && (
+        <ClearLogsModal
+          onClear={clearCrashLogsByRange}
+          onClose={() => setClearLogsOpen(false)}
+        />
+      )}
     </div>
   );
 }

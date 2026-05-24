@@ -29,6 +29,12 @@ const C = Object.freeze({
         "SETTINGS_GET": "settings:get",
         "SETTINGS_SAVE": "settings:save",
         "APP_RELAUNCH": "app:relaunch",
+        "APP_LOG_INFO": "app:log-info",
+        "APP_LOG_FILES": "app:log-files",
+        "APP_LOG_READ": "app:log-read",
+        "APP_LOG_REVEAL": "app:log-reveal",
+        "APP_LOG_DELETE": "app:log-delete",
+        "APP_LOG_CLEAR": "app:log-clear",
         "COMPAT_GET_REPORT": "compatDiag:getReport",
         "COMPAT_CLEAR": "compatDiag:clear",
         "SESSION_LOAD": "session:load",
@@ -69,7 +75,8 @@ const C = Object.freeze({
         "OMNIBOX_STEAL_FOCUS": "omnibox:steal-focus",
         "TOOLTIP_SHOW": "tooltip:show",
         "TOOLTIP_HIDE": "tooltip:hide",
-        "CHROME_OVERLAY_FROM_OVERLAY": "chrome-overlay:v1:from-overlay"
+        "CHROME_OVERLAY_FROM_OVERLAY": "chrome-overlay:v1:from-overlay",
+        "APP_LOG": "app:log"
     },
     "IPC_EVENT": {
         "URL_CHANGED": "url-changed",
@@ -102,6 +109,49 @@ const C = Object.freeze({
     }
 });
 
+function serializeRendererError(value) {
+    if (!value) return null;
+    if (value instanceof Error) {
+        return {
+            name: value.name,
+            message: value.message,
+            stack: value.stack,
+        };
+    }
+    return { message: String(value) };
+}
+
+function sendRendererLog(level, event, data = {}) {
+    try {
+        ipcRenderer.send(C.IPC_SEND.APP_LOG, {
+            level,
+            event,
+            data: {
+                ...data,
+                href: typeof window !== 'undefined' ? window.location.href : '',
+            },
+        });
+    } catch (_) {
+        // Logging must never break the renderer.
+    }
+}
+
+window.addEventListener('error', (event) => {
+    sendRendererLog('error', 'renderer:uncaught-error', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: serializeRendererError(event.error),
+    });
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    sendRendererLog('error', 'renderer:unhandled-rejection', {
+        reason: serializeRendererError(event.reason),
+    });
+});
+
 contextBridge.exposeInMainWorld('electronAPI', {
     // Tab management
     newTab: (id, isStealth = false, url = null, options = {}) => ipcRenderer.send(C.IPC_SEND.NEW_TAB, {
@@ -121,6 +171,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     goBack: (id) => ipcRenderer.send(C.IPC_SEND.GO_BACK, { id }),
     goForward: (id) => ipcRenderer.send(C.IPC_SEND.GO_FORWARD, { id }),
     reload: (id) => ipcRenderer.send(C.IPC_SEND.RELOAD, { id }),
+    appLog: (level, event, data = {}) => sendRendererLog(level, event, data),
+    appLogInfo: () => ipcRenderer.invoke(C.IPC_INVOKE.APP_LOG_INFO),
+    appLogFiles: () => ipcRenderer.invoke(C.IPC_INVOKE.APP_LOG_FILES),
+    appLogRead: (filePath) => ipcRenderer.invoke(C.IPC_INVOKE.APP_LOG_READ, { filePath }),
+    appLogReveal: (filePath) => ipcRenderer.invoke(C.IPC_INVOKE.APP_LOG_REVEAL, { filePath }),
+    appLogDelete: (filePath) => ipcRenderer.invoke(C.IPC_INVOKE.APP_LOG_DELETE, { filePath }),
+    appLogClear: (payload = {}) => ipcRenderer.invoke(C.IPC_INVOKE.APP_LOG_CLEAR, payload),
     onUrlChanged: (callback) => ipcRenderer.on(C.IPC_EVENT.URL_CHANGED, (event, data) => callback(data)),
     onTabUpdate: (callback) => ipcRenderer.on(C.IPC_EVENT.TAB_UPDATE, (event, data) => callback(data)),
     onTabCreated: (callback) => ipcRenderer.on(C.IPC_EVENT.TAB_CREATED, (event, data) => callback(data)),

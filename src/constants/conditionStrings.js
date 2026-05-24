@@ -280,6 +280,12 @@ export const IPC_INVOKE = freeze({
   SETTINGS_GET: 'settings:get',
   SETTINGS_SAVE: 'settings:save',
   APP_RELAUNCH: 'app:relaunch',
+  APP_LOG_INFO: 'app:log-info',
+  APP_LOG_FILES: 'app:log-files',
+  APP_LOG_READ: 'app:log-read',
+  APP_LOG_REVEAL: 'app:log-reveal',
+  APP_LOG_DELETE: 'app:log-delete',
+  APP_LOG_CLEAR: 'app:log-clear',
   COMPAT_GET_REPORT: 'compatDiag:getReport',
   COMPAT_CLEAR: 'compatDiag:clear',
   SESSION_LOAD: 'session:load',
@@ -323,6 +329,7 @@ export const IPC_SEND = freeze({
   TOOLTIP_SHOW: 'tooltip:show',
   TOOLTIP_HIDE: 'tooltip:hide',
   CHROME_OVERLAY_FROM_OVERLAY: 'chrome-overlay:v1:from-overlay',
+  APP_LOG: 'app:log',
 });
 
 /** IPC event channels (main → renderer) */
