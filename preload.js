@@ -109,6 +109,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         isStealth,
         url,
         source: options && typeof options.source === 'string' ? options.source : undefined,
+        history: options && options.history ? options.history : undefined,
     }),
     switchTab: (id) => ipcRenderer.send(C.IPC_SEND.SWITCH_TAB, { id }),
     closeTab: (id) => ipcRenderer.send(C.IPC_SEND.CLOSE_TAB, { id }),
@@ -232,7 +233,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // Lazy tab loading: register a tab as sleeping (no WebContentsView created yet)
-    tabSleepRegister: (id, url) => ipcRenderer.send(C.IPC_SEND.TAB_SLEEP_REGISTER, { id, url }),
+    tabSleepRegister: (id, url, meta = {}) => ipcRenderer.send(C.IPC_SEND.TAB_SLEEP_REGISTER, {
+        id,
+        url,
+        title: meta.title,
+        favicon: meta.favicon,
+        history: meta.history,
+    }),
     // Called by main process when a sleeping tab's WebContentsView is created on activation
     onTabAwoken: (callback) => ipcRenderer.on(C.IPC_EVENT.TAB_AWOKEN, (event, data) => callback(data)),
 

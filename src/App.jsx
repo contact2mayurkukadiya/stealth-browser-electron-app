@@ -128,10 +128,10 @@ function AppShell() {
     window.electronAPI.newTab(id, st, null);
   }, [dispatch]);
 
-  const createTabWithUrl = useCallback((id, isStealth, initialUrl) => {
+  const createTabWithUrl = useCallback((id, isStealth, initialUrl, options = {}) => {
     const st = stealthWindowRef.current || isStealth;
     dispatch(addTab({ id, isStealth: st, initialUrl }));
-    window.electronAPI.newTab(id, st, initialUrl);
+    window.electronAPI.newTab(id, st, initialUrl, options);
   }, [dispatch]);
 
   /** Normal windows always keep one tab; stealth windows close when the last tab goes away. */
@@ -536,7 +536,42 @@ function AppShell() {
       // 1.6 Bootstrap payload for windows created from "Move Tab to New Window".
       if (bootstrap?.movedTab?.url) {
         const movedTabId = `tab-${Date.now()}`;
-        createTabWithUrl(movedTabId, !!bootstrap.movedTab.isStealth, bootstrap.movedTab.url);
+        createTabWithUrl(movedTabId, !!bootstrap.movedTab.isStealth, bootstrap.movedTab.url, {
+          history: bootstrap.movedTab.history || null,
+        });
+        return;
+      }
+
+      // 1.7 Bootstrap payload for Cmd/Ctrl+Shift+T closed-window restore.
+      if (bootstrap?.restoreWindow?.tabs?.length) {
+        const { tabs, activeTabId } = bootstrap.restoreWindow;
+        const activeId = activeTabId && tabs.some((t) => t.id === activeTabId)
+          ? activeTabId
+          : tabs[tabs.length - 1].id;
+
+        for (const t of tabs) {
+          if (t.id === activeId) {
+            dispatch(addTab({ id: t.id, isStealth: false, initialUrl: t.url }));
+            window.electronAPI.newTab(t.id, false, t.url, { history: t.history || null });
+          } else {
+            dispatch(addSleepingTab({
+              id: t.id,
+              url: t.url,
+              title: t.title,
+              favicon: t.favicon,
+            }));
+            window.electronAPI.tabSleepRegister(t.id, t.url, {
+              title: t.title,
+              favicon: t.favicon,
+              history: t.history || null,
+            });
+          }
+        }
+
+        setTimeout(() => {
+          dispatch(setCurrentTab(activeId));
+          window.electronAPI.switchTab(activeId);
+        }, 0);
         return;
       }
 

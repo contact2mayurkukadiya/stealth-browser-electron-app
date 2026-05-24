@@ -851,6 +851,11 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     });
 
     window.on('close', () => {
+        const windowSnapshot = captureClosedWindowSnapshot(context);
+        if (windowSnapshot) {
+            pushRecentlyClosedEntry(context.profileId, windowSnapshot);
+        }
+
         // Destroy all tab WebContentsViews before the parent window is torn down.
         // On Windows, leaving live child views attached when the native window handle
         // is destroyed causes a native (C++) crash.
@@ -1262,7 +1267,10 @@ function moveTabToDetachedWindow(id, fallbackTabId) {
 
     const view = context.tabs[id];
     if (!view || view.webContents.isDestroyed()) return { ok: false };
-    const movedTabUrl = view.webContents.getURL();
+    const tabWebContents = view.webContents;
+    const movedTabUrl = tabWebContents.getURL();
+    const movedTabHistory = captureNavigationHistorySnapshot(tabWebContents);
+    const movedTabTitle = tabWebContents.getTitle();
     if (!movedTabUrl) return { ok: false };
 
     if (context.activeTabId === id) {
@@ -1300,7 +1308,9 @@ function moveTabToDetachedWindow(id, fallbackTabId) {
     windowBootstrapById.set(targetContext.windowId, {
         movedTab: {
             url: toDisplayUrl(movedTabUrl),
+            title: movedTabTitle || '',
             isStealth: false,
+            history: movedTabHistory,
         },
     });
 
@@ -1447,9 +1457,13 @@ function activateOrWakeTab(id) {
     if (!context) return false;
     if (!id) return false;
     if (!context.tabs[id] && context.sleepingTabs[id]) {
-        const resolvedUrl = resolveTabLoadUrl(context.sleepingTabs[id].url);
+        const sleep = context.sleepingTabs[id];
+        const resolvedUrl = resolveTabLoadUrl(sleep.url);
+        const sleepHistory = sleep.history || null;
         delete context.sleepingTabs[id];
-        createTab(context, id, resolvedUrl, !!context.stealthWindow);
+        createTab(context, id, resolvedUrl, !!context.stealthWindow, {
+            navigationHistory: sleepHistory,
+        });
 
         if (context.window && !context.window.webContents.isDestroyed()) {
             context.window.webContents.send(C.IPC_EVENT.TAB_AWOKEN, { id });
@@ -1540,51 +1554,265 @@ function canStoreRecentlyClosedUrl(rawUrl) {
     return isAllowedTabNavigationUrl(resolvedUrl);
 }
 
-function pushRecentlyClosedTab(profileId, entry) {
-    if (!entry || !canStoreRecentlyClosedUrl(entry.url)) return;
-    const recentlyClosedTabs = getOrCreateRecentlyClosedForProfile(profileId);
-    const normalizedEntry = {
-        title: (entry.title || '').trim(),
-        url: toDisplayUrl(entry.url),
-        closedAt: Date.now(),
-    };
+function captureNavigationHistorySnapshot(tabWebContents) {
+    try {
+        const navigationHistory = tabWebContents?.navigationHistory;
+        if (!navigationHistory || typeof navigationHistory.getAllEntries !== 'function') return null;
+        const rawEntries = navigationHistory.getAllEntries();
+        if (!Array.isArray(rawEntries) || rawEntries.length === 0) return null;
 
-    const previousEntry = recentlyClosedTabs[0];
-    if (previousEntry && previousEntry.url === normalizedEntry.url && previousEntry.title === normalizedEntry.title) {
+        const activeIndex = typeof navigationHistory.getActiveIndex === 'function'
+            ? navigationHistory.getActiveIndex()
+            : rawEntries.length - 1;
+        const entries = [];
+        let index = 0;
+
+        for (let i = 0; i < rawEntries.length; i += 1) {
+            const entry = rawEntries[i];
+            const displayUrl = toDisplayUrl(entry?.url || '');
+            if (!canStoreRecentlyClosedUrl(displayUrl)) continue;
+            entries.push({
+                ...entry,
+                url: resolveInternalPageUrl(displayUrl),
+                title: entry?.title || displayUrl,
+            });
+            if (i <= activeIndex) index = entries.length - 1;
+        }
+
+        if (entries.length === 0) return null;
+        return { entries, index: Math.max(0, Math.min(index, entries.length - 1)) };
+    } catch (err) {
+        console.warn('Failed to capture navigation history snapshot:', err?.message || err);
+        return null;
+    }
+}
+
+function captureClosedTabSnapshot(context, tabId) {
+    if (!context || !tabId) return null;
+    if (detachedTabWindows.has(tabId)) return null;
+
+    if (context.sleepingTabs[tabId]) {
+        const sleep = context.sleepingTabs[tabId];
+        const displayUrl = toDisplayUrl(sleep.url || '');
+        if (!canStoreRecentlyClosedUrl(displayUrl)) return null;
+        return {
+            id: tabId,
+            title: (sleep.title || '').trim() || displayUrl,
+            url: displayUrl,
+            history: sleep.history || null,
+            favicon: sleep.favicon || null,
+            isSleeping: true,
+        };
+    }
+
+    const view = context.tabs[tabId];
+    if (!view || view.webContents.isDestroyed()) return null;
+    const tabWebContents = view.webContents;
+    const rawUrl = tabWebContents.getURL();
+    const displayUrl = toDisplayUrl(rawUrl);
+    if (!canStoreRecentlyClosedUrl(displayUrl)) return null;
+    return {
+        id: tabId,
+        title: (tabWebContents.getTitle() || '').trim() || displayUrl,
+        url: displayUrl,
+        history: captureNavigationHistorySnapshot(tabWebContents),
+        favicon: null,
+        isSleeping: false,
+    };
+}
+
+function captureClosedWindowSnapshot(context) {
+    if (!context || context.stealthWindow) return null;
+
+    const tabIds = new Set([
+        ...Object.keys(context.tabs),
+        ...Object.keys(context.sleepingTabs),
+    ]);
+    const tabs = [];
+    for (const tabId of tabIds) {
+        const snap = captureClosedTabSnapshot(context, tabId);
+        if (snap) tabs.push(snap);
+    }
+    if (tabs.length === 0) return null;
+
+    let activeTabId = context.activeTabId;
+    if (!activeTabId || !tabs.some((t) => t.id === activeTabId)) {
+        activeTabId = tabs[tabs.length - 1].id;
+    }
+
+    return {
+        type: 'window',
+        profileId: context.profileId,
+        tabs,
+        activeTabId,
+    };
+}
+
+function recentlyClosedEntryLabel(entry) {
+    if (!entry) return '';
+    if (entry.type === 'window') {
+        const count = entry.tabs?.length || 0;
+        if (count === 1) {
+            const only = entry.tabs[0];
+            return truncateMenuLabel(only.title || only.url || 'Tab');
+        }
+        return `Window (${count} tabs)`;
+    }
+    return truncateMenuLabel(entry.title || entry.url);
+}
+
+function recentlyClosedEntryTooltip(entry) {
+    if (!entry) return '';
+    if (entry.type === 'window') {
+        return (entry.tabs || []).map((t) => t.url).filter(Boolean).join('\n');
+    }
+    return entry.url || '';
+}
+
+function pushRecentlyClosedEntry(profileId, entry) {
+    if (!profileId || !entry) return;
+    const stack = getOrCreateRecentlyClosedForProfile(profileId);
+    let normalized;
+
+    if (entry.type === 'window') {
+        const tabs = (entry.tabs || []).filter((t) => t && canStoreRecentlyClosedUrl(t.url));
+        if (tabs.length === 0) return;
+        let activeTabId = entry.activeTabId;
+        if (!activeTabId || !tabs.some((t) => t.id === activeTabId)) {
+            activeTabId = tabs[tabs.length - 1].id;
+        }
+        normalized = {
+            type: 'window',
+            profileId: entry.profileId || profileId,
+            tabs,
+            activeTabId,
+            closedAt: Date.now(),
+        };
+    } else {
+        if (!canStoreRecentlyClosedUrl(entry.url)) return;
+        normalized = {
+            type: 'tab',
+            title: (entry.title || '').trim(),
+            url: toDisplayUrl(entry.url),
+            history: entry.history || null,
+            closedAt: Date.now(),
+        };
+    }
+
+    stack.unshift(normalized);
+    if (stack.length > MAX_RECENTLY_CLOSED_TABS) {
+        stack.length = MAX_RECENTLY_CLOSED_TABS;
+    }
+    rebuildApplicationMenu();
+}
+
+/** @deprecated Use pushRecentlyClosedEntry */
+function pushRecentlyClosedTab(profileId, entry) {
+    if (!entry) return;
+    pushRecentlyClosedEntry(profileId, { type: 'tab', ...entry });
+}
+
+function restoreRecentlyClosedTabInContext(context, entry) {
+    if (!context || !entry?.url) return false;
+    const newTabId = generateTabId();
+    const stealthTab = !!context.stealthWindow;
+    const resolvedUrl = resolveTabLoadUrl(entry.url);
+    createTab(context, newTabId, resolvedUrl, stealthTab, {
+        activate: true,
+        navigationHistory: entry.history,
+    });
+
+    if (context.window && !context.window.webContents.isDestroyed()) {
+        context.window.webContents.send(C.IPC_EVENT.TAB_CREATED, {
+            id: newTabId,
+            isStealth: stealthTab,
+            url: toDisplayUrl(entry.url),
+            title: entry.title || '',
+        });
+    }
+    return true;
+}
+
+function restoreRecentlyClosedWindowEntry(entry) {
+    const profileId = entry?.profileId;
+    if (!profileId || !entry?.tabs?.length) return false;
+    ensureProfile(profileId);
+    const targetContext = createWindow({ profileId });
+    windowBootstrapById.set(targetContext.windowId, {
+        restoreWindow: {
+            tabs: entry.tabs,
+            activeTabId: entry.activeTabId,
+        },
+    });
+    return true;
+}
+
+function restoreRecentlyClosedEntry(context, entry) {
+    if (!entry) return false;
+    if (entry.type === 'window') {
+        return restoreRecentlyClosedWindowEntry(entry);
+    }
+    return restoreRecentlyClosedTabInContext(context, entry);
+}
+
+function resolveRestoreTargetContext(profileId) {
+    const focused = getWindowContextForShellFallback();
+    if (focused && focused.profileId === profileId) return focused;
+    for (const ctx of windowContextsById.values()) {
+        if (
+            ctx.profileId === profileId &&
+            !ctx.stealthWindow &&
+            ctx.window &&
+            !ctx.window.isDestroyed()
+        ) {
+            return ctx;
+        }
+    }
+    return createWindow({ profileId });
+}
+
+function restoreRecentlyClosed(closedAt = null) {
+    const focusedContext = getWindowContextForShellFallback();
+    const profileId = focusedContext?.profileId || defaultProfileId;
+    if (!profileId) return;
+
+    const stack = getOrCreateRecentlyClosedForProfile(profileId);
+    if (stack.length === 0) return;
+
+    const targetIndex = closedAt == null
+        ? 0
+        : stack.findIndex((entry) => entry && entry.closedAt === closedAt);
+    if (targetIndex < 0) return;
+    const [entry] = stack.splice(targetIndex, 1);
+    rebuildApplicationMenu();
+    if (!entry) return;
+
+    if (entry.type === 'window') {
+        restoreRecentlyClosedWindowEntry(entry);
         return;
     }
 
-    recentlyClosedTabs.unshift(normalizedEntry);
-    if (recentlyClosedTabs.length > MAX_RECENTLY_CLOSED_TABS) {
-        recentlyClosedTabs.length = MAX_RECENTLY_CLOSED_TABS;
-    }
-    rebuildApplicationMenu();
+    const targetContext = resolveRestoreTargetContext(entry.profileId || profileId);
+    restoreRecentlyClosedTabInContext(targetContext, entry);
 }
 
-function restoreRecentlyClosedTab(closedAt) {
-    const context = getWindowContextByBrowserWindow(mainWindow);
-    if (!context) return;
-    const recentlyClosedTabs = getOrCreateRecentlyClosedForProfile(context.profileId);
-    const targetIndex = recentlyClosedTabs.findIndex(entry => entry.closedAt === closedAt);
-    if (targetIndex < 0) return;
-    const [entry] = recentlyClosedTabs.splice(targetIndex, 1);
-    rebuildApplicationMenu();
-    if (!entry?.url) return;
-    openUrlInNewTab(entry.url, { background: false });
+/** @deprecated Use restoreRecentlyClosed */
+function restoreRecentlyClosedTab(closedAt = null) {
+    restoreRecentlyClosed(closedAt);
 }
 
 function buildRecentlyClosedMenuItems() {
-    const context = getWindowContextByBrowserWindow(mainWindow);
+    const context = getWindowContextForShellFallback();
     if (!context) return [{ label: 'No recently closed tabs', enabled: false }];
-    const recentlyClosedTabs = getOrCreateRecentlyClosedForProfile(context.profileId);
-    if (recentlyClosedTabs.length === 0) {
+    const stack = getOrCreateRecentlyClosedForProfile(context.profileId);
+    if (stack.length === 0) {
         return [{ label: 'No recently closed tabs', enabled: false }];
     }
 
-    return recentlyClosedTabs.map(entry => ({
-        label: truncateMenuLabel(entry.title || entry.url),
-        toolTip: entry.url,
-        click: () => restoreRecentlyClosedTab(entry.closedAt),
+    return stack.map((entry) => ({
+        label: recentlyClosedEntryLabel(entry),
+        toolTip: recentlyClosedEntryTooltip(entry),
+        click: () => restoreRecentlyClosed(entry.closedAt),
     }));
 }
 
@@ -1687,6 +1915,15 @@ function buildApplicationMenu() {
                 { label: 'Back', click: () => goBackInActiveTab() },
                 { label: 'Forward', click: () => goForwardInActiveTab() },
                 { type: 'separator' },
+                {
+                    label: 'Reopen Closed Tab',
+                    accelerator: 'CmdOrCtrl+Shift+T',
+                    enabled: (() => {
+                        const context = getWindowContextForShellFallback();
+                        return !!context && getOrCreateRecentlyClosedForProfile(context.profileId).length > 0;
+                    })(),
+                    click: () => restoreRecentlyClosed(),
+                },
                 { label: 'Recently Closed', enabled: false },
                 ...buildRecentlyClosedMenuItems(),
             ]
@@ -2184,6 +2421,12 @@ function handleShortcuts(event, input) {
         return;
     }
 
+    if (isCommandOrControlPressed && input.shift && key === 't') {
+        event.preventDefault();
+        restoreRecentlyClosed();
+        return;
+    }
+
     // Only handle Ctrl+Tab here, as others are handled by the Menu
     if (input.control && input.key === 'Tab') {
         event.preventDefault();
@@ -2603,7 +2846,20 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
         });
     });
 
-    view.webContents.loadURL(resolveTabLoadUrl(url));
+    const restoreHistory = options.navigationHistory;
+    if (restoreHistory?.entries?.length && view.webContents.navigationHistory?.restore) {
+        view.webContents.navigationHistory.restore({
+            entries: restoreHistory.entries,
+            index: restoreHistory.index,
+        }).catch((err) => {
+            console.warn('Failed to restore tab navigation history:', err?.message || err);
+            if (!view.webContents.isDestroyed()) {
+                view.webContents.loadURL(resolveTabLoadUrl(url));
+            }
+        });
+    } else {
+        view.webContents.loadURL(resolveTabLoadUrl(url));
+    }
 
     if (shouldActivate) {
         activateTabInContext(context, id);
@@ -3349,11 +3605,16 @@ function isSenderTrusted(event) {
 // Register a tab as sleeping: records its URL for deferred loading without
 // creating a WebContentsView. The view is created the first time the tab is
 // activated (see the switch-tab handler below).
-ipcMain.on(C.IPC_SEND.TAB_SLEEP_REGISTER, (e, { id, url }) => {
+ipcMain.on(C.IPC_SEND.TAB_SLEEP_REGISTER, (e, { id, url, title, favicon, history } = {}) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
-    context.sleepingTabs[id] = { url: url || 'https://www.google.com' };
+    context.sleepingTabs[id] = {
+        url: url || C.URL.NTP_DISPLAY,
+        title: title || null,
+        favicon: favicon || null,
+        history: history || null,
+    };
     tabIdToWindowId.set(id, context.window.id);
 });
 
@@ -3549,7 +3810,7 @@ ipcMain.handle(C.IPC_INVOKE.TAB_GET_INFO, async (e, { id }) => {
 });
 
 // ─── IPC LISTENERS ───────────────────────────────────────────────────────────
-ipcMain.on(C.IPC_SEND.NEW_TAB, (e, { id, isStealth, url, source } = {}) => {
+ipcMain.on(C.IPC_SEND.NEW_TAB, (e, { id, isStealth, url, source, history } = {}) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
@@ -3560,7 +3821,9 @@ ipcMain.on(C.IPC_SEND.NEW_TAB, (e, { id, isStealth, url, source } = {}) => {
     }
 
     const stealthTab = !!context.stealthWindow;
-    createTab(context, id, resolvedUrl, stealthTab);
+    createTab(context, id, resolvedUrl, stealthTab, {
+        navigationHistory: history || null,
+    });
 
     // Notify the main React shell so it can add the tab to its state
     if (context.window && !context.window.webContents.isDestroyed()) {
@@ -3604,18 +3867,7 @@ ipcMain.on(C.IPC_SEND.CLOSE_TAB, (e, { id }) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
 
-    let recentlyClosedCandidate = null;
-    if (context.sleepingTabs[id]) {
-        recentlyClosedCandidate = {
-            title: context.sleepingTabs[id].url,
-            url: context.sleepingTabs[id].url,
-        };
-    } else if (context.tabs[id] && !context.tabs[id].webContents.isDestroyed()) {
-        recentlyClosedCandidate = {
-            title: context.tabs[id].webContents.getTitle(),
-            url: context.tabs[id].webContents.getURL(),
-        };
-    }
+    const tabSnapshot = captureClosedTabSnapshot(context, id);
 
     // Clean up sleeping metadata regardless of whether a view was ever created.
     delete context.sleepingTabs[id];
@@ -3642,7 +3894,14 @@ ipcMain.on(C.IPC_SEND.CLOSE_TAB, (e, { id }) => {
     pendingTransitionsByTab.delete(String(id));
     historyService.clearTab(id);
     compatDiagnostics.clear(id);
-    pushRecentlyClosedTab(context.profileId, recentlyClosedCandidate);
+    if (tabSnapshot) {
+        pushRecentlyClosedEntry(context.profileId, {
+            type: 'tab',
+            title: tabSnapshot.title,
+            url: tabSnapshot.url,
+            history: tabSnapshot.history,
+        });
+    }
 });
 
 ipcMain.on(C.IPC_SEND.GO_BACK, (e, { id }) => {
