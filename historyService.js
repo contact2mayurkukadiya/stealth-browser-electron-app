@@ -46,6 +46,9 @@ class HistoryService {
         this._sqlite3 = null;
         this._lastVisitByTab = new Map();
         this._queues = new Map();
+        this._activeOperations = new Set();
+        this._closing = false;
+        this._closePromise = null;
     }
 
     get userDataDir() {
@@ -91,52 +94,63 @@ class HistoryService {
     }
 
     _run(db, sql, params = []) {
-        return new Promise((resolve, reject) => {
+        return this._trackOperation(new Promise((resolve, reject) => {
             db.run(sql, params, function onRun(err) {
                 if (err) reject(err);
                 else resolve({ lastID: this.lastID, changes: this.changes });
             });
-        });
+        }));
     }
 
     _get(db, sql, params = []) {
-        return new Promise((resolve, reject) => {
+        return this._trackOperation(new Promise((resolve, reject) => {
             db.get(sql, params, (err, row) => {
                 if (err) reject(err);
                 else resolve(row || null);
             });
-        });
+        }));
     }
 
     _all(db, sql, params = []) {
-        return new Promise((resolve, reject) => {
+        return this._trackOperation(new Promise((resolve, reject) => {
             db.all(sql, params, (err, rows) => {
                 if (err) reject(err);
                 else resolve(Array.isArray(rows) ? rows : []);
             });
-        });
+        }));
     }
 
     _exec(db, sql) {
-        return new Promise((resolve, reject) => {
+        return this._trackOperation(new Promise((resolve, reject) => {
             db.exec(sql, (err) => {
                 if (err) reject(err);
                 else resolve();
             });
-        });
+        }));
     }
 
     _openDatabase(dbPath) {
+        if (this._closing) return Promise.reject(new Error('HistoryService is closing'));
         const sqlite3 = this._loadSqlite();
-        return new Promise((resolve, reject) => {
+        return this._trackOperation(new Promise((resolve, reject) => {
             const db = new sqlite3.Database(dbPath, (err) => {
                 if (err) reject(err);
                 else resolve(db);
             });
-        });
+        }));
+    }
+
+    _trackOperation(promise) {
+        const tracked = Promise.resolve(promise);
+        this._activeOperations.add(tracked);
+        tracked.finally(() => {
+            this._activeOperations.delete(tracked);
+        }).catch(() => undefined);
+        return tracked;
     }
 
     _enqueue(profileId, task) {
+        if (this._closing) return Promise.reject(new Error('HistoryService is closing'));
         const sid = safeProfileId(profileId);
         const previous = this._queues.get(sid) || Promise.resolve();
         const next = previous.catch(() => undefined).then(task);
@@ -148,6 +162,7 @@ class HistoryService {
     }
 
     async getDb(profileId) {
+        if (this._closing) throw new Error('HistoryService is closing');
         const sid = safeProfileId(profileId);
         if (this._dbs.has(sid)) return this._dbs.get(sid);
 
@@ -572,11 +587,24 @@ class HistoryService {
     }
 
     async closeAll() {
-        const entries = Array.from(this._dbs.entries());
-        this._dbs.clear();
-        await Promise.all(entries.map(([, db]) => new Promise((resolve) => {
-            db.close(() => resolve());
-        })));
+        if (this._closePromise) return this._closePromise;
+        this._closing = true;
+        this._closePromise = (async () => {
+            await Promise.allSettled(Array.from(this._queues.values()));
+            while (this._activeOperations.size > 0) {
+                const operations = Array.from(this._activeOperations);
+                await Promise.allSettled(operations);
+            }
+            const entries = Array.from(this._dbs.entries());
+            for (const [, db] of entries) {
+                await new Promise((resolve) => {
+                    db.close(() => resolve());
+                });
+            }
+            this._dbs.clear();
+            this._lastVisitByTab.clear();
+        })();
+        return this._closePromise;
     }
 }
 

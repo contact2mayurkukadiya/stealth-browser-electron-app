@@ -9,6 +9,7 @@ const electronMain = (() => {
 const app = electron.app || electronMain.app;
 const BrowserWindow = electron.BrowserWindow;
 const WebContentsView = electron.WebContentsView;
+const View = electron.View || electronMain.View;
 const ipcMain = electron.ipcMain;
 const Menu = electron.Menu;
 const MenuItem = electron.MenuItem;
@@ -134,11 +135,23 @@ let defaultProfileId = null;
 let startupSessionDoc = null;
 let profilePickerWindow = null;
 let appIsQuitting = false;
+let appQuitAfterHistoryClose = false;
+let appHistoryCloseStarted = false;
+let appHistoryClosed = false;
 
 const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
 let generatedTabCounter = 0;
 const MAX_RECENTLY_CLOSED_TABS = 25;
 const recentlyClosedTabsByProfile = new Map();
+const LENS_SIDEBAR_MIN_WIDTH = 260;
+const LENS_SIDEBAR_DEFAULT_RATIO = 0.42;
+const LENS_SIDEBAR_MAX_RATIO = 0.7;
+const LENS_PANEL_GAP = 14;
+const LENS_WORKSPACE_PADDING = 8;
+const LENS_SITE_CONTAINER_MAX_SCALE = 1;
+const LENS_PAGE_MIN_SCALE = 0.05;
+const LENS_PANEL_RADIUS = 24;
+const LENS_MOBILE_USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 
 // Holds metadata for session-restored tabs that have not been activated yet.
 // Key: tabId, Value: { url } — enough to create the WebContentsView on demand.
@@ -152,6 +165,13 @@ const webContentsIdToTabId = new Map();
 // Tabs moved out of the main shell into their own window (WebContentsView reparented).
 /** @type {Map<string, import('electron').BaseWindow>} */
 const detachedTabWindows = new Map();
+
+function closeDevFileWatchers() {
+    for (const watcher of devFileWatchers) {
+        try { watcher.close(); } catch (_) { }
+    }
+    devFileWatchers.length = 0;
+}
 
 function getHostWindowForTabId(tabId) {
     return detachedTabWindows.get(tabId) || getWindowContextByTabId(tabId)?.window || getFocusedShellWindow();
@@ -713,10 +733,7 @@ if (!app.isPackaged) {
 
 app.on('before-quit', () => {
     appIsQuitting = true;
-    for (const watcher of devFileWatchers) {
-        try { watcher.close(); } catch (_) { }
-    }
-    devFileWatchers.length = 0;
+    closeDevFileWatchers();
 });
 
 /** Usable screen rectangle (excludes dock/taskbar); keeps custom title bar — not OS fullscreen. */
@@ -848,6 +865,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         isActiveTabTemporarilyHidden: false,
         /** True while active tab's WebContentsView was removeChildView'd for shell overlays. */
         activeTabViewRemovedForShellOverlay: false,
+        /** Native container for tab WebContentsViews and tab-scoped sidebars. */
+        tabContentView: null,
         tooltipView: null,
         /** Full-window WebContentsView for HTML menus above tab layer (no tab detach). */
         chromeOverlayView: null,
@@ -856,8 +875,12 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         chromeOverlayOmniboxMode: false,
         chromeOverlayBlurDismissPending: false,
         lastOmniboxOverlayPatch: null,
+        /** Per-tab Google Lens sessions: each tab keeps its sidebar WebContentsView and sizing. */
+        lensSessions: new Map(),
+        lensOverlayBounds: null,
     };
     windowContextsById.set(window.id, context);
+    createTabContentContainer(context);
     appLogger.info('window:create', {
         windowId: context.windowId,
         browserWindowId: window.id,
@@ -872,6 +895,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     }
 
     window.on('resize', () => {
+        layoutTabContentContainer(context);
         if (!context.activeTabId || detachedTabWindows.has(context.activeTabId)) return;
         const view = context.tabs[context.activeTabId];
         if (!view) return;
@@ -881,16 +905,13 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
             }
             return;
         }
-        const { width, height } = window.getContentBounds();
-        const fs = htmlFullscreenTabId === context.activeTabId;
-        view.setBounds({
-            x: 0,
-            y: fs ? 0 : UI_HEIGHT,
-            width,
-            height: fs ? height : height - UI_HEIGHT,
-        });
-        layoutChromeOverlayBounds(context);
-        ensureChromeOverlayOnTop(context);
+        layoutActiveTabView(context, context.activeTabId);
+        if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
+            postLensSelectionPatch(context);
+        } else {
+            layoutChromeOverlayBounds(context);
+            ensureChromeOverlayOnTop(context);
+        }
     });
 
     window.on('close', () => {
@@ -911,7 +932,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         // is destroyed causes a native (C++) crash.
         for (const tabId of Object.keys(context.tabs)) {
             const view = context.tabs[tabId];
-            try { context.window.contentView.removeChildView(view); } catch (_) { }
+            removeTabContentChildView(context, view);
             try { if (!view.webContents.isDestroyed()) view.webContents.destroy(); } catch (_) { }
         }
         context.tabs = {};
@@ -928,6 +949,24 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
                 if (!context.chromeOverlayView.webContents.isDestroyed()) context.chromeOverlayView.webContents.destroy();
             } catch (_) { }
             context.chromeOverlayView = null;
+        }
+        if (context.lensSessions) {
+            for (const sessionState of context.lensSessions.values()) {
+                const sidebarView = sessionState?.sidebarView;
+                if (!sidebarView) continue;
+                removeTabContentChildView(context, sessionState.sidebarHostView || sidebarView);
+                try {
+                    if (sessionState.sidebarHostView) {
+                        try { sessionState.sidebarHostView.removeChildView(sidebarView); } catch (_) { }
+                    }
+                    if (!sidebarView.webContents.isDestroyed()) sidebarView.webContents.destroy();
+                } catch (_) { }
+            }
+            context.lensSessions.clear();
+        }
+        if (context.tabContentView) {
+            try { context.window.contentView.removeChildView(context.tabContentView); } catch (_) { }
+            context.tabContentView = null;
         }
         context.chromeOverlayAcquireCount = 0;
     });
@@ -990,6 +1029,80 @@ function createProfilePickerWindow() {
     });
 }
 
+function layoutTabContentContainer(context) {
+    if (!context?.tabContentView || !context?.window || context.window.isDestroyed()) return;
+    try {
+        const { width, height } = context.window.getContentBounds();
+        context.tabContentView.setBounds({ x: 0, y: 0, width, height });
+        if (typeof context.tabContentView.setBackgroundColor === 'function') {
+            context.tabContentView.setBackgroundColor(getChromeShellBackgroundColor(context));
+        }
+    } catch (_) { }
+}
+
+function createTabContentContainer(context) {
+    if (!context?.window?.contentView || typeof View !== 'function') return null;
+    try {
+        const container = new View();
+        context.window.contentView.addChildView(container);
+        context.tabContentView = container;
+        layoutTabContentContainer(context);
+        return container;
+    } catch (error) {
+        console.warn('tab-content-container unavailable:', error?.message || error);
+        context.tabContentView = null;
+        return null;
+    }
+}
+
+function getTabContentParent(context) {
+    return context?.tabContentView || context?.window?.contentView || null;
+}
+
+function setNativeViewCornerRadius(view, radius) {
+    try {
+        if (view && typeof view.setBorderRadius === 'function') {
+            view.setBorderRadius(radius);
+        }
+    } catch (_) { }
+}
+
+function addTabContentChildView(context, view) {
+    if (!view) return false;
+    const parent = getTabContentParent(context);
+    if (!parent || typeof parent.addChildView !== 'function') return false;
+    try {
+        parent.addChildView(view);
+        return true;
+    } catch (_) {
+        if (parent !== context?.window?.contentView && context?.window?.contentView) {
+            try {
+                context.window.contentView.addChildView(view);
+                return true;
+            } catch (_) { }
+        }
+        return false;
+    }
+}
+
+function removeTabContentChildView(context, view) {
+    if (!view) return false;
+    const parent = getTabContentParent(context);
+    if (parent && typeof parent.removeChildView === 'function') {
+        try {
+            parent.removeChildView(view);
+            return true;
+        } catch (_) { }
+    }
+    if (parent !== context?.window?.contentView && context?.window?.contentView) {
+        try {
+            context.window.contentView.removeChildView(view);
+            return true;
+        } catch (_) { }
+    }
+    return false;
+}
+
 function createChromeOverlayLayer(context) {
     if (context.chromeOverlayView) return;
     const overlayView = new WebContentsView({
@@ -1016,7 +1129,8 @@ function createChromeOverlayLayer(context) {
 }
 
 /**
- * Tab WebContentsView must stay below the chrome overlay; tooltip stays topmost.
+ * Tab WebContentsView stays below chrome overlay; Lens sidebar stays above overlay
+ * so Google Lens results remain clickable/scrollable; tooltip stays topmost.
  * Call after tab attach/detach and whenever z-order may have changed.
  */
 function ensureChromeOverlayOnTop(context) {
@@ -1025,12 +1139,20 @@ function ensureChromeOverlayOnTop(context) {
     const activeId = context.activeTabId;
     const tabView =
         activeId && !detachedTabWindows.has(activeId) ? context.tabs[activeId] : null;
+    const lensSession = getLensSession(context, activeId, false);
     try {
+        if (context.tabContentView) {
+            layoutTabContentContainer(context);
+            cv.addChildView(context.tabContentView);
+        }
         if (tabView && !tabView.webContents.isDestroyed()) {
-            cv.addChildView(tabView);
+            addTabContentChildView(context, tabView);
         }
         if (context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
             cv.addChildView(context.chromeOverlayView);
+        }
+        if (lensSession?.selectionActive && lensSession.sidebarView && !lensSession.sidebarView.webContents.isDestroyed()) {
+            addTabContentChildView(context, lensSession.sidebarHostView || lensSession.sidebarView);
         }
         if (context.tooltipView && !context.tooltipView.webContents.isDestroyed()) {
             cv.addChildView(context.tooltipView);
@@ -1038,6 +1160,389 @@ function ensureChromeOverlayOnTop(context) {
     } catch (err) {
         console.error('ensureChromeOverlayOnTop', err?.message || err);
     }
+}
+
+function getLensSession(context, tabId = context?.activeTabId, create = false) {
+    if (!context || !tabId) return null;
+    if (!context.lensSessions) context.lensSessions = new Map();
+    let sessionState = context.lensSessions.get(tabId);
+    if (!sessionState && create) {
+        sessionState = {
+            tabId,
+            sidebarHostView: null,
+            sidebarView: null,
+            sidebarWidth: null,
+            selectionActive: false,
+            overlayAcquired: false,
+            siteBounds: null,
+            lastSelection: null,
+            lastSelectionRatio: null,
+            lastSelectionImage: null,
+            pageZoomFactorBeforeLens: null,
+            pageScale: 1,
+            sourceWidth: null,
+            sourceHeight: null,
+            magnifierImage: null,
+        };
+        context.lensSessions.set(tabId, sessionState);
+    }
+    return sessionState || null;
+}
+
+function getLensSidebarWidth(context, tabId = context?.activeTabId) {
+    const lensSession = getLensSession(context, tabId, false);
+    if (!lensSession?.selectionActive || !lensSession.sidebarView || lensSession.sidebarView.webContents.isDestroyed()) return 0;
+    const { width } = context.window.getContentBounds();
+    const maxWidth = Math.max(220, Math.floor(width * LENS_SIDEBAR_MAX_RATIO));
+    const minWidth = Math.min(LENS_SIDEBAR_MIN_WIDTH, maxWidth);
+    const preferredWidth = lensSession.sidebarWidth || Math.floor(width * LENS_SIDEBAR_DEFAULT_RATIO);
+    return Math.max(minWidth, Math.min(preferredWidth, maxWidth));
+}
+
+function getLensLayoutMetrics(context, tabId = context?.activeTabId) {
+    if (!context?.window || context.window.isDestroyed()) return null;
+    const { width, height } = context.window.getContentBounds();
+    const fs = htmlFullscreenTabId === tabId;
+    const sidebarWidth = fs ? 0 : getLensSidebarWidth(context, tabId);
+    const contentTop = fs ? 0 : UI_HEIGHT;
+    const contentHeight = fs ? height : Math.max(0, height - UI_HEIGHT);
+    const panelGap = fs || sidebarWidth <= 0 ? 0 : LENS_PANEL_GAP;
+    const sidebarBounds = sidebarWidth > 0 ? {
+        x: Math.max(panelGap, width - sidebarWidth - panelGap),
+        y: contentTop + panelGap,
+        width: Math.max(0, sidebarWidth),
+        height: Math.max(0, contentHeight - (panelGap * 2)),
+    } : { x: width, y: contentTop, width: 0, height: contentHeight };
+    const leftPanelBounds = sidebarWidth > 0 ? {
+        x: panelGap,
+        y: contentTop + panelGap,
+        width: Math.max(0, sidebarBounds.x - (panelGap * 2)),
+        height: Math.max(0, contentHeight - (panelGap * 2)),
+    } : {
+        x: 0,
+        y: contentTop,
+        width,
+        height: contentHeight,
+    };
+
+    return { width, height, fs, sidebarWidth, panelGap, contentTop, contentHeight, sidebarBounds, leftPanelBounds };
+}
+
+/** Lens selection UI only covers the left workspace; sidebar stays native-interactive. */
+function computeLensChromeOverlayBounds(context, tabId = context?.activeTabId) {
+    const { width, height } = context.window.getContentBounds();
+    const metrics = getLensLayoutMetrics(context, tabId);
+    if (!metrics || metrics.sidebarWidth <= 0) {
+        return {
+            x: 0,
+            y: UI_HEIGHT,
+            width,
+            height: Math.max(0, height - UI_HEIGHT),
+        };
+    }
+    return {
+        x: 0,
+        y: metrics.contentTop,
+        width: Math.max(0, metrics.sidebarBounds.x),
+        height: metrics.contentHeight,
+    };
+}
+
+function getActiveTabContentBounds(context, tabId = context?.activeTabId) {
+    if (!context?.window || context.window.isDestroyed()) return { x: 0, y: UI_HEIGHT, width: 0, height: 0 };
+    const metrics = getLensLayoutMetrics(context, tabId);
+    if (!metrics) return { x: 0, y: UI_HEIGHT, width: 0, height: 0 };
+    const lensSession = getLensSession(context, tabId, false);
+    if (lensSession?.selectionActive && !metrics.fs) {
+        const leftPanel = metrics.leftPanelBounds;
+        const maxContainerWidth = Math.max(1, leftPanel.width - (LENS_WORKSPACE_PADDING * 2));
+        const maxContainerHeight = Math.max(1, leftPanel.height - (LENS_WORKSPACE_PADDING * 2));
+        const sourceWidth = Math.max(1, Math.round(lensSession.sourceWidth || metrics.width));
+        const sourceHeight = Math.max(1, Math.round(lensSession.sourceHeight || metrics.contentHeight));
+        const scale = Math.max(
+            LENS_PAGE_MIN_SCALE,
+            Math.min(
+                LENS_SITE_CONTAINER_MAX_SCALE,
+                maxContainerWidth / sourceWidth,
+                maxContainerHeight / sourceHeight,
+            ),
+        );
+        const containerWidth = Math.floor(sourceWidth * scale);
+        const containerHeight = Math.floor(sourceHeight * scale);
+        const bounds = {
+            x: leftPanel.x + Math.max(0, Math.floor((leftPanel.width - containerWidth) / 2)),
+            y: leftPanel.y + Math.max(0, Math.floor((leftPanel.height - containerHeight) / 2)),
+            width: Math.max(1, Math.min(containerWidth, maxContainerWidth)),
+            height: Math.max(1, Math.min(containerHeight, maxContainerHeight)),
+        };
+        lensSession.siteBounds = bounds;
+        lensSession.pageScale = scale;
+        return bounds;
+    }
+    if (lensSession) {
+        lensSession.siteBounds = null;
+        lensSession.pageScale = 1;
+    }
+    return {
+        x: 0,
+        y: metrics.fs ? 0 : UI_HEIGHT,
+        width: Math.max(0, metrics.width - metrics.sidebarWidth),
+        height: metrics.contentHeight,
+    };
+}
+
+function resetTabWebContentsScale(view) {
+    const webContents = view?.webContents;
+    if (!webContents || webContents.isDestroyed()) return;
+    try { webContents.setZoomFactor(1); } catch (_) { }
+    try { webContents.setZoomLevel(0); } catch (_) { }
+    if (typeof webContents.setVisualZoomLevelLimits === 'function') {
+        try {
+            const result = webContents.setVisualZoomLevelLimits(1, 1);
+            if (result && typeof result.catch === 'function') result.catch(() => { });
+        } catch (_) { }
+    }
+}
+
+function applyLensSidebarMobileViewport(context, tabId = context?.activeTabId) {
+    const lensSession = getLensSession(context, tabId, false);
+    const sidebarView = lensSession?.sidebarView;
+    if (!context?.window || !sidebarView || sidebarView.webContents.isDestroyed()) return;
+    try { sidebarView.webContents.setUserAgent(LENS_MOBILE_USER_AGENT); } catch (_) { }
+    try { sidebarView.webContents.setZoomFactor(1); } catch (_) { }
+}
+
+function layoutLensSidebar(context, tabId = context?.activeTabId) {
+    if (tabId !== context?.activeTabId) return;
+    const lensSession = getLensSession(context, tabId, false);
+    if (!lensSession?.sidebarView || lensSession.sidebarView.webContents.isDestroyed()) return;
+    const metrics = getLensLayoutMetrics(context, tabId);
+    if (!metrics) return;
+    const radius = metrics.sidebarWidth > 0 ? LENS_PANEL_RADIUS : 0;
+    const hostView = lensSession.sidebarHostView || lensSession.sidebarView;
+    hostView.setBounds(metrics.sidebarBounds);
+    setNativeViewCornerRadius(hostView, radius);
+    if (typeof hostView.setBackgroundColor === 'function') {
+        try { hostView.setBackgroundColor(getChromeShellBackgroundColor(context)); } catch (_) { }
+    }
+    if (lensSession.sidebarHostView) {
+        lensSession.sidebarView.setBounds({
+            x: 0,
+            y: 0,
+            width: Math.max(0, metrics.sidebarBounds.width),
+            height: Math.max(0, metrics.sidebarBounds.height),
+        });
+    } else {
+        setNativeViewCornerRadius(lensSession.sidebarView, radius);
+    }
+    applyLensSidebarMobileViewport(context, tabId);
+}
+
+// function layoutActiveTabView(context, tabId = context?.activeTabId) {
+//     if (!context || !tabId || detachedTabWindows.has(tabId)) return;
+//     const view = context.tabs[tabId];
+//     if (!view || view.webContents.isDestroyed()) return;
+//     const bounds = getActiveTabContentBounds(context, tabId);
+//     const lensSession = getLensSession(context, tabId, false);
+//     if (lensSession?.selectionActive) {
+//         if (lensSession.pageZoomFactorBeforeLens === null) {
+//             try {
+//                 if (!view.webContents.isDestroyed()) {
+//                     lensSession.pageZoomFactorBeforeLens = view.webContents.getZoomFactor();
+//                 }
+//             } catch (_) {
+//                 lensSession.pageZoomFactorBeforeLens = 1;
+//             }
+//         }
+//         try {
+//             if (!view.webContents.isDestroyed()) {
+//                 view.webContents.setZoomFactor(lensSession.pageScale || 1);
+//             }
+//         } catch (_) { }
+//     } else if (lensSession && lensSession.pageZoomFactorBeforeLens !== null) {
+//         try {
+//             if (!view.webContents.isDestroyed()) {
+//                 view.webContents.setZoomFactor(lensSession.pageZoomFactorBeforeLens || 1);
+//             }
+//         } catch (_) { }
+//         lensSession.pageZoomFactorBeforeLens = null;
+//     }
+//     view.setBounds(bounds);
+//     setNativeViewCornerRadius(view, lensSession?.selectionActive ? LENS_PANEL_RADIUS : 0);
+//     layoutLensSidebar(context, tabId);
+// }
+
+function layoutActiveTabView(context, tabId = context?.activeTabId) {
+    if (!context || !tabId || detachedTabWindows.has(tabId)) return;
+    const view = context.tabs[tabId];
+    if (!view || view.webContents.isDestroyed()) return;
+
+    const lensSession = getLensSession(context, tabId, false);
+
+    if (lensSession?.selectionActive) {
+        // Keep the live view hidden/collapsed during selection
+        try {
+            view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        } catch (_) { }
+    } else {
+        // Restore standard bounds on exit
+        resetTabWebContentsScale(view);
+        const bounds = getActiveTabContentBounds(context, tabId);
+        view.setBounds(bounds);
+        setNativeViewCornerRadius(view, 0);
+    }
+
+    layoutLensSidebar(context, tabId);
+}
+
+function detachLensSidebarsExcept(context, activeTabId) {
+    if (!context?.lensSessions) return;
+    for (const [tabId, sessionState] of context.lensSessions.entries()) {
+        const sidebarView = sessionState?.sidebarView;
+        if (!sidebarView || sidebarView.webContents.isDestroyed()) continue;
+        if (tabId === activeTabId) continue;
+        removeTabContentChildView(context, sessionState.sidebarHostView || sidebarView);
+    }
+}
+
+function destroyLensSession(context, tabId) {
+    const lensSession = getLensSession(context, tabId, false);
+    if (!lensSession) return;
+    if (lensSession.overlayAcquired && context.chromeOverlayAcquireCount > 0) {
+        context.chromeOverlayAcquireCount -= 1;
+    }
+    const sidebarView = lensSession.sidebarView;
+    if (sidebarView) {
+        removeTabContentChildView(context, lensSession.sidebarHostView || sidebarView);
+        try {
+            if (lensSession.sidebarHostView) {
+                try { lensSession.sidebarHostView.removeChildView(sidebarView); } catch (_) { }
+            }
+            if (!sidebarView.webContents.isDestroyed() && sidebarView.webContents.debugger.isAttached()) {
+                sidebarView.webContents.debugger.detach();
+            }
+        } catch (_) { }
+        try {
+            if (!sidebarView.webContents.isDestroyed()) sidebarView.webContents.destroy();
+        } catch (_) { }
+    }
+    context.lensSessions.delete(tabId);
+    if (context.activeTabId === tabId && context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
+        try {
+            context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
+            if (context.chromeOverlayAcquireCount <= 0) {
+                context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+            }
+        } catch (_) { }
+    }
+}
+
+function injectLensSidebarCloseButton(context, tabId) {
+    const lensSession = getLensSession(context, tabId, false);
+    const sidebarView = lensSession?.sidebarView;
+    if (!sidebarView || sidebarView.webContents.isDestroyed()) return;
+    const background = getChromeShellBackgroundColor(context);
+    const gutterMaskHeight = Math.max(10, Math.min(18, LENS_PANEL_RADIUS - 6));
+    const script = `
+        (() => {
+            const style = document.getElementById('invisurf-lens-panel-style') || document.createElement('style');
+            style.id = 'invisurf-lens-panel-style';
+            style.textContent = \`
+                html {
+                    background: ${background} !important;
+                }
+                body {
+                    min-height: 100vh;
+                    margin: 0 !important;
+                    overflow-x: hidden !important;
+                    background: ${background} !important;
+                }
+                #invisurf-lens-panel-border {
+                    position: fixed !important;
+                    inset: 0 !important;
+                    z-index: 2147483646 !important;
+                    border: 1px solid rgba(95, 99, 104, 0.24) !important;
+                    border-radius: ${LENS_PANEL_RADIUS}px !important;
+                    box-sizing: border-box !important;
+                    pointer-events: none !important;
+                }
+                .invisurf-lens-gutter-mask {
+                    position: fixed !important;
+                    left: 0 !important;
+                    right: 0 !important;
+                    height: ${gutterMaskHeight}px !important;
+                    z-index: 2147483645 !important;
+                    background: ${background} !important;
+                    pointer-events: none !important;
+                }
+                #invisurf-lens-gutter-mask-top {
+                    top: 0 !important;
+                }
+                #invisurf-lens-gutter-mask-bottom {
+                    bottom: 0 !important;
+                }
+                body::-webkit-scrollbar {
+                    width: 10px;
+                }
+            \`;
+            if (!style.parentNode) document.head.appendChild(style);
+            document.documentElement.style.backgroundColor = ${JSON.stringify(background)};
+            if (document.body) document.body.style.backgroundColor = ${JSON.stringify(background)};
+            const ensureMask = (id) => {
+                let mask = document.getElementById(id);
+                if (!mask) {
+                    mask = document.createElement('div');
+                    mask.id = id;
+                    mask.className = 'invisurf-lens-gutter-mask';
+                    document.documentElement.appendChild(mask);
+                }
+                return mask;
+            };
+            ensureMask('invisurf-lens-gutter-mask-top');
+            ensureMask('invisurf-lens-gutter-mask-bottom');
+            let border = document.getElementById('invisurf-lens-panel-border');
+            if (!border) {
+                border = document.createElement('div');
+                border.id = 'invisurf-lens-panel-border';
+                document.documentElement.appendChild(border);
+            }
+            if (document.getElementById('invisurf-lens-close')) return;
+            const meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
+            meta.name = 'viewport';
+            meta.content = 'width=device-width, initial-scale=1, viewport-fit=cover';
+            if (!meta.parentNode) document.head.appendChild(meta);
+            const style = document.createElement('style');
+            style.id = 'invisurf-lens-mobile-style';
+            style.textContent = 'html,body{max-width:100vw!important;overflow-x:hidden!important;}';
+            document.head.appendChild(style);
+            const btn = document.createElement('button');
+            btn.id = 'invisurf-lens-close';
+            btn.type = 'button';
+            btn.textContent = '×';
+            btn.title = 'Close Google Lens';
+            btn.setAttribute('aria-label', 'Close Google Lens');
+            Object.assign(btn.style, {
+                position: 'fixed',
+                top: '8px',
+                right: '8px',
+                zIndex: '2147483647',
+                width: '28px',
+                height: '28px',
+                border: '0',
+                borderRadius: '999px',
+                background: 'rgba(60,64,67,.9)',
+                color: '#fff',
+                font: '20px/28px system-ui, sans-serif',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,.22)',
+            });
+            btn.addEventListener('click', () => {
+                window.location.href = 'invisurf-lens://close';
+            });
+            document.documentElement.appendChild(btn);
+        })();
+    `;
+    sidebarView.webContents.executeJavaScript(script).catch(() => { });
 }
 
 /** Match chrome-overlay.html omnibox panel layout for hit-target sizing. */
@@ -1086,8 +1591,15 @@ function layoutChromeOverlayBounds(context, patch) {
         context.lastOmniboxOverlayPatch = patch;
         bounds = computeOmniboxOverlayBounds(context, patch);
         context.chromeOverlayOmniboxMode = true;
+    } else if (patch?.kind === 'lensSelection') {
+        bounds = computeLensChromeOverlayBounds(context, context.activeTabId);
+        context.lensOverlayBounds = bounds;
+        context.chromeOverlayOmniboxMode = false;
     } else if (context.chromeOverlayOmniboxMode && context.lastOmniboxOverlayPatch) {
         bounds = computeOmniboxOverlayBounds(context, context.lastOmniboxOverlayPatch);
+    } else if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
+        bounds = computeLensChromeOverlayBounds(context, context.activeTabId);
+        context.lensOverlayBounds = bounds;
     } else {
         context.chromeOverlayOmniboxMode = false;
         const { width, height } = context.window.getContentBounds();
@@ -1191,7 +1703,7 @@ function hideActiveTabViewForShellOverlay(context) {
     if (!view || view.webContents.isDestroyed()) return;
     context.isActiveTabTemporarilyHidden = true;
     try {
-        context.window.contentView.removeChildView(view);
+        removeTabContentChildView(context, view);
         context.activeTabViewRemovedForShellOverlay = true;
     } catch (err) {
         console.error('hideActiveTabViewForShellOverlay removeChildView:', err?.message || err);
@@ -1209,21 +1721,14 @@ function restoreActiveTabViewFromShellOverlay(context) {
     context.isActiveTabTemporarilyHidden = false;
     if (context.activeTabViewRemovedForShellOverlay) {
         try {
-            context.window.contentView.addChildView(view);
+            addTabContentChildView(context, view);
             context.activeTabViewRemovedForShellOverlay = false;
         } catch (err) {
             console.error('restoreActiveTabViewFromShellOverlay addChildView:', err?.message || err);
         }
     }
-    const { width, height } = context.window.getContentBounds();
-    const fs = htmlFullscreenTabId === context.activeTabId;
     try {
-        view.setBounds({
-            x: 0,
-            y: fs ? 0 : UI_HEIGHT,
-            width,
-            height: fs ? height : height - UI_HEIGHT,
-        });
+        layoutActiveTabView(context, context.activeTabId);
     } catch (err) {
         console.error('restoreActiveTabViewFromShellOverlay setBounds:', err?.message || err);
     }
@@ -1239,6 +1744,7 @@ function activateTabInContext(context, id) {
     // Re-activating the already-visible tab only removes/re-attaches every view and
     // re-sends omnibox:focus — causes NTP flicker when clicking the active tab repeatedly.
     if (skipSameTab) {
+        layoutActiveTabView(context, id);
         ensureChromeOverlayOnTop(context);
         return true;
     }
@@ -1255,20 +1761,15 @@ function activateTabInContext(context, id) {
     for (const tid of Object.keys(context.tabs)) {
         if (detachedTabWindows.has(tid)) continue;
         try {
-            context.window.contentView.removeChildView(context.tabs[tid]);
+            removeTabContentChildView(context, context.tabs[tid]);
         } catch (_) {
             // View may already be detached from the shell.
         }
     }
-    context.window.contentView.addChildView(context.tabs[id]);
-    const { width, height } = context.window.getContentBounds();
-    const fs = htmlFullscreenTabId === id;
-    context.tabs[id].setBounds({
-        x: 0,
-        y: fs ? 0 : UI_HEIGHT,
-        width,
-        height: fs ? height : height - UI_HEIGHT,
-    });
+    detachLensSidebarsExcept(context, id);
+    addTabContentChildView(context, context.tabs[id]);
+    context.activeTabId = id;
+    layoutActiveTabView(context, id);
     const activeUrl = context.tabs[id]?.webContents.getURL() ?? '';
     const blankActive = isBlankTab(activeUrl);
     // For blank/NTP tabs we move keyboard focus straight to the shell + omnibox (below).
@@ -1276,9 +1777,17 @@ function activateTabInContext(context, id) {
     if (!blankActive) {
         context.tabs[id].webContents.focus();
     }
-    context.activeTabId = id;
     if (context.window && !context.window.webContents.isDestroyed()) {
         context.window.webContents.send(C.IPC_EVENT.TAB_SWITCHED, { id });
+    }
+    const lensSession = getLensSession(context, id, false);
+    if (lensSession?.selectionActive) {
+        postLensSelectionPatch(context);
+    } else if (context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
+        try {
+            context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
+            context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        } catch (_) { }
     }
 
     // Autofocus the omnibox when switching to a blank/NTP tab so the user
@@ -1345,7 +1854,7 @@ function moveTabToDetachedWindow(id, fallbackTabId) {
 
     // Remove tab from source window context.
     try {
-        context.window.contentView.removeChildView(view);
+        removeTabContentChildView(context, view);
     } catch (_) {
         // Not attached (e.g. inactive tab) — continue cleanup.
     }
@@ -1354,6 +1863,7 @@ function moveTabToDetachedWindow(id, fallbackTabId) {
     } catch (_) {
         /* ignore */
     }
+    destroyLensSession(context, id);
     delete context.tabs[id];
     delete context.sleepingTabs[id];
     tabIdToWindowId.delete(id);
@@ -1382,6 +1892,9 @@ function openUrlInNewTab(targetUrl, options = {}) {
     const resolvedTargetUrl = resolveInternalPageUrl(targetUrl);
     if (!isAllowedTabNavigationUrl(resolvedTargetUrl)) return false;
 
+    if (!openInBackground && getLensSession(context, context.activeTabId, false)?.selectionActive) {
+        closeGoogleLensSelection(context, { closeSidebar: true });
+    }
     const newTabId = generateTabId();
     const stealthTab = !!context.stealthWindow;
     createTab(context, newTabId, resolvedTargetUrl, stealthTab, { activate: !openInBackground });
@@ -1539,8 +2052,13 @@ function openOrActivateSettingsTab() {
 }
 
 function navigateActiveTabHome() {
+    const context = getWindowContextForShellFallback();
+    if (getLensSession(context, context?.activeTabId, false)?.selectionActive) {
+        closeGoogleLensSelection(context, { closeSidebar: true });
+    }
     const activeView = getActiveTabView();
     if (!activeView || activeView.webContents.isDestroyed()) return;
+    resetTabWebContentsScale(activeView);
     activeView.webContents.loadURL('https://www.google.com');
 }
 
@@ -1605,6 +2123,87 @@ function openDevToolsForActiveTab(panel) {
     }
 }
 
+function openUndockedDevToolsForActiveTab(context, panel = C.DEVTOOLS_PANEL.ELEMENTS) {
+    const activeView = context?.activeTabId ? context.tabs[context.activeTabId] : getActiveTabView();
+    if (!activeView || activeView.webContents.isDestroyed()) return;
+    const wc = activeView.webContents;
+    wc.openDevTools({ mode: 'undocked', activate: true });
+    if (!panel) return;
+
+    const panelScript = `
+        (() => {
+            const panelName = ${JSON.stringify(panel)};
+            const trySelectPanel = () => {
+                try {
+                    if (typeof InspectorFrontendAPI !== 'undefined' && InspectorFrontendAPI.showPanel) {
+                        InspectorFrontendAPI.showPanel(panelName);
+                        return true;
+                    }
+                    if (typeof UI !== 'undefined' && UI.inspectorView && UI.inspectorView.showPanel) {
+                        UI.inspectorView.showPanel(panelName);
+                        return true;
+                    }
+                } catch (_) {}
+                return false;
+            };
+            if (!trySelectPanel()) setTimeout(trySelectPanel, 120);
+        })();
+    `;
+
+    const selectPanel = () => {
+        const devToolsWebContents = wc.devToolsWebContents;
+        if (!devToolsWebContents || devToolsWebContents.isDestroyed()) return;
+        devToolsWebContents.executeJavaScript(panelScript).catch(() => { });
+    };
+
+    if (wc.isDevToolsOpened()) {
+        selectPanel();
+    } else {
+        wc.once('devtools-opened', selectPanel);
+    }
+}
+
+function openDevToolsForLensSidebar(context, tabId = context?.activeTabId, panel = C.DEVTOOLS_PANEL.ELEMENTS) {
+    const lensSession = getLensSession(context, tabId, false);
+    const sidebarView = lensSession?.sidebarView;
+    if (!sidebarView || sidebarView.webContents.isDestroyed()) return;
+    const wc = sidebarView.webContents;
+    wc.openDevTools({ mode: 'undocked', activate: true });
+    if (!panel) return;
+
+    const panelScript = `
+        (() => {
+            const panelName = ${JSON.stringify(panel)};
+            const trySelectPanel = () => {
+                try {
+                    if (typeof InspectorFrontendAPI !== 'undefined' && InspectorFrontendAPI.showPanel) {
+                        InspectorFrontendAPI.showPanel(panelName);
+                        return true;
+                    }
+                    if (typeof UI !== 'undefined' && UI.inspectorView && UI.inspectorView.showPanel) {
+                        UI.inspectorView.showPanel(panelName);
+                        return true;
+                    }
+                } catch (_) {}
+                return false;
+            };
+            if (!trySelectPanel()) setTimeout(trySelectPanel, 120);
+        })();
+    `;
+
+    const selectPanel = () => {
+        const devToolsWebContents = wc.devToolsWebContents;
+        if (!devToolsWebContents || devToolsWebContents.isDestroyed()) return;
+        devToolsWebContents.executeJavaScript(panelScript).catch(() => { });
+    };
+
+    if (wc.isDevToolsOpened()) {
+        selectPanel();
+    } else {
+        wc.once('devtools-opened', selectPanel);
+    }
+}
+
 function openDownloadsFolder() {
     try {
         const downloadsPath = app.getPath('downloads');
@@ -1644,15 +2243,632 @@ function triggerFindInActiveTab() {
     }
 }
 
+function getChromeShellBackgroundColor(context) {
+    try {
+        const patch = getChromeOverlayThemePatchForContext(context);
+        return patch?.tokens?.['--chrome-shell-tint'] || patch?.tokens?.['--chrome-shell-bg'] || patch?.tokens?.['--chrome-body-bg'] || (patch?.effectiveDark ? '#253035' : '#ffffff');
+    } catch (_) {
+        return nativeTheme?.shouldUseDarkColors ? '#253035' : '#ffffff';
+    }
+}
+
+function buildLensSidebarPlaceholderHtml(context) {
+    const background = getChromeShellBackgroundColor(context);
+    return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: ${background};
+      color: #7b8188;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      display: grid;
+      place-items: center;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      border: 1px solid rgba(95, 99, 104, 0.24);
+      border-radius: ${LENS_PANEL_RADIUS}px;
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+    .placeholder {
+      max-width: 220px;
+      text-align: center;
+      font-size: 13px;
+      line-height: 1.45;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="placeholder">Drag on site to search on Google Lens</div>
+</body>
+</html>`;
+}
+
+function createLensSidebarHostView(context) {
+    if (typeof View !== 'function') return null;
+    try {
+        const host = new View();
+        if (typeof host.setBackgroundColor === 'function') {
+            host.setBackgroundColor(getChromeShellBackgroundColor(context));
+        }
+        setNativeViewCornerRadius(host, LENS_PANEL_RADIUS);
+        return host;
+    } catch (_) {
+        return null;
+    }
+}
+
+function createLensSidebar(context, tabId = context?.activeTabId) {
+    if (!context || context.window.isDestroyed() || !tabId) return null;
+    const lensSession = getLensSession(context, tabId, true);
+    if (lensSession.sidebarView && !lensSession.sidebarView.webContents.isDestroyed()) {
+        return lensSession.sidebarView;
+    }
+
+    const sidebar = new WebContentsView({
+        webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+            partition: context.partition,
+        },
+    });
+    try { sidebar.webContents.setBackgroundColor(getChromeShellBackgroundColor(context)); } catch (_) { }
+    let sidebarHostView = createLensSidebarHostView(context);
+    if (sidebarHostView) {
+        try {
+            sidebarHostView.addChildView(sidebar);
+        } catch (_) {
+            sidebarHostView = null;
+        }
+    }
+    sidebar.webContents.setUserAgent(LENS_MOBILE_USER_AGENT);
+    sidebar.webContents.setWindowOpenHandler(({ url }) => {
+        if (url && /^https?:\/\//i.test(url)) {
+            sidebar.webContents.loadURL(url).catch(() => { });
+        }
+        return { action: 'deny' };
+    });
+    sidebar.webContents.on('will-navigate', (event, url) => {
+        if (String(url || '').startsWith('invisurf-lens://close')) {
+            event.preventDefault();
+            if (context.activeTabId === tabId) {
+                closeGoogleLensSelection(context, { closeSidebar: true });
+            } else {
+                destroyLensSession(context, tabId);
+            }
+        }
+    });
+    sidebar.webContents.on('did-finish-load', () => {
+        injectLensSidebarCloseButton(context, tabId);
+    });
+    lensSession.sidebarHostView = sidebarHostView;
+    lensSession.sidebarView = sidebar;
+    sidebar.webContents.loadURL(`data:text/html;charset=utf-8;base64,${Buffer.from(buildLensSidebarPlaceholderHtml(context)).toString('base64')}`).catch(() => { });
+    if (tabId === context.activeTabId) {
+        addTabContentChildView(context, sidebarHostView || sidebar);
+        layoutLensSidebar(context, tabId);
+    }
+    return sidebar;
+}
+
+function closeGoogleLensSelection(context, { closeSidebar = false } = {}) {
+    if (!context) return;
+    const tabId = context.activeTabId;
+    const lensSession = getLensSession(context, tabId, false);
+    if (lensSession) lensSession.selectionActive = false;
+    context.lensOverlayBounds = null;
+    if (context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
+        try {
+            context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
+        } catch (_) { }
+    }
+    if (lensSession?.overlayAcquired && context.chromeOverlayAcquireCount > 0) {
+        context.chromeOverlayAcquireCount -= 1;
+        lensSession.overlayAcquired = false;
+        if (context.chromeOverlayAcquireCount <= 0 && context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
+            try { context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 }); } catch (_) { }
+        }
+    }
+    if (lensSession) {
+        if (context.activeTabId && context.tabs[context.activeTabId] && lensSession.pageZoomFactorBeforeLens !== null) {
+            try { context.tabs[context.activeTabId].webContents.setZoomFactor(lensSession.pageZoomFactorBeforeLens || 1); } catch (_) { }
+        }
+        lensSession.pageZoomFactorBeforeLens = null;
+        lensSession.pageScale = 1;
+        lensSession.sourceWidth = null;
+        lensSession.sourceHeight = null;
+        lensSession.siteBounds = null;
+        lensSession.fullSnapshot = null;
+        lensSession.snapshotDataUrl = null;
+        lensSession.magnifierImage = null;
+        lensSession.lastSelectionRatio = null;
+    }
+    if (closeSidebar && lensSession?.sidebarView) {
+        removeTabContentChildView(context, lensSession.sidebarHostView || lensSession.sidebarView);
+        try {
+            if (lensSession.sidebarHostView) {
+                try { lensSession.sidebarHostView.removeChildView(lensSession.sidebarView); } catch (_) { }
+            }
+            if (!lensSession.sidebarView.webContents.isDestroyed()) lensSession.sidebarView.webContents.destroy();
+        } catch (_) { }
+        context.lensSessions.delete(tabId);
+    }
+    if (context.activeTabViewRemovedForShellOverlay || context.isActiveTabTemporarilyHidden) {
+        restoreActiveTabViewFromShellOverlay(context);
+    } else {
+        layoutActiveTabView(context, tabId);
+    }
+    ensureChromeOverlayOnTop(context);
+}
+
+// function postLensSelectionPatch(context) {
+//     if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return false;
+//     const lensSession = getLensSession(context, context.activeTabId, false);
+//     if (!lensSession?.selectionActive) return false;
+//     const tabBounds = getActiveTabContentBounds(context);
+//     if (tabBounds.width < 40 || tabBounds.height < 40) return false;
+//     const lensMetrics = getLensLayoutMetrics(context, context.activeTabId);
+//     const { width: windowWidth } = context.window.getContentBounds();
+//     const sidebarWidth = getLensSidebarWidth(context, context.activeTabId);
+//     const siteBounds = {
+//         x: tabBounds.x,
+//         y: Math.max(0, tabBounds.y - UI_HEIGHT),
+//         width: tabBounds.width,
+//         height: tabBounds.height,
+//     };
+//     const patch = {
+//         kind: 'lensSelection',
+//         hint: 'Select any text or image to search with Google Lens',
+//         sidebarWidth,
+//         minSidebarWidth: Math.min(LENS_SIDEBAR_MIN_WIDTH, Math.max(220, Math.floor(context.window.getContentBounds().width * LENS_SIDEBAR_MAX_RATIO))),
+//         maxSidebarWidth: Math.max(220, Math.floor(context.window.getContentBounds().width * LENS_SIDEBAR_MAX_RATIO)),
+//         windowWidth,
+//         panelRadius: LENS_PANEL_RADIUS,
+//         sourceWidth: lensSession.sourceWidth || windowWidth,
+//         sourceHeight: lensSession.sourceHeight || (lensMetrics?.contentHeight || 0),
+//         siteBounds,
+//         leftPanelBounds: lensMetrics ? {
+//             x: lensMetrics.leftPanelBounds.x,
+//             y: Math.max(0, lensMetrics.leftPanelBounds.y - UI_HEIGHT),
+//             width: lensMetrics.leftPanelBounds.width,
+//             height: lensMetrics.leftPanelBounds.height,
+//         } : null,
+//         sidebarBounds: lensMetrics ? {
+//             x: lensMetrics.sidebarBounds.x,
+//             y: Math.max(0, lensMetrics.sidebarBounds.y - UI_HEIGHT),
+//             width: lensMetrics.sidebarBounds.width,
+//             height: lensMetrics.sidebarBounds.height,
+//         } : null,
+//         panelGap: lensMetrics?.panelGap || LENS_PANEL_GAP,
+//         contentHeight: lensMetrics?.contentHeight || 0,
+//         selectionRect: lensSession.lastSelection || null,
+//         hasSelection: !!lensSession.lastSelection,
+//         magnifierImage: lensSession.magnifierImage || null,
+//     };
+//     layoutChromeOverlayBounds(context, patch);
+//     ensureChromeOverlayOnTop(context);
+//     context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
+//     return true;
+// }
+
+function postLensSelectionPatch(context) {
+    if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return false;
+    const lensSession = getLensSession(context, context.activeTabId, false);
+    if (!lensSession?.selectionActive) return false;
+
+    const lensMetrics = getLensLayoutMetrics(context, context.activeTabId);
+    const tabBounds = getActiveTabContentBounds(context, context.activeTabId);
+    if (tabBounds.width < 40 || tabBounds.height < 40) return false;
+    const { width: windowWidth } = context.window.getContentBounds();
+    const sidebarWidth = getLensSidebarWidth(context, context.activeTabId);
+    const overlayOriginY = lensMetrics?.contentTop ?? UI_HEIGHT;
+    const siteBounds = {
+        x: tabBounds.x,
+        y: Math.max(0, tabBounds.y - overlayOriginY),
+        width: tabBounds.width,
+        height: tabBounds.height,
+    };
+    const selectionRatio = lensSession.lastSelectionRatio || null;
+    const selectionRect = selectionRatio ? {
+        x: Math.round(selectionRatio.x * siteBounds.width),
+        y: Math.round(selectionRatio.y * siteBounds.height),
+        width: Math.max(1, Math.round(selectionRatio.width * siteBounds.width)),
+        height: Math.max(1, Math.round(selectionRatio.height * siteBounds.height)),
+    } : (lensSession.lastSelection || null);
+
+    const patch = {
+        kind: 'lensSelection',
+        hint: 'Select any text or image to search with Google Lens',
+        sidebarWidth,
+        minSidebarWidth: Math.min(LENS_SIDEBAR_MIN_WIDTH, Math.max(220, Math.floor(context.window.getContentBounds().width * LENS_SIDEBAR_MAX_RATIO))),
+        maxSidebarWidth: Math.max(220, Math.floor(context.window.getContentBounds().width * LENS_SIDEBAR_MAX_RATIO)),
+        windowWidth,
+        panelRadius: LENS_PANEL_RADIUS,
+        sourceWidth: lensSession.sourceWidth || windowWidth,
+        sourceHeight: lensSession.sourceHeight || (lensMetrics?.contentHeight || 0),
+        snapshotDataUrl: lensSession.snapshotDataUrl,
+        siteBounds,
+        leftPanelBounds: lensMetrics ? {
+            x: lensMetrics.leftPanelBounds.x,
+            y: Math.max(0, lensMetrics.leftPanelBounds.y - overlayOriginY),
+            width: lensMetrics.leftPanelBounds.width,
+            height: lensMetrics.leftPanelBounds.height,
+        } : null,
+        sidebarBounds: lensMetrics ? {
+            x: lensMetrics.sidebarBounds.x,
+            y: Math.max(0, lensMetrics.sidebarBounds.y - overlayOriginY),
+            width: lensMetrics.sidebarBounds.width,
+            height: lensMetrics.sidebarBounds.height,
+        } : null,
+        panelGap: lensMetrics?.panelGap || LENS_PANEL_GAP,
+        contentHeight: lensMetrics?.contentHeight || 0,
+        selectionRect,
+        selectionRatio,
+        hasSelection: !!selectionRect,
+    };
+
+    layoutChromeOverlayBounds(context, patch);
+    ensureChromeOverlayOnTop(context);
+    context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
+    return true;
+}
+
+function resizeGoogleLensSidebar(context, width) {
+    const lensSession = getLensSession(context, context?.activeTabId, false);
+    if (!lensSession?.sidebarView || lensSession.sidebarView.webContents.isDestroyed()) return false;
+    const { width: windowWidth } = context.window.getContentBounds();
+    const maxWidth = Math.max(220, Math.floor(windowWidth * LENS_SIDEBAR_MAX_RATIO));
+    const minWidth = Math.min(LENS_SIDEBAR_MIN_WIDTH, maxWidth);
+    const nextWidth = Math.max(minWidth, Math.min(Math.round(Number(width) || 0), maxWidth));
+    lensSession.sidebarWidth = nextWidth;
+    layoutActiveTabView(context, context.activeTabId);
+    if (lensSession.selectionActive) {
+        layoutChromeOverlayBounds(context, { kind: 'lensSelection' });
+        ensureChromeOverlayOnTop(context);
+    }
+    return true;
+}
+
+function commitGoogleLensSidebarResize(context, width) {
+    const resized = resizeGoogleLensSidebar(context, width);
+    if (resized) postLensSelectionPatch(context);
+    return resized;
+}
+
+function copyLensSelectionImage(context) {
+    const lensSession = getLensSession(context, context?.activeTabId, false);
+    if (!lensSession?.lastSelectionImage) return false;
+    try {
+        clipboard.writeImage(electron.nativeImage.createFromBuffer(lensSession.lastSelectionImage));
+        return true;
+    } catch (error) {
+        console.error('Copy Lens image failed:', error?.message || error);
+        return false;
+    }
+}
+
+async function copyLensSelectionText(context) {
+    const activeView = context?.activeTabId ? context.tabs[context.activeTabId] : null;
+    if (!activeView || activeView.webContents.isDestroyed()) return false;
+    try {
+        const selectedText = await activeView.webContents.executeJavaScript('window.getSelection ? String(window.getSelection()) : ""', true);
+        clipboard.writeText(String(selectedText || ''));
+        return true;
+    } catch (error) {
+        console.error('Copy Lens text failed:', error?.message || error);
+        return false;
+    }
+}
+
+// function startGoogleLensSelection(context = getWindowContextByBrowserWindow(mainWindow)) {
+//     if (!context || !context.activeTabId || detachedTabWindows.has(context.activeTabId)) return false;
+//     const activeView = context.tabs[context.activeTabId];
+//     if (!activeView || activeView.webContents.isDestroyed()) return false;
+
+//     const lensSession = getLensSession(context, context.activeTabId, true);
+//     lensSession.selectionActive = true;
+//     if (!lensSession.sourceWidth || !lensSession.sourceHeight) {
+//         const { width, height } = context.window.getContentBounds();
+//         lensSession.sourceWidth = Math.max(1, Math.round(width));
+//         lensSession.sourceHeight = Math.max(1, Math.round((htmlFullscreenTabId === context.activeTabId) ? height : Math.max(0, height - UI_HEIGHT)));
+//     }
+//     createLensSidebar(context, context.activeTabId);
+//     // openUndockedDevToolsForActiveTab(context);
+//     layoutActiveTabView(context, context.activeTabId);
+//     createChromeOverlayLayer(context);
+//     if (!lensSession.overlayAcquired) {
+//         context.chromeOverlayAcquireCount += 1;
+//         lensSession.overlayAcquired = true;
+//     }
+//     const posted = postLensSelectionPatch(context);
+//     return posted;
+// }
+
+async function startGoogleLensSelection(context = getWindowContextByBrowserWindow(mainWindow)) {
+    if (!context || !context.activeTabId || detachedTabWindows.has(context.activeTabId)) return false;
+    const activeView = context.tabs[context.activeTabId];
+    if (!activeView || activeView.webContents.isDestroyed()) return false;
+
+    const lensSession = getLensSession(context, context.activeTabId, true);
+    lensSession.selectionActive = true;
+
+    // 1. Capture the visual layout instantly before hiding the live page
+    try {
+        const image = await activeView.webContents.capturePage();
+        if (!image || image.isEmpty()) {
+            lensSession.selectionActive = false;
+            return false;
+        }
+        // Cache the NativeImage in-memory for instant, synchronous cropping later
+        lensSession.fullSnapshot = image;
+        lensSession.snapshotDataUrl = image.toDataURL(); // For the overlay renderer
+
+        const size = image.getSize();
+        lensSession.sourceWidth = size.width;
+        lensSession.sourceHeight = size.height;
+    } catch (err) {
+        console.error('Failed to capture webpage for Lens:', err);
+        lensSession.selectionActive = false;
+        return false;
+    }
+
+    createLensSidebar(context, context.activeTabId);
+
+    // 2. Hide the live tab completely to prevent layout thrashing on resize
+    hideActiveTabViewForShellOverlay(context);
+    layoutActiveTabView(context, context.activeTabId);
+
+    createChromeOverlayLayer(context);
+    if (!lensSession.overlayAcquired) {
+        context.chromeOverlayAcquireCount += 1;
+        lensSession.overlayAcquired = true;
+    }
+
+    return postLensSelectionPatch(context);
+}
+
+async function refreshLensMagnifierSnapshot(context, tabId = context?.activeTabId) {
+    const lensSession = getLensSession(context, tabId, false);
+    const view = tabId ? context?.tabs?.[tabId] : null;
+    if (!lensSession?.selectionActive || !view || view.webContents.isDestroyed()) return false;
+    try {
+        const image = await view.webContents.capturePage();
+        if (!image || image.isEmpty()) return false;
+        lensSession.magnifierImage = image.toDataURL();
+        if (context.activeTabId === tabId && lensSession.selectionActive) postLensSelectionPatch(context);
+        return true;
+    } catch (error) {
+        console.error('Lens magnifier snapshot failed:', error?.message || error);
+        return false;
+    }
+}
+
+function submitLensImageInSidebar(context, tabId, pngBuffer, dimensions) {
+    const sidebar = createLensSidebar(context, tabId);
+    if (!sidebar || sidebar.webContents.isDestroyed()) return Promise.resolve(false);
+    const imageDataUrl = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+    const uploadUrl = `https://lens.google.com/v3/upload?ep=ccm&s=&st=${Date.now()}`;
+    const background = getChromeShellBackgroundColor(context);
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Google Lens</title>
+  <style>
+    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:${background};color:#7b8188;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    body{display:grid;place-items:center}
+    .loading{display:grid;place-items:center;gap:10px;text-align:center;font-size:13px;font-weight:500}
+    .spinner{width:24px;height:24px;border:3px solid rgba(123,129,136,.28);border-top-color:#1a73e8;border-radius:50%;animation:s 1s linear infinite}
+    body::before{content:"";position:fixed;inset:0;border:1px solid rgba(95,99,104,.24);border-radius:${LENS_PANEL_RADIUS}px;box-sizing:border-box;pointer-events:none}
+    p{margin:0}
+    @keyframes s{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="loading">
+    <div class="spinner"></div>
+    <p>Searching with Google Lens...</p>
+  </div>
+  <script>
+    (async function () {
+      try {
+        const response = await fetch(${JSON.stringify(imageDataUrl)});
+        const blob = await response.blob();
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = ${JSON.stringify(uploadUrl)};
+        form.enctype = 'multipart/form-data';
+        form.style.display = 'none';
+
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.name = 'encoded_image';
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([blob], 'invisurf-lens.png', { type: 'image/png' }));
+        fileInput.files = transfer.files;
+        form.appendChild(fileInput);
+
+        const dimensionsInput = document.createElement('input');
+        dimensionsInput.type = 'hidden';
+        dimensionsInput.name = 'processed_image_dimensions';
+        dimensionsInput.value = ${JSON.stringify(`${dimensions.width},${dimensions.height}`)};
+        form.appendChild(dimensionsInput);
+
+        document.body.appendChild(form);
+        form.submit();
+      } catch (error) {
+        document.body.innerHTML = '<p>Could not send this image to Google Lens.</p>';
+      }
+    })();
+  </script>
+</body>
+</html>`;
+
+    return new Promise((resolve) => {
+        let finished = false;
+        const cleanup = () => {
+            sidebar.webContents.removeListener('did-navigate', onNavigate);
+            sidebar.webContents.removeListener('did-fail-load', onFail);
+        };
+        const onNavigate = (_event, targetUrl) => {
+            if (!/^https:\/\/lens\.google\.com\//i.test(String(targetUrl || ''))) return;
+            finished = true;
+            cleanup();
+            resolve(true);
+        };
+        const onFail = (_event, _errorCode, errorDescription) => {
+            if (finished) return;
+            cleanup();
+            console.error('Google Lens sidebar load failed:', errorDescription);
+            resolve(false);
+        };
+        sidebar.webContents.on('did-navigate', onNavigate);
+        sidebar.webContents.on('did-fail-load', onFail);
+        sidebar.webContents.loadURL(`data:text/html;charset=utf-8;base64,${Buffer.from(html).toString('base64')}`).catch((error) => {
+            cleanup();
+            console.error('Google Lens submit page failed:', error?.message || error);
+            resolve(false);
+        });
+        setTimeout(() => {
+            if (finished || sidebar.webContents.isDestroyed()) return;
+            cleanup();
+            resolve(true);
+        }, 8000);
+    });
+}
+
+// async function captureGoogleLensSelection(context, rect = {}) {
+//     const tabId = context?.activeTabId;
+//     const lensSession = getLensSession(context, tabId, false);
+//     if (!lensSession?.selectionActive || !tabId) return false;
+//     const activeView = context.tabs[tabId];
+//     if (!activeView || activeView.webContents.isDestroyed()) return false;
+
+//     const x = Math.max(0, Math.round(Number(rect.x) || 0));
+//     const y = Math.max(0, Math.round(Number(rect.y) || 0));
+//     const width = Math.max(1, Math.round(Number(rect.width) || 0));
+//     const height = Math.max(1, Math.round(Number(rect.height) || 0));
+//     if (width < 8 || height < 8) return false;
+
+//     const previousContentProtection = loadSettings().contentProtection;
+//     try {
+//         if (previousContentProtection) context.window.setContentProtection(false);
+//         const image = await activeView.webContents.capturePage({ x, y, width, height });
+//         if (previousContentProtection) context.window.setContentProtection(true);
+//         if (!image || image.isEmpty()) return false;
+//         const png = image.toPNG();
+//         lensSession.lastSelection = { x, y, width, height };
+//         lensSession.lastSelectionImage = png;
+//         await submitLensImageInSidebar(context, tabId, png, { width, height });
+//         if (context.activeTabId === tabId && lensSession.selectionActive) {
+//             postLensSelectionPatch(context);
+//             ensureChromeOverlayOnTop(context);
+//             try {
+//                 const sidebar = lensSession.sidebarView;
+//                 if (sidebar && !sidebar.webContents.isDestroyed()) sidebar.webContents.focus();
+//             } catch (_) { /* ignore */ }
+//         }
+//         return true;
+//     } catch (error) {
+//         if (previousContentProtection) {
+//             try { context.window.setContentProtection(true); } catch (_) { }
+//         }
+//         console.error('Google Lens capture failed:', error?.message || error);
+//         if (context.activeTabId === tabId && lensSession.selectionActive) postLensSelectionPatch(context);
+//         return false;
+//     }
+// }
+
+async function captureGoogleLensSelection(context, rect = {}) {
+    const tabId = context?.activeTabId;
+    const lensSession = getLensSession(context, tabId, false);
+    if (!lensSession?.selectionActive || !tabId) return false;
+    const activeView = context.tabs[tabId];
+    if (!activeView || activeView.webContents.isDestroyed()) return false;
+
+    const site = lensSession.siteBounds;
+    if (!site || !site.width || !site.height) return false;
+
+    try {
+        if (!lensSession.fullSnapshot || lensSession.fullSnapshot.isEmpty()) return false;
+
+        const origSize = lensSession.fullSnapshot.getSize();
+
+        const selectionX = Math.max(0, Math.min(Math.round(Number(rect.x) || 0), Math.max(0, site.width - 1)));
+        const selectionY = Math.max(0, Math.min(Math.round(Number(rect.y) || 0), Math.max(0, site.height - 1)));
+        const selectionWidth = Math.max(1, Math.min(Math.round(Number(rect.width) || 0), site.width - selectionX));
+        const selectionHeight = Math.max(1, Math.min(Math.round(Number(rect.height) || 0), site.height - selectionY));
+        if (selectionWidth < 8 || selectionHeight < 8) return false;
+
+        // Translate scaled overlay coordinates to the original snapshot pixels.
+        const x = Math.max(0, Math.round((selectionX / site.width) * origSize.width));
+        const y = Math.max(0, Math.round((selectionY / site.height) * origSize.height));
+        const width = Math.max(1, Math.round((selectionWidth / site.width) * origSize.width));
+        const height = Math.max(1, Math.round((selectionHeight / site.height) * origSize.height));
+
+        // Prevent cropping out-of-bounds
+        const safeX = Math.min(x, origSize.width - 1);
+        const safeY = Math.min(y, origSize.height - 1);
+        const safeWidth = Math.max(1, Math.min(width, origSize.width - safeX));
+        const safeHeight = Math.max(1, Math.min(height, origSize.height - safeY));
+
+        // Perform instant crop in memory
+        const croppedImage = lensSession.fullSnapshot.crop({
+            x: safeX,
+            y: safeY,
+            width: safeWidth,
+            height: safeHeight
+        });
+        const png = croppedImage.toPNG();
+
+        lensSession.lastSelection = {
+            x: selectionX,
+            y: selectionY,
+            width: selectionWidth,
+            height: selectionHeight,
+        };
+        lensSession.lastSelectionRatio = {
+            x: selectionX / site.width,
+            y: selectionY / site.height,
+            width: selectionWidth / site.width,
+            height: selectionHeight / site.height,
+        };
+        lensSession.lastSelectionImage = png;
+
+        await submitLensImageInSidebar(context, tabId, png, { width: safeWidth, height: safeHeight });
+
+        if (context.activeTabId === tabId && lensSession.selectionActive) {
+            postLensSelectionPatch(context);
+            ensureChromeOverlayOnTop(context);
+            try {
+                const sidebar = lensSession.sidebarView;
+                if (sidebar && !sidebar.webContents.isDestroyed()) sidebar.webContents.focus();
+            } catch (_) { /* ignore */ }
+        }
+        return true;
+    } catch (error) {
+        console.error('Google Lens capture failed:', error?.message || error);
+        if (context.activeTabId === tabId && lensSession.selectionActive) postLensSelectionPatch(context);
+        return false;
+    }
+}
+
 function searchActiveTabWithGoogleLens() {
-    const activeView = getActiveTabView();
-    const currentUrl = activeView && !activeView.webContents.isDestroyed()
-        ? activeView.webContents.getURL()
-        : '';
-    const lensUrl = currentUrl && /^https?:\/\//i.test(currentUrl)
-        ? `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(currentUrl)}`
-        : 'https://lens.google.com/';
-    return openUrlInNewTab(lensUrl, { background: false });
+    return startGoogleLensSelection();
 }
 
 function canStoreRecentlyClosedUrl(rawUrl) {
@@ -2600,6 +3816,34 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
 ipcMain.on(C.IPC_SEND.CHROME_OVERLAY_FROM_OVERLAY, (e, data) => {
     const context = getWindowContextByChromeOverlaySender(e.sender);
     if (!context?.window?.webContents || context.window.webContents.isDestroyed()) return;
+    if (data?.type === 'lensSelectionCapture') {
+        captureGoogleLensSelection(context, data.rect).catch((err) => {
+            console.error('lensSelectionCapture', err?.message || err);
+        });
+        return;
+    }
+    if (data?.type === 'lensSelectionCancel') {
+        closeGoogleLensSelection(context, { closeSidebar: data.closeSidebar === true });
+        return;
+    }
+    if (data?.type === 'lensSidebarResize') {
+        resizeGoogleLensSidebar(context, data.width);
+        return;
+    }
+    if (data?.type === 'lensSidebarResizeCommit') {
+        commitGoogleLensSidebarResize(context, data.width);
+        return;
+    }
+    if (data?.type === 'lensCopyImage') {
+        copyLensSelectionImage(context);
+        return;
+    }
+    if (data?.type === 'lensCopyText') {
+        copyLensSelectionText(context).catch((err) => {
+            console.error('lensCopyText', err?.message || err);
+        });
+        return;
+    }
     try {
         context.window.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_HOST, data ?? {});
     } catch (err) {
@@ -2631,6 +3875,20 @@ function handleShortcuts(event, input) {
 
     const key = input.key.toLowerCase();
     const isCommandOrControlPressed = input.control || input.meta;
+
+    const context = getWindowContextForShellFallback();
+    const lensSelectionActive = getLensSession(context, context?.activeTabId, false)?.selectionActive;
+    if (lensSelectionActive) {
+        if (key === ' ' || key === 'space' || input.code === 'Space') {
+            event.preventDefault();
+            return;
+        }
+        if (key === 'escape') {
+            event.preventDefault();
+            closeGoogleLensSelection(context, { closeSidebar: true });
+            return;
+        }
+    }
 
     if (isCommandOrControlPressed && key === 'y') {
         event.preventDefault();
@@ -2715,12 +3973,13 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     // Active tabs are attached via activateTabInContext() so only one tab view is in the
     // hierarchy at a time (avoids stacked views stealing hit-testing until switch-tab runs).
     if (!shouldActivate) {
-        context.window.contentView.addChildView(view);
+        addTabContentChildView(context, view);
         view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
     }
 
     const webContentsNumericId = view.webContents.id;
     webContentsIdToTabId.set(webContentsNumericId, id);
+    resetTabWebContentsScale(view);
     view.webContents.on('destroyed', () => {
         appLogger.info('tab:webcontents-destroyed', {
             windowId: context.windowId,
@@ -2982,6 +4241,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
 
     view.webContents.on('did-start-loading', () => {
         if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
+        resetTabWebContentsScale(view);
         context.window.webContents.send(C.IPC_EVENT.TAB_UPDATE, { id, isLoading: true, url: getDisplayUrl(view.webContents.getURL()) });
     });
 
@@ -2995,6 +4255,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     // the user's typing is never interrupted on blank/NTP tabs.
     // selectAll is false here because the user may already be mid-query.
     view.webContents.on('did-finish-load', () => {
+        resetTabWebContentsScale(view);
         const loadedUrl = view.webContents.getURL();
         if (context.activeTabId !== id) return;
 
@@ -3019,6 +4280,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
 
     // Use these flags to temporarily hold the title until page load completes or URL changes
     view.webContents.on('did-navigate', (event, targetUrl) => {
+        resetTabWebContentsScale(view);
         let displayUrl = getDisplayUrl(targetUrl);
         appLogger.info('tab:navigate', {
             windowId: context.windowId,
@@ -3041,6 +4303,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     });
 
     view.webContents.on('did-navigate-in-page', (event, targetUrl) => {
+        resetTabWebContentsScale(view);
         let displayUrl = getDisplayUrl(targetUrl);
         appLogger.info('tab:navigate-in-page', {
             windowId: context.windowId,
@@ -4184,6 +5447,9 @@ ipcMain.on(C.IPC_SEND.NEW_TAB, (e, { id, isStealth, url, source, history } = {})
         markNextNavigationTransition(id, source || 'link');
     }
 
+    if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
+        closeGoogleLensSelection(context, { closeSidebar: true });
+    }
     const stealthTab = !!context.stealthWindow;
     createTab(context, id, resolvedUrl, stealthTab, {
         navigationHistory: history || null,
@@ -4258,14 +5524,11 @@ ipcMain.on(C.IPC_SEND.CLOSE_TAB, (e, { id }) => {
     }
 
     if (context.tabs[id]) {
-        try {
-            context.window.contentView.removeChildView(context.tabs[id]);
-        } catch (_) {
-            /* view may not be attached to the main shell */
-        }
+        removeTabContentChildView(context, context.tabs[id]);
         context.tabs[id].webContents.destroy();
         delete context.tabs[id];
         tabIdToWindowId.delete(id);
+        destroyLensSession(context, id);
         if (context.activeTabId === id) context.activeTabId = null;
     }
     pendingTransitionsByTab.delete(String(id));
@@ -4320,6 +5583,7 @@ ipcMain.on(C.IPC_SEND.RELOAD, (e, { id }) => {
             url: context.tabs[targetId].webContents.getURL(),
         });
         markNextNavigationTransition(targetId, C.IPC_SEND.RELOAD);
+        resetTabWebContentsScale(context.tabs[targetId]);
         context.tabs[targetId].webContents.reload();
     }
 });
@@ -4340,11 +5604,17 @@ ipcMain.on(C.IPC_SEND.NAVIGATE, (e, { id, url, source } = {}) => {
         source,
     });
 
+    if (targetId === context.activeTabId && getLensSession(context, targetId, false)?.selectionActive) {
+        closeGoogleLensSelection(context, { closeSidebar: true });
+    }
+    resetTabWebContentsScale(context.tabs[targetId]);
+
     let formattedUrl = url.trim();
 
     // Internal invisurf:// (and legacy stealth://) pages
     const resolvedInternalUrl = resolveInternalPageUrl(formattedUrl);
     if (resolvedInternalUrl !== formattedUrl) {
+        resetTabWebContentsScale(context.tabs[targetId]);
         context.tabs[targetId]?.webContents.loadURL(resolvedInternalUrl);
         return;
     }
@@ -4364,6 +5634,7 @@ ipcMain.on(C.IPC_SEND.NAVIGATE, (e, { id, url, source } = {}) => {
     }
 
     markNextNavigationTransition(targetId, source || 'link');
+    resetTabWebContentsScale(context.tabs[targetId]);
     context.tabs[targetId]?.webContents.loadURL(formattedUrl);
 });
 
@@ -4443,15 +5714,29 @@ app.whenReady().then(async () => {
     createProfilePickerWindow();
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
     appIsQuitting = true;
     appLogger.info('app:before-quit', {
         windowCount: BrowserWindow.getAllWindows().length,
+        historyClosed: appHistoryClosed,
+        historyCloseStarted: appHistoryCloseStarted,
     });
-    historyService.closeAll().catch((error) => {
-        appLogger.error('history:close-failed', {
-            error: appLogger.serializeError(error),
+    if (appHistoryClosed) return;
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    if (appHistoryCloseStarted) return;
+    appHistoryCloseStarted = true;
+    historyService.closeAll()
+        .catch((error) => {
+            appLogger.error('history:close-failed', {
+                error: appLogger.serializeError(error),
+            });
+            console.error('Failed to close history databases:', error);
+        })
+        .finally(() => {
+            appHistoryClosed = true;
+            if (appQuitAfterHistoryClose) return;
+            appQuitAfterHistoryClose = true;
+            appLogger.info('app:history-closed-before-quit');
+            app.quit();
         });
-        console.error('Failed to close history databases:', error);
-    });
 });
