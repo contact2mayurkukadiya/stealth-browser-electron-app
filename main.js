@@ -3592,18 +3592,27 @@ function captureClosedTabSnapshot(context, tabId) {
 function captureClosedWindowSnapshot(context) {
     if (!context || context.stealthWindow) return null;
 
+    const sessionWindow = readDecodedSessionDoc()?.windowsById?.[context.windowId] || null;
+    const persistedTabsById = new Map(
+        Array.isArray(sessionWindow?.tabs)
+            ? sessionWindow.tabs
+                .filter((tab) => tab?.id)
+                .map((tab) => [tab.id, tab])
+            : [],
+    );
     const tabIds = new Set([
+        ...persistedTabsById.keys(),
         ...Object.keys(context.tabs),
         ...Object.keys(context.sleepingTabs),
     ]);
     const tabs = [];
     for (const tabId of tabIds) {
-        const snap = captureClosedTabSnapshot(context, tabId);
+        const snap = captureClosedTabSnapshot(context, tabId) || persistedTabsById.get(tabId);
         if (snap) tabs.push(snap);
     }
     if (tabs.length === 0) return null;
 
-    let activeTabId = context.activeTabId;
+    let activeTabId = context.activeTabId || sessionWindow?.activeTabId;
     if (!activeTabId || !tabs.some((t) => t.id === activeTabId)) {
         activeTabId = tabs[tabs.length - 1].id;
     }
