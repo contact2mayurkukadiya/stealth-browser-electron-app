@@ -263,6 +263,7 @@ const MIME = freeze({
 /** IPC invoke channels (preload ↔ main) */
 const IPC_INVOKE = freeze({
   RUN_MENU_COMMAND: 'app:run-menu-command',
+  GOOGLE_LENS_ACTIVE_FOR_PROFILE: 'google-lens:active-for-profile',
   IS_STEALTH_WINDOW: 'context:is-stealth-window',
   WINDOW_CREATE: 'window:create',
   WINDOW_CREATE_STEALTH: 'window:create-stealth',

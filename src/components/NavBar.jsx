@@ -419,6 +419,12 @@ export default function NavBar({
       { iconSrc: menuCopySvg, label: 'Copy', shortcut: shortcut('⌘C', 'Ctrl+C'), commandId: 'copy' },
       { iconSrc: menuPasteSvg, label: 'Paste', shortcut: shortcut('⌘V', 'Ctrl+V'), commandId: 'paste' },
     ];
+    let googleLensMenuDisabled = false;
+    try {
+      googleLensMenuDisabled = await window.electronAPI?.isGoogleLensActiveForProfile?.() === true;
+    } catch (_) {
+      googleLensMenuDisabled = false;
+    }
 
     await post({
       kind: 'appMenu',
@@ -435,7 +441,12 @@ export default function NavBar({
         { iconSrc: menuDeleteDataSvg, label: 'Delete Browsing Data...', shortcut: shortcut('⇧⌘⌫', 'Ctrl+Shift+Del'), commandId: 'deleteBrowsingData' },
         { type: 'separator' },
         { iconSrc: menuPrintSvg, label: 'Print...', shortcut: shortcut('⌘P', 'Ctrl+P'), commandId: 'print' },
-        { iconSrc: menuLensSvg, label: 'Search this tab with Google Lens', commandId: 'searchWithGoogleLens' },
+        {
+          iconSrc: menuLensSvg,
+          label: 'Search this tab with Google Lens',
+          commandId: 'searchWithGoogleLens',
+          disabled: googleLensMenuDisabled,
+        },
         { iconSrc: menuFindSvg, label: 'Find and Edit', submenuKey: 'find' },
         { type: 'separator' },
         { iconSrc: menuSettingsSvg, label: 'Settings', shortcut: shortcut('⌘,', 'Ctrl+,'), commandId: 'openSettings' },

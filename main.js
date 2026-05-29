@@ -878,6 +878,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         /** Per-tab Google Lens sessions: each tab keeps its sidebar WebContentsView and sizing. */
         lensSessions: new Map(),
         lensOverlayBounds: null,
+        chromeOverlayFullWindowMode: false,
     };
     windowContextsById.set(window.id, context);
     createTabContentContainer(context);
@@ -1146,7 +1147,11 @@ function ensureChromeOverlayOnTop(context) {
             cv.addChildView(context.tabContentView);
         }
         if (tabView && !tabView.webContents.isDestroyed()) {
-            addTabContentChildView(context, tabView);
+            const hideTabForLens =
+                lensSession?.selectionActive && context.activeTabViewRemovedForShellOverlay;
+            if (!hideTabForLens) {
+                addTabContentChildView(context, tabView);
+            }
         }
         if (context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
             cv.addChildView(context.chromeOverlayView);
@@ -1177,7 +1182,9 @@ function getLensSession(context, tabId = context?.activeTabId, create = false) {
             siteBounds: null,
             lastSelection: null,
             lastSelectionRatio: null,
+            lastSelectionText: '',
             lastSelectionImage: null,
+            textSnapshot: null,
             pageZoomFactorBeforeLens: null,
             pageScale: 1,
             sourceWidth: null,
@@ -1187,6 +1194,93 @@ function getLensSession(context, tabId = context?.activeTabId, create = false) {
         context.lensSessions.set(tabId, sessionState);
     }
     return sessionState || null;
+}
+
+function getFirstActiveLensTabId(context) {
+    if (!context?.lensSessions) return null;
+    for (const [tabId, sessionState] of context.lensSessions.entries()) {
+        if (!sessionState?.selectionActive) continue;
+        const view = context.tabs[tabId];
+        if (view && !view.webContents.isDestroyed()) return tabId;
+    }
+    return null;
+}
+
+function findActiveLensTabForProfile(profileId) {
+    if (!profileId) return null;
+    for (const context of windowContextsById.values()) {
+        if (!context || context.profileId !== profileId) continue;
+        const tabId = getFirstActiveLensTabId(context);
+        if (tabId) return { context, tabId };
+    }
+    return null;
+}
+
+function countLensOverlayAcquires(context) {
+    if (!context?.lensSessions) return 0;
+    let required = 0;
+    for (const sessionState of context.lensSessions.values()) {
+        if (sessionState?.selectionActive && sessionState.overlayAcquired) required += 1;
+    }
+    return required;
+}
+
+function repairLensChromeOverlayAcquireCount(context) {
+    const required = countLensOverlayAcquires(context);
+    if (required > 0 && (context.chromeOverlayAcquireCount || 0) < required) {
+        context.chromeOverlayAcquireCount = required;
+    }
+}
+
+function layoutChromeOverlayFullWindowBounds(context) {
+    if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return null;
+    if ((context.chromeOverlayAcquireCount || 0) <= 0) return null;
+    context.chromeOverlayFullWindowMode = true;
+    const { width, height } = context.window.getContentBounds();
+    const bounds = { x: 0, y: 0, width, height };
+    try {
+        context.chromeOverlayView.setBounds(bounds);
+        return bounds;
+    } catch (err) {
+        console.error('layoutChromeOverlayFullWindowBounds', err?.message || err);
+        return null;
+    }
+}
+
+function restoreLensOverlayAfterShellDismiss(context) {
+    if (!context?.activeTabId) return;
+    if (!getLensSession(context, context.activeTabId, false)?.selectionActive) return;
+    context.chromeOverlayFullWindowMode = false;
+    setImmediate(() => {
+        if (!context?.activeTabId) return;
+        if (!getLensSession(context, context.activeTabId, false)?.selectionActive) return;
+        if (context.chromeOverlayOmniboxMode) return;
+        restoreActiveLensTabPresentation(context, context.activeTabId);
+    });
+}
+
+function ensureLensOverlayAcquired(context, tabId = context?.activeTabId) {
+    const lensSession = getLensSession(context, tabId, false);
+    if (!lensSession?.selectionActive) return;
+    createChromeOverlayLayer(context);
+    if (!lensSession.overlayAcquired) {
+        context.chromeOverlayAcquireCount = (context.chromeOverlayAcquireCount || 0) + 1;
+        lensSession.overlayAcquired = true;
+    } else if ((context.chromeOverlayAcquireCount || 0) <= 0) {
+        context.chromeOverlayAcquireCount = 1;
+    }
+}
+
+function restoreActiveLensTabPresentation(context, tabId = context?.activeTabId) {
+    if (!context || !tabId) return false;
+    const lensSession = getLensSession(context, tabId, false);
+    if (!lensSession?.selectionActive) return false;
+    hideActiveTabViewForShellOverlay(context);
+    layoutActiveTabView(context, tabId);
+    layoutLensSidebar(context, tabId);
+    ensureLensOverlayAcquired(context, tabId);
+    repairLensChromeOverlayAcquireCount(context);
+    return postLensSelectionPatch(context);
 }
 
 function getLensSidebarWidth(context, tabId = context?.activeTabId) {
@@ -1427,13 +1521,22 @@ function destroyLensSession(context, tabId) {
         } catch (_) { }
     }
     context.lensSessions.delete(tabId);
-    if (context.activeTabId === tabId && context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
+    repairLensChromeOverlayAcquireCount(context);
+    const remainingLensTabId = getFirstActiveLensTabId(context);
+    if (!remainingLensTabId && context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
+        context.chromeOverlayFullWindowMode = false;
         try {
             context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
             if (context.chromeOverlayAcquireCount <= 0) {
                 context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
             }
         } catch (_) { }
+    } else if (
+        context.activeTabId &&
+        context.activeTabId === remainingLensTabId &&
+        getLensSession(context, context.activeTabId, false)?.selectionActive
+    ) {
+        restoreActiveLensTabPresentation(context, context.activeTabId);
     }
 }
 
@@ -1588,19 +1691,31 @@ function layoutChromeOverlayBounds(context, patch) {
     if (context.chromeOverlayAcquireCount <= 0) return null;
     let bounds;
     if (patch?.kind === 'omniboxSuggestions') {
+        context.chromeOverlayFullWindowMode = false;
         context.lastOmniboxOverlayPatch = patch;
         bounds = computeOmniboxOverlayBounds(context, patch);
         context.chromeOverlayOmniboxMode = true;
     } else if (patch?.kind === 'lensSelection') {
-        bounds = computeLensChromeOverlayBounds(context, context.activeTabId);
+        bounds = context.chromeOverlayFullWindowMode
+            ? (() => {
+                const { width, height } = context.window.getContentBounds();
+                return { x: 0, y: 0, width, height };
+            })()
+            : computeLensChromeOverlayBounds(context, context.activeTabId);
         context.lensOverlayBounds = bounds;
         context.chromeOverlayOmniboxMode = false;
     } else if (context.chromeOverlayOmniboxMode && context.lastOmniboxOverlayPatch) {
         bounds = computeOmniboxOverlayBounds(context, context.lastOmniboxOverlayPatch);
     } else if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
-        bounds = computeLensChromeOverlayBounds(context, context.activeTabId);
+        bounds = context.chromeOverlayFullWindowMode
+            ? (() => {
+                const { width, height } = context.window.getContentBounds();
+                return { x: 0, y: 0, width, height };
+            })()
+            : computeLensChromeOverlayBounds(context, context.activeTabId);
         context.lensOverlayBounds = bounds;
     } else {
+        context.chromeOverlayFullWindowMode = false;
         context.chromeOverlayOmniboxMode = false;
         const { width, height } = context.window.getContentBounds();
         bounds = { x: 0, y: 0, width, height };
@@ -1782,7 +1897,7 @@ function activateTabInContext(context, id) {
     }
     const lensSession = getLensSession(context, id, false);
     if (lensSession?.selectionActive) {
-        postLensSelectionPatch(context);
+        restoreActiveLensTabPresentation(context, id);
     } else if (context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
         try {
             context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
@@ -2371,6 +2486,7 @@ function closeGoogleLensSelection(context, { closeSidebar = false } = {}) {
     const lensSession = getLensSession(context, tabId, false);
     if (lensSession) lensSession.selectionActive = false;
     context.lensOverlayBounds = null;
+    context.chromeOverlayFullWindowMode = false;
     if (context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
         try {
             context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
@@ -2379,6 +2495,7 @@ function closeGoogleLensSelection(context, { closeSidebar = false } = {}) {
     if (lensSession?.overlayAcquired && context.chromeOverlayAcquireCount > 0) {
         context.chromeOverlayAcquireCount -= 1;
         lensSession.overlayAcquired = false;
+        repairLensChromeOverlayAcquireCount(context);
         if (context.chromeOverlayAcquireCount <= 0 && context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
             try { context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 }); } catch (_) { }
         }
@@ -2396,6 +2513,8 @@ function closeGoogleLensSelection(context, { closeSidebar = false } = {}) {
         lensSession.snapshotDataUrl = null;
         lensSession.magnifierImage = null;
         lensSession.lastSelectionRatio = null;
+        lensSession.lastSelectionText = '';
+        lensSession.textSnapshot = null;
     }
     if (closeSidebar && lensSession?.sidebarView) {
         removeTabContentChildView(context, lensSession.sidebarHostView || lensSession.sidebarView);
@@ -2473,9 +2592,13 @@ function postLensSelectionPatch(context) {
     const lensMetrics = getLensLayoutMetrics(context, context.activeTabId);
     const tabBounds = getActiveTabContentBounds(context, context.activeTabId);
     if (tabBounds.width < 40 || tabBounds.height < 40) return false;
-    const { width: windowWidth } = context.window.getContentBounds();
+    const { width: windowWidth, height: windowHeight } = context.window.getContentBounds();
     const sidebarWidth = getLensSidebarWidth(context, context.activeTabId);
-    const overlayOriginY = lensMetrics?.contentTop ?? UI_HEIGHT;
+    const overlayOriginY = context.chromeOverlayFullWindowMode ? 0 : (lensMetrics?.contentTop ?? UI_HEIGHT);
+    const backdropTop = context.chromeOverlayFullWindowMode ? (lensMetrics?.contentTop ?? UI_HEIGHT) : 0;
+    const overlayHeight = context.chromeOverlayFullWindowMode
+        ? windowHeight
+        : (lensMetrics?.contentHeight || 0);
     const siteBounds = {
         x: tabBounds.x,
         y: Math.max(0, tabBounds.y - overlayOriginY),
@@ -2515,9 +2638,11 @@ function postLensSelectionPatch(context) {
             height: lensMetrics.sidebarBounds.height,
         } : null,
         panelGap: lensMetrics?.panelGap || LENS_PANEL_GAP,
-        contentHeight: lensMetrics?.contentHeight || 0,
+        backdropTop,
+        contentHeight: overlayHeight,
         selectionRect,
         selectionRatio,
+        hasSelectionText: !!lensSession.lastSelectionText,
         hasSelection: !!selectionRect,
     };
 
@@ -2562,16 +2687,119 @@ function copyLensSelectionImage(context) {
 }
 
 async function copyLensSelectionText(context) {
-    const activeView = context?.activeTabId ? context.tabs[context.activeTabId] : null;
-    if (!activeView || activeView.webContents.isDestroyed()) return false;
+    const lensSession = getLensSession(context, context?.activeTabId, false);
+    const text = String(lensSession?.lastSelectionText || '').trim();
+    if (!text) return false;
     try {
-        const selectedText = await activeView.webContents.executeJavaScript('window.getSelection ? String(window.getSelection()) : ""', true);
-        clipboard.writeText(String(selectedText || ''));
+        clipboard.writeText(text);
         return true;
     } catch (error) {
         console.error('Copy Lens text failed:', error?.message || error);
         return false;
     }
+}
+
+async function extractLensPageTextSnapshot(activeView) {
+    if (!activeView || activeView.webContents.isDestroyed()) return null;
+    const script = `
+        (() => {
+            const root = document.body || document.documentElement;
+            if (!root) return null;
+            const vv = window.visualViewport;
+            const viewportWidth = Math.max(1, Math.round((vv && vv.width) || window.innerWidth || document.documentElement.clientWidth || 1));
+            const viewportHeight = Math.max(1, Math.round((vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 1));
+            const words = [];
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode(node) {
+                    const text = node.nodeValue || '';
+                    if (!text.trim()) return NodeFilter.FILTER_REJECT;
+                    const parent = node.parentElement;
+                    if (!parent || parent.closest('script,style,noscript,template')) return NodeFilter.FILTER_REJECT;
+                    const style = window.getComputedStyle(parent);
+                    if (!style || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            });
+            const intersectsViewport = (rect) =>
+                rect.width > 0 && rect.height > 0 &&
+                rect.right >= 0 && rect.bottom >= 0 &&
+                rect.left <= viewportWidth && rect.top <= viewportHeight;
+            let node;
+            while ((node = walker.nextNode()) && words.length < 4000) {
+                const text = node.nodeValue || '';
+                const re = /\\S+/g;
+                let match;
+                while ((match = re.exec(text)) && words.length < 4000) {
+                    const range = document.createRange();
+                    try {
+                        range.setStart(node, match.index);
+                        range.setEnd(node, match.index + match[0].length);
+                        const rects = Array.from(range.getClientRects()).filter(intersectsViewport);
+                        for (const rect of rects) {
+                            words.push({
+                                text: match[0],
+                                x: rect.left,
+                                y: rect.top,
+                                width: rect.width,
+                                height: rect.height,
+                            });
+                        }
+                    } catch (_) {
+                        // Ignore detached or otherwise invalid text ranges.
+                    } finally {
+                        range.detach();
+                    }
+                }
+            }
+            return { width: viewportWidth, height: viewportHeight, words };
+        })();
+    `;
+    try {
+        const snapshot = await activeView.webContents.executeJavaScript(script, true);
+        if (!snapshot || !Array.isArray(snapshot.words)) return null;
+        return snapshot;
+    } catch (error) {
+        console.warn('Lens text snapshot failed:', error?.message || error);
+        return null;
+    }
+}
+
+function getLensSelectionText(lensSession, selectionRatio) {
+    const snapshot = lensSession?.textSnapshot;
+    if (!snapshot?.words?.length || !selectionRatio) return '';
+    const rect = {
+        x: selectionRatio.x * snapshot.width,
+        y: selectionRatio.y * snapshot.height,
+        width: selectionRatio.width * snapshot.width,
+        height: selectionRatio.height * snapshot.height,
+    };
+    const right = rect.x + rect.width;
+    const bottom = rect.y + rect.height;
+    const intersects = (word) => {
+        const wordRight = word.x + word.width;
+        const wordBottom = word.y + word.height;
+        return wordRight >= rect.x && word.x <= right && wordBottom >= rect.y && word.y <= bottom;
+    };
+    const selected = snapshot.words
+        .filter(intersects)
+        .sort((a, b) => {
+            const lineDelta = a.y - b.y;
+            if (Math.abs(lineDelta) > 8) return lineDelta;
+            return a.x - b.x;
+        });
+    if (!selected.length) return '';
+    const lines = [];
+    for (const word of selected) {
+        const current = lines[lines.length - 1];
+        if (!current || Math.abs(word.y - current.y) > Math.max(8, word.height * 0.8)) {
+            lines.push({ y: word.y, words: [word.text] });
+        } else {
+            current.words.push(word.text);
+        }
+    }
+    return lines.map((line) => line.words.join(' ')).join('\n').trim();
 }
 
 // function startGoogleLensSelection(context = getWindowContextByBrowserWindow(mainWindow)) {
@@ -2603,11 +2831,27 @@ async function startGoogleLensSelection(context = getWindowContextByBrowserWindo
     const activeView = context.tabs[context.activeTabId];
     if (!activeView || activeView.webContents.isDestroyed()) return false;
 
+    const existingLens = findActiveLensTabForProfile(context.profileId);
+    if (existingLens) {
+        try {
+            if (!existingLens.context.window.isDestroyed()) {
+                existingLens.context.window.focus();
+            }
+        } catch (_) { /* ignore */ }
+        if (existingLens.tabId !== context.activeTabId || existingLens.context !== context) {
+            activateTabInContext(existingLens.context, existingLens.tabId);
+        } else {
+            restoreActiveLensTabPresentation(context, existingLens.tabId);
+        }
+        return true;
+    }
+
     const lensSession = getLensSession(context, context.activeTabId, true);
     lensSession.selectionActive = true;
 
     // 1. Capture the visual layout instantly before hiding the live page
     try {
+        lensSession.textSnapshot = await extractLensPageTextSnapshot(activeView);
         const image = await activeView.webContents.capturePage();
         if (!image || image.isEmpty()) {
             lensSession.selectionActive = false;
@@ -2847,6 +3091,7 @@ async function captureGoogleLensSelection(context, rect = {}) {
             width: selectionWidth / site.width,
             height: selectionHeight / site.height,
         };
+        lensSession.lastSelectionText = getLensSelectionText(lensSession, lensSession.lastSelectionRatio);
         lensSession.lastSelectionImage = png;
 
         await submitLensImageInSidebar(context, tabId, png, { width: safeWidth, height: safeHeight });
@@ -3444,6 +3689,13 @@ ipcMain.handle(C.IPC_INVOKE.RUN_MENU_COMMAND, (event, commandId) => {
     return runMenuCommandFromPalette(commandId);
 });
 
+ipcMain.handle(C.IPC_INVOKE.GOOGLE_LENS_ACTIVE_FOR_PROFILE, (event) => {
+    if (!isSenderTrusted(event)) return false;
+    const context = getWindowContextByEventSender(event.sender);
+    if (!context?.profileId) return false;
+    return !!findActiveLensTabForProfile(context.profileId);
+});
+
 ipcMain.handle(C.IPC_INVOKE.IS_STEALTH_WINDOW, (event) => {
     if (!isSenderTrusted(event)) return false;
     const ctx = getWindowContextByEventSender(event.sender);
@@ -3716,20 +3968,27 @@ ipcMain.on(C.IPC_SEND.TOOLTIP_HIDE, (e) => {
 // ─── Chrome overlay layer (HTML above tab WebContentsView, no tab detach) ───
 const CHROME_OVERLAY_POST_MAX_BYTES = 256 * 1024;
 
-/** Clear overlay session so another feature can take the surface (ref count → 0, hide, notify shell). */
+/** Clear shell overlay content; keep Lens ref-count so the left workspace can return after dismiss. */
 ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RESET, (e) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.chromeOverlayView) return { ok: false };
-    context.chromeOverlayAcquireCount = 0;
+    const lensAcquires = countLensOverlayAcquires(context);
+    context.chromeOverlayAcquireCount = lensAcquires;
     context.chromeOverlayOmniboxMode = false;
     context.lastOmniboxOverlayPatch = null;
     context.chromeOverlayBlurDismissPending = false;
     try {
         if (!context.chromeOverlayView.webContents.isDestroyed()) {
-            context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
+            context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, {
+                kind: 'hide',
+                preserveLens: lensAcquires > 0,
+            });
         }
-        context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        if (lensAcquires <= 0) {
+            context.chromeOverlayFullWindowMode = false;
+            context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        }
     } catch (err) {
         console.error(C.IPC_INVOKE.CHROME_OVERLAY_RESET, err?.message || err);
     }
@@ -3748,10 +4007,11 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_ACQUIRE, (e) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.chromeOverlayView) return { ok: false };
     context.chromeOverlayAcquireCount = (context.chromeOverlayAcquireCount || 0) + 1;
-    if (context.chromeOverlayAcquireCount === 1) {
-        layoutChromeOverlayBounds(context);
-        ensureChromeOverlayOnTop(context);
+    layoutChromeOverlayFullWindowBounds(context);
+    if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
+        postLensSelectionPatch(context);
     }
+    ensureChromeOverlayOnTop(context);
     return { ok: true };
 });
 
@@ -3762,8 +4022,14 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, (e) => {
     if (context.chromeOverlayAcquireCount > 0) {
         context.chromeOverlayAcquireCount -= 1;
     }
+    const lensAcquires = countLensOverlayAcquires(context);
+    if (context.chromeOverlayAcquireCount < lensAcquires) {
+        context.chromeOverlayAcquireCount = lensAcquires;
+    }
+    repairLensChromeOverlayAcquireCount(context);
     if (context.chromeOverlayAcquireCount <= 0) {
         context.chromeOverlayAcquireCount = 0;
+        context.chromeOverlayFullWindowMode = false;
         context.chromeOverlayOmniboxMode = false;
         context.lastOmniboxOverlayPatch = null;
         context.chromeOverlayBlurDismissPending = false;
@@ -3775,6 +4041,22 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, (e) => {
         } catch (err) {
             console.error(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, err?.message || err);
         }
+    } else if (
+        lensAcquires > 0 &&
+        context.chromeOverlayAcquireCount <= lensAcquires &&
+        !context.chromeOverlayOmniboxMode
+    ) {
+        try {
+            if (!context.chromeOverlayView.webContents.isDestroyed()) {
+                context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, {
+                    kind: 'hide',
+                    preserveLens: true,
+                });
+            }
+        } catch (err) {
+            console.error(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, err?.message || err);
+        }
+        restoreLensOverlayAfterShellDismiss(context);
     }
     return { ok: true };
 });
@@ -3797,6 +4079,18 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
         if (patch.kind === 'omniboxSuggestions') {
             const overlayBounds = layoutChromeOverlayBounds(context, patch);
             if (overlayBounds) patch.overlayBounds = overlayBounds;
+            ensureChromeOverlayOnTop(context);
+        } else if (
+            patch.kind === 'appMenu' ||
+            patch.kind === 'profileMenu' ||
+            patch.kind === 'bookmarkContextMenu' ||
+            patch.kind === 'bookmarkFolderMenu' ||
+            patch.kind === 'bookmarkEditor'
+        ) {
+            layoutChromeOverlayFullWindowBounds(context);
+            if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
+                postLensSelectionPatch(context);
+            }
             ensureChromeOverlayOnTop(context);
         }
         context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);

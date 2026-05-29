@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer, clipboard } = require('electron');
 const C = Object.freeze({
     "IPC_INVOKE": {
         "RUN_MENU_COMMAND": "app:run-menu-command",
+        "GOOGLE_LENS_ACTIVE_FOR_PROFILE": "google-lens:active-for-profile",
         "IS_STEALTH_WINDOW": "context:is-stealth-window",
         "WINDOW_CREATE": "window:create",
         "WINDOW_CREATE_STEALTH": "window:create-stealth",
@@ -204,6 +205,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onShortcutCommandPalette: (callback) => ipcRenderer.on(C.IPC_EVENT.SHORTCUT_COMMAND_PALETTE, () => callback()),
 
     runMenuCommand: (commandId) => ipcRenderer.invoke(C.IPC_INVOKE.RUN_MENU_COMMAND, commandId),
+    isGoogleLensActiveForProfile: () => ipcRenderer.invoke(C.IPC_INVOKE.GOOGLE_LENS_ACTIVE_FOR_PROFILE),
     createWindow: (profileId) => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE, { profileId }),
     createStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE_STEALTH),
     /** Close this BrowserWindow only if it is a stealth window; normal windows ignore (returns ok: false). */
