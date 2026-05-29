@@ -880,6 +880,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         chromeOmniboxOverlayAcquireCount: 0,
         /** Ref-count for chrome-shell-menu-overlay:v1 acquire/release. */
         chromeShellMenuOverlayAcquireCount: 0,
+        chromeShellMenuOverlayBlurDismissPending: false,
         chromeOverlayOmniboxMode: false,
         chromeOverlayBlurDismissPending: false,
         lastOmniboxOverlayPatch: null,
@@ -1195,6 +1196,9 @@ function createChromeShellMenuOverlayLayer(context) {
     overlayView.webContents.once('did-finish-load', () => {
         sendChromeShellMenuOverlayThemePatch(context);
     });
+    overlayView.webContents.on('blur', () => {
+        dismissChromeShellMenuOverlayOnBlur(context);
+    });
     overlayView.webContents.loadURL('app://localhost/chrome-overlay.html?shellMenu=1').catch((err) => {
         console.error('chrome-shell-menu-overlay load', err);
     });
@@ -1274,6 +1278,35 @@ function getLensSession(context, tabId = context?.activeTabId, create = false) {
         context.lensSessions.set(tabId, sessionState);
     }
     return sessionState || null;
+}
+
+function isViewWebContentsAlive(view) {
+    const wc = view?.webContents;
+    return !!(wc && typeof wc.isDestroyed === 'function' && !wc.isDestroyed());
+}
+
+function destroyLensSidebarViews(context, lensSession) {
+    if (!lensSession) return;
+    const sidebarView = lensSession.sidebarView;
+    if (sidebarView) {
+        removeTabContentChildView(context, lensSession.sidebarHostView || sidebarView);
+        const wc = sidebarView.webContents;
+        if (wc && typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) {
+            try { wc.removeAllListeners(); } catch (_) { }
+            try {
+                if (wc.debugger?.isAttached?.()) wc.debugger.detach();
+            } catch (_) { }
+            try { wc.destroy(); } catch (_) { }
+        }
+        lensSession.sidebarView = null;
+    }
+    const hostView = lensSession.sidebarHostView;
+    if (hostView) {
+        try {
+            if (sidebarView) hostView.removeChildView(sidebarView);
+        } catch (_) { }
+        lensSession.sidebarHostView = null;
+    }
 }
 
 function getFirstActiveLensTabId(context) {
@@ -1585,25 +1618,11 @@ function destroyLensSession(context, tabId) {
     if (lensSession.overlayAcquired && context.chromeOverlayAcquireCount > 0) {
         context.chromeOverlayAcquireCount -= 1;
     }
-    const sidebarView = lensSession.sidebarView;
-    if (sidebarView) {
-        removeTabContentChildView(context, lensSession.sidebarHostView || sidebarView);
-        try {
-            if (lensSession.sidebarHostView) {
-                try { lensSession.sidebarHostView.removeChildView(sidebarView); } catch (_) { }
-            }
-            if (!sidebarView.webContents.isDestroyed() && sidebarView.webContents.debugger.isAttached()) {
-                sidebarView.webContents.debugger.detach();
-            }
-        } catch (_) { }
-        try {
-            if (!sidebarView.webContents.isDestroyed()) sidebarView.webContents.destroy();
-        } catch (_) { }
-    }
+    destroyLensSidebarViews(context, lensSession);
     context.lensSessions.delete(tabId);
     repairLensChromeOverlayAcquireCount(context);
     const remainingLensTabId = getFirstActiveLensTabId(context);
-    if (!remainingLensTabId && context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
+    if (!remainingLensTabId && isViewWebContentsAlive(context.chromeOverlayView)) {
         context.chromeOverlayFullWindowMode = false;
         try {
             context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
@@ -1623,7 +1642,7 @@ function destroyLensSession(context, tabId) {
 function injectLensSidebarCloseButton(context, tabId) {
     const lensSession = getLensSession(context, tabId, false);
     const sidebarView = lensSession?.sidebarView;
-    if (!sidebarView || sidebarView.webContents.isDestroyed()) return;
+    if (!isViewWebContentsAlive(sidebarView)) return;
     const background = getChromeShellBackgroundColor(context);
     const gutterMaskHeight = Math.max(10, Math.min(18, LENS_PANEL_RADIUS - 6));
     const script = `
@@ -1994,19 +2013,60 @@ function dismissOmniboxChromeOverlayOnBlur(context) {
     });
 }
 
+function dismissChromeShellMenuOverlay(context, reason = 'outside') {
+    if (!context?.window?.webContents || context.window.webContents.isDestroyed()) return;
+    if ((context.chromeShellMenuOverlayAcquireCount || 0) <= 0) return;
+    try {
+        context.window.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_HOST, {
+            type: 'dismiss',
+            reason,
+        });
+    } catch (err) {
+        console.error('chrome-shell-menu-overlay:v1:dismiss', err?.message || err);
+    }
+}
+
+function dismissChromeShellMenuOverlayOnBlur(context) {
+    if ((context?.chromeShellMenuOverlayAcquireCount || 0) <= 0) return;
+    if (context.chromeShellMenuOverlayBlurDismissPending) return;
+    context.chromeShellMenuOverlayBlurDismissPending = true;
+    setImmediate(() => {
+        try {
+            dismissChromeShellMenuOverlay(context, 'blur');
+        } finally {
+            setTimeout(() => {
+                context.chromeShellMenuOverlayBlurDismissPending = false;
+            }, 0);
+        }
+    });
+}
+
+function focusChromeShellMenuOverlayWebContents(context) {
+    if (!context?.chromeShellMenuOverlayView || context.chromeShellMenuOverlayView.webContents.isDestroyed()) return;
+    if ((context.chromeShellMenuOverlayAcquireCount || 0) <= 0) return;
+    try {
+        if (context.window && !context.window.isDestroyed()) context.window.focus();
+    } catch (_) { /* ignore */ }
+    try {
+        context.chromeShellMenuOverlayView.webContents.focus();
+    } catch (err) {
+        console.error('focusChromeShellMenuOverlayWebContents', err?.message || err);
+    }
+}
+
 function getWindowContextByChromeOverlaySender(sender) {
     if (!sender || sender.isDestroyed?.()) return null;
     for (const ctx of windowContextsById.values()) {
         const ov = ctx.chromeOverlayView;
-        if (ov && !ov.webContents.isDestroyed() && ov.webContents === sender) {
+        if (isViewWebContentsAlive(ov) && ov.webContents === sender) {
             return ctx;
         }
         const shellOv = ctx.chromeShellMenuOverlayView;
-        if (shellOv && !shellOv.webContents.isDestroyed() && shellOv.webContents === sender) {
+        if (isViewWebContentsAlive(shellOv) && shellOv.webContents === sender) {
             return ctx;
         }
         const omniboxOv = ctx.chromeOmniboxOverlayView;
-        if (omniboxOv && !omniboxOv.webContents.isDestroyed() && omniboxOv.webContents === sender) {
+        if (isViewWebContentsAlive(omniboxOv) && omniboxOv.webContents === sender) {
             return ctx;
         }
     }
@@ -2086,6 +2146,9 @@ function restoreActiveTabViewFromShellOverlay(context) {
 
 function activateTabInContext(context, id) {
     if (!context || !context.tabs[id]) return false;
+    if (context.activeTabId !== id) {
+        dismissChromeShellMenuOverlay(context, 'browser-action');
+    }
     const skipSameTab =
         context.activeTabId === id &&
         !detachedTabWindows.has(id) &&
@@ -2345,13 +2408,13 @@ function canSearchActiveTabWithGoogleLens(context) {
 
 /** Focus shell omnibox — shared by activateTabInContext and load handlers. */
 function sendOmniboxFocusToShell(context, tabId, selectAll, openOverlay = false) {
-    if (!context.window || context.window.isDestroyed()) return;
+    if (!context?.window || context.window.isDestroyed()) return;
     try {
         context.window.focus();
     } catch (_) {
         /* ignore */
     }
-    if (context.window.webContents.isDestroyed()) return;
+    if (!context.window.webContents || context.window.webContents.isDestroyed()) return;
     context.window.webContents.focus();
     context.window.webContents.send(C.IPC_EVENT.OMNIBOX_FOCUS, {
         tabId,
@@ -2723,7 +2786,11 @@ function openLensSidebarNavigationInTab(context, url, options = {}) {
 function createLensSidebar(context, tabId = context?.activeTabId) {
     if (!context || context.window.isDestroyed() || !tabId) return null;
     const lensSession = getLensSession(context, tabId, true);
-    if (lensSession.sidebarView && !lensSession.sidebarView.webContents.isDestroyed()) {
+    if (lensSession.sidebarView && !isViewWebContentsAlive(lensSession.sidebarView)) {
+        lensSession.sidebarView = null;
+        lensSession.sidebarHostView = null;
+    }
+    if (isViewWebContentsAlive(lensSession.sidebarView)) {
         return lensSession.sidebarView;
     }
 
@@ -2828,14 +2895,8 @@ function closeGoogleLensSelection(context, { closeSidebar = false } = {}) {
         lensSession.lastSelectionText = '';
         lensSession.textSnapshot = null;
     }
-    if (closeSidebar && lensSession?.sidebarView) {
-        removeTabContentChildView(context, lensSession.sidebarHostView || lensSession.sidebarView);
-        try {
-            if (lensSession.sidebarHostView) {
-                try { lensSession.sidebarHostView.removeChildView(lensSession.sidebarView); } catch (_) { }
-            }
-            if (!lensSession.sidebarView.webContents.isDestroyed()) lensSession.sidebarView.webContents.destroy();
-        } catch (_) { }
+    if (closeSidebar && lensSession) {
+        destroyLensSidebarViews(context, lensSession);
         context.lensSessions.delete(tabId);
     }
     if (context.activeTabViewRemovedForShellOverlay || context.isActiveTabTemporarilyHidden) {
@@ -3216,7 +3277,7 @@ async function refreshLensMagnifierSnapshot(context, tabId = context?.activeTabI
 
 function submitLensImageInSidebar(context, tabId, pngBuffer, dimensions) {
     const sidebar = createLensSidebar(context, tabId);
-    if (!sidebar || sidebar.webContents.isDestroyed()) return Promise.resolve(false);
+    if (!isViewWebContentsAlive(sidebar)) return Promise.resolve(false);
     const imageDataUrl = `data:image/png;base64,${pngBuffer.toString('base64')}`;
     const uploadUrl = `https://lens.google.com/v3/upload?ep=ccm&s=&st=${Date.now()}`;
     const background = getChromeShellBackgroundColor(context);
@@ -3301,7 +3362,7 @@ function submitLensImageInSidebar(context, tabId, pngBuffer, dimensions) {
             resolve(false);
         });
         setTimeout(() => {
-            if (finished || sidebar.webContents.isDestroyed()) return;
+            if (finished || !isViewWebContentsAlive(sidebar)) return;
             cleanup();
             resolve(true);
         }, 8000);
@@ -4488,6 +4549,9 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, (e, payload) => {
         }
         ensureChromeOverlayOnTop(context);
         context.chromeShellMenuOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
+        setImmediate(() => {
+            focusChromeShellMenuOverlayWebContents(context);
+        });
     } catch (err) {
         console.error(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, err?.message || err);
         return { ok: false };
@@ -5260,7 +5324,7 @@ function getChromeOverlayThemePatchForContext(context) {
 
 function sendChromeOverlayThemePatch(context) {
     const ov = context?.chromeOverlayView;
-    if (!ov || ov.webContents.isDestroyed()) return;
+    if (!isViewWebContentsAlive(ov)) return;
     try {
         ov.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, getChromeOverlayThemePatchForContext(context));
     } catch (_) {
@@ -5270,7 +5334,7 @@ function sendChromeOverlayThemePatch(context) {
 
 function sendChromeShellMenuOverlayThemePatch(context) {
     const ov = context?.chromeShellMenuOverlayView;
-    if (!ov || ov.webContents.isDestroyed()) return;
+    if (!isViewWebContentsAlive(ov)) return;
     try {
         ov.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, getChromeOverlayThemePatchForContext(context));
     } catch (_) {
@@ -5280,7 +5344,7 @@ function sendChromeShellMenuOverlayThemePatch(context) {
 
 function sendChromeOmniboxOverlayThemePatch(context) {
     const ov = context?.chromeOmniboxOverlayView;
-    if (!ov || ov.webContents.isDestroyed()) return;
+    if (!isViewWebContentsAlive(ov)) return;
     try {
         ov.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, getChromeOverlayThemePatchForContext(context));
     } catch (_) {
@@ -6137,6 +6201,7 @@ ipcMain.on(C.IPC_SEND.NEW_TAB, (e, { id, isStealth, url, source, history } = {})
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
+    dismissChromeShellMenuOverlay(context, 'browser-action');
 
     const resolvedUrl = resolveTabLoadUrl(url);
     appLogger.info('ipc:new-tab', {
@@ -6171,6 +6236,7 @@ ipcMain.on(C.IPC_SEND.SWITCH_TAB, (e, { id }) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
     if (!context.tabs[id] && !context.sleepingTabs[id]) return; // Truly unknown tab — don't blank the window
+    dismissChromeShellMenuOverlay(context, 'browser-action');
     appLogger.info('ipc:switch-tab', {
         windowId: context.windowId,
         profileId: context.profileId,
@@ -6206,6 +6272,7 @@ ipcMain.on(C.IPC_SEND.CLOSE_TAB, (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
+    dismissChromeShellMenuOverlay(context, 'browser-action');
 
     const tabSnapshot = captureClosedTabSnapshot(context, id);
     appLogger.info('ipc:close-tab', {
@@ -6252,6 +6319,7 @@ ipcMain.on(C.IPC_SEND.GO_BACK, (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
+    dismissChromeShellMenuOverlay(context, 'browser-action');
     const targetId = id === 'current' ? context.activeTabId : id;
     appLogger.info('ipc:go-back', {
         windowId: context.windowId,
@@ -6265,6 +6333,7 @@ ipcMain.on(C.IPC_SEND.GO_FORWARD, (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
+    dismissChromeShellMenuOverlay(context, 'browser-action');
     const targetId = id === 'current' ? context.activeTabId : id;
     appLogger.info('ipc:go-forward', {
         windowId: context.windowId,
@@ -6278,6 +6347,7 @@ ipcMain.on(C.IPC_SEND.RELOAD, (e, { id }) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
+    dismissChromeShellMenuOverlay(context, 'browser-action');
     const targetId = id === 'current' ? context.activeTabId : id;
     if (context.tabs[targetId]) {
         appLogger.info('ipc:reload', {
@@ -6297,6 +6367,7 @@ ipcMain.on(C.IPC_SEND.NAVIGATE, (e, { id, url, source } = {}) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
     if (!url) return; // Guard against undefined/null url
+    dismissChromeShellMenuOverlay(context, 'browser-action');
 
     const targetId = id === 'current' ? context.activeTabId : id;
     if (!context.tabs[targetId]) return;
