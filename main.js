@@ -868,12 +868,16 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         /** Native container for tab WebContentsViews and tab-scoped sidebars. */
         tabContentView: null,
         tooltipView: null,
-        /** Full-window WebContentsView for HTML menus above tab layer (no tab detach). */
+        /** Full-window WebContentsView for Lens selection UI above tab layer. */
         chromeOverlayView: null,
+        /** Compact WebContentsView for omnibox autocomplete popup. */
+        chromeOmniboxOverlayView: null,
         /** Compact WebContentsView for shell menus (settings, bookmarks, profile). */
         chromeShellMenuOverlayView: null,
-        /** Ref-count for chrome-overlay:v1 acquire/release from trusted shell. */
+        /** Ref-count for Lens overlay acquires (internal, not shell omnibox). */
         chromeOverlayAcquireCount: 0,
+        /** Ref-count for chrome-overlay:v1 acquire/release from omnibox. */
+        chromeOmniboxOverlayAcquireCount: 0,
         /** Ref-count for chrome-shell-menu-overlay:v1 acquire/release. */
         chromeShellMenuOverlayAcquireCount: 0,
         chromeOverlayOmniboxMode: false,
@@ -913,10 +917,11 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         layoutActiveTabView(context, context.activeTabId);
         if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
             postLensSelectionPatch(context);
-        } else {
-            layoutChromeOverlayBounds(context);
-            ensureChromeOverlayOnTop(context);
         }
+        if ((context.chromeOmniboxOverlayAcquireCount || 0) > 0 && context.lastOmniboxOverlayPatch) {
+            layoutOmniboxOverlayBounds(context, context.lastOmniboxOverlayPatch);
+        }
+        ensureChromeOverlayOnTop(context);
     });
 
     window.on('close', () => {
@@ -955,6 +960,15 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
             } catch (_) { }
             context.chromeOverlayView = null;
         }
+        if (context.chromeOmniboxOverlayView) {
+            try { context.window.contentView.removeChildView(context.chromeOmniboxOverlayView); } catch (_) { }
+            try {
+                if (!context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
+                    context.chromeOmniboxOverlayView.webContents.destroy();
+                }
+            } catch (_) { }
+            context.chromeOmniboxOverlayView = null;
+        }
         if (context.chromeShellMenuOverlayView) {
             try { context.window.contentView.removeChildView(context.chromeShellMenuOverlayView); } catch (_) { }
             try {
@@ -983,6 +997,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
             context.tabContentView = null;
         }
         context.chromeOverlayAcquireCount = 0;
+        context.chromeOmniboxOverlayAcquireCount = 0;
         context.chromeShellMenuOverlayAcquireCount = 0;
     });
 
@@ -1133,15 +1148,37 @@ function createChromeOverlayLayer(context) {
     overlayView.webContents.once('did-finish-load', () => {
         sendChromeOverlayThemePatch(context);
     });
-    overlayView.webContents.on('blur', () => {
-        dismissOmniboxChromeOverlayOnBlur(context);
-    });
     overlayView.webContents.loadURL('app://localhost/chrome-overlay.html').catch((err) => {
         console.error('chrome-overlay load', err);
     });
     context.window.contentView.addChildView(overlayView);
     overlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
     context.chromeOverlayView = overlayView;
+}
+
+function createChromeOmniboxOverlayLayer(context) {
+    if (context.chromeOmniboxOverlayView) return;
+    const overlayView = new WebContentsView({
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+        },
+    });
+    overlayView.setBackgroundColor('#00000000');
+    overlayView.webContents.once('did-finish-load', () => {
+        sendChromeOmniboxOverlayThemePatch(context);
+    });
+    overlayView.webContents.on('blur', () => {
+        dismissOmniboxChromeOverlayOnBlur(context);
+    });
+    overlayView.webContents.loadURL('app://localhost/chrome-overlay.html?omnibox=1').catch((err) => {
+        console.error('chrome-omnibox-overlay load', err);
+    });
+    context.window.contentView.addChildView(overlayView);
+    overlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    context.chromeOmniboxOverlayView = overlayView;
 }
 
 function createChromeShellMenuOverlayLayer(context) {
@@ -1192,6 +1229,9 @@ function ensureChromeOverlayOnTop(context) {
         }
         if (context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
             cv.addChildView(context.chromeOverlayView);
+        }
+        if (context.chromeOmniboxOverlayView && !context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
+            cv.addChildView(context.chromeOmniboxOverlayView);
         }
         if (context.chromeShellMenuOverlayView && !context.chromeShellMenuOverlayView.webContents.isDestroyed()) {
             cv.addChildView(context.chromeShellMenuOverlayView);
@@ -1867,12 +1907,7 @@ function layoutChromeOverlayBounds(context, patch) {
     if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return null;
     if (context.chromeOverlayAcquireCount <= 0) return null;
     let bounds;
-    if (patch?.kind === 'omniboxSuggestions') {
-        context.chromeOverlayFullWindowMode = false;
-        context.lastOmniboxOverlayPatch = patch;
-        bounds = computeOmniboxOverlayBounds(context, patch);
-        context.chromeOverlayOmniboxMode = true;
-    } else if (patch?.kind === 'lensSelection') {
+    if (patch?.kind === 'lensSelection') {
         bounds = context.chromeOverlayFullWindowMode
             ? (() => {
                 const { width, height } = context.window.getContentBounds();
@@ -1880,9 +1915,6 @@ function layoutChromeOverlayBounds(context, patch) {
             })()
             : computeLensChromeOverlayBounds(context, context.activeTabId);
         context.lensOverlayBounds = bounds;
-        context.chromeOverlayOmniboxMode = false;
-    } else if (context.chromeOverlayOmniboxMode && context.lastOmniboxOverlayPatch) {
-        bounds = computeOmniboxOverlayBounds(context, context.lastOmniboxOverlayPatch);
     } else if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
         bounds = context.chromeOverlayFullWindowMode
             ? (() => {
@@ -1893,7 +1925,6 @@ function layoutChromeOverlayBounds(context, patch) {
         context.lensOverlayBounds = bounds;
     } else {
         context.chromeOverlayFullWindowMode = false;
-        context.chromeOverlayOmniboxMode = false;
         const { width, height } = context.window.getContentBounds();
         bounds = { x: 0, y: 0, width, height };
     }
@@ -1906,30 +1937,48 @@ function layoutChromeOverlayBounds(context, patch) {
     }
 }
 
-/** Move native keyboard focus to the chrome overlay so omnibox B can accept typing. */
-function focusChromeOverlayWebContents(context) {
-    if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return;
-    if (context.chromeOverlayAcquireCount <= 0) return;
+function layoutOmniboxOverlayBounds(context, patch) {
+    if (!context?.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) return null;
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return null;
+    const bounds = computeOmniboxOverlayBounds(context, patch);
+    try {
+        context.chromeOmniboxOverlayView.setBounds(bounds);
+        return bounds;
+    } catch (err) {
+        console.error('layoutOmniboxOverlayBounds', err?.message || err);
+        return null;
+    }
+}
+
+/** Move native keyboard focus to the omnibox popup overlay. */
+function focusChromeOmniboxOverlayWebContents(context) {
+    if (!context?.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) return;
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
     try {
         if (context.window && !context.window.isDestroyed()) context.window.focus();
     } catch (_) { /* ignore */ }
     try {
-        context.chromeOverlayView.webContents.focus();
+        context.chromeOmniboxOverlayView.webContents.focus();
     } catch (err) {
-        console.error('focusChromeOverlayWebContents', err?.message || err);
+        console.error('focusChromeOmniboxOverlayWebContents', err?.message || err);
     }
+}
+
+/** @deprecated use focusChromeOmniboxOverlayWebContents for omnibox input */
+function focusChromeOverlayWebContents(context) {
+    focusChromeOmniboxOverlayWebContents(context);
 }
 
 function dismissOmniboxChromeOverlayOnBlur(context) {
     if (!context?.chromeOverlayOmniboxMode) return;
-    if (context.chromeOverlayAcquireCount <= 0) return;
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
     if (context.chromeOverlayBlurDismissPending) return;
     if (!context.window?.webContents || context.window.webContents.isDestroyed()) return;
     context.chromeOverlayBlurDismissPending = true;
     setImmediate(() => {
         try {
             if (!context.chromeOverlayOmniboxMode) return;
-            if (context.chromeOverlayAcquireCount <= 0) return;
+            if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
             if (!context.window?.webContents || context.window.webContents.isDestroyed()) return;
             context.window.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_HOST, {
                 type: 'dismiss',
@@ -1954,6 +2003,10 @@ function getWindowContextByChromeOverlaySender(sender) {
         }
         const shellOv = ctx.chromeShellMenuOverlayView;
         if (shellOv && !shellOv.webContents.isDestroyed() && shellOv.webContents === sender) {
+            return ctx;
+        }
+        const omniboxOv = ctx.chromeOmniboxOverlayView;
+        if (omniboxOv && !omniboxOv.webContents.isDestroyed() && omniboxOv.webContents === sender) {
             return ctx;
         }
     }
@@ -2261,6 +2314,33 @@ function isCustomNewTabDocumentUrl(url) {
     if (!url || typeof url !== 'string') return false;
     const u = url.toLowerCase();
     return u === C.URL.NTP_DISPLAY || u.startsWith(C.URL.NTP_LOCALHOST_PREFIX);
+}
+
+function isGoogleLensSearchableUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const u = url.trim().toLowerCase();
+    if (!u || u === C.URL.ABOUT_BLANK) return false;
+    if (
+        u === C.URL.NTP_DISPLAY ||
+        u.startsWith(C.URL.NTP_LOCALHOST_PREFIX) ||
+        u.startsWith(C.URL.SCHEME_APP) ||
+        u.startsWith(C.URL.SCHEME_INVISURF) ||
+        u.startsWith(C.URL.SCHEME_STEALTH)
+    ) {
+        return false;
+    }
+    return u.startsWith(C.URL.SCHEME_HTTP) || u.startsWith(C.URL.SCHEME_HTTPS);
+}
+
+function canSearchActiveTabWithGoogleLens(context) {
+    if (!context || !context.activeTabId || detachedTabWindows.has(context.activeTabId)) return false;
+    const activeView = context.tabs[context.activeTabId];
+    if (!activeView || activeView.webContents.isDestroyed()) return false;
+    try {
+        return isGoogleLensSearchableUrl(activeView.webContents.getURL());
+    } catch (_) {
+        return false;
+    }
 }
 
 /** Focus shell omnibox — shared by activateTabInContext and load handlers. */
@@ -3062,6 +3142,7 @@ async function startGoogleLensSelection(context = getWindowContextByBrowserWindo
     if (!context || !context.activeTabId || detachedTabWindows.has(context.activeTabId)) return false;
     const activeView = context.tabs[context.activeTabId];
     if (!activeView || activeView.webContents.isDestroyed()) return false;
+    if (!canSearchActiveTabWithGoogleLens(context)) return false;
 
     const existingLens = findActiveLensTabForProfile(context.profileId);
     if (existingLens) {
@@ -4217,26 +4298,25 @@ function ensureChromeShellMenuOverlayLayer(context) {
     createChromeShellMenuOverlayLayer(context);
 }
 
-/** Clear shell overlay content; keep Lens ref-count so the left workspace can return after dismiss. */
+function ensureChromeOmniboxOverlayLayer(context) {
+    if (!context) return;
+    createChromeOmniboxOverlayLayer(context);
+}
+
+/** Clear omnibox popup only; never touch the Lens overlay surface. */
 ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RESET, (e) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
-    if (!context?.chromeOverlayView) return { ok: false };
-    const lensAcquires = countLensOverlayAcquires(context);
-    context.chromeOverlayAcquireCount = lensAcquires;
+    if (!context) return { ok: false };
+    ensureChromeOmniboxOverlayLayer(context);
+    context.chromeOmniboxOverlayAcquireCount = 0;
     context.chromeOverlayOmniboxMode = false;
     context.lastOmniboxOverlayPatch = null;
     context.chromeOverlayBlurDismissPending = false;
     try {
-        if (!context.chromeOverlayView.webContents.isDestroyed()) {
-            context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, {
-                kind: 'hide',
-                preserveLens: lensAcquires > 0,
-            });
-        }
-        if (lensAcquires <= 0) {
-            context.chromeOverlayFullWindowMode = false;
-            context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        if (context.chromeOmniboxOverlayView && !context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
+            context.chromeOmniboxOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
+            context.chromeOmniboxOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
         }
     } catch (err) {
         console.error(C.IPC_INVOKE.CHROME_OVERLAY_RESET, err?.message || err);
@@ -4254,8 +4334,9 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RESET, (e) => {
 ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_ACQUIRE, (e) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
-    if (!context?.chromeOverlayView) return { ok: false };
-    context.chromeOverlayAcquireCount = (context.chromeOverlayAcquireCount || 0) + 1;
+    if (!context) return { ok: false };
+    ensureChromeOmniboxOverlayLayer(context);
+    context.chromeOmniboxOverlayAcquireCount = (context.chromeOmniboxOverlayAcquireCount || 0) + 1;
     ensureChromeOverlayOnTop(context);
     return { ok: true };
 });
@@ -4263,56 +4344,35 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_ACQUIRE, (e) => {
 ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, (e) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
-    if (!context?.chromeOverlayView) return { ok: false };
-    if (context.chromeOverlayAcquireCount > 0) {
-        context.chromeOverlayAcquireCount -= 1;
+    if (!context) return { ok: false };
+    if (context.chromeOmniboxOverlayAcquireCount > 0) {
+        context.chromeOmniboxOverlayAcquireCount -= 1;
     }
-    const lensAcquires = countLensOverlayAcquires(context);
-    if (context.chromeOverlayAcquireCount < lensAcquires) {
-        context.chromeOverlayAcquireCount = lensAcquires;
-    }
-    repairLensChromeOverlayAcquireCount(context);
-    if (context.chromeOverlayAcquireCount <= 0) {
-        context.chromeOverlayAcquireCount = 0;
-        context.chromeOverlayFullWindowMode = false;
+    if (context.chromeOmniboxOverlayAcquireCount <= 0) {
+        context.chromeOmniboxOverlayAcquireCount = 0;
         context.chromeOverlayOmniboxMode = false;
         context.lastOmniboxOverlayPatch = null;
         context.chromeOverlayBlurDismissPending = false;
         try {
-            if (!context.chromeOverlayView.webContents.isDestroyed()) {
-                context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
-            }
-            context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-        } catch (err) {
-            console.error(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, err?.message || err);
-        }
-    } else if (
-        lensAcquires > 0 &&
-        context.chromeOverlayAcquireCount <= lensAcquires &&
-        !context.chromeOverlayOmniboxMode
-    ) {
-        try {
-            if (!context.chromeOverlayView.webContents.isDestroyed()) {
-                context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, {
-                    kind: 'hide',
-                    preserveLens: true,
-                });
+            if (context.chromeOmniboxOverlayView && !context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
+                context.chromeOmniboxOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
+                context.chromeOmniboxOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
             }
         } catch (err) {
             console.error(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, err?.message || err);
         }
-        restoreLensOverlayAfterShellDismiss(context);
     }
+    ensureChromeOverlayOnTop(context);
     return { ok: true };
 });
 
 ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
-    if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) {
+    if (!context?.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
         return { ok: false };
     }
-    if (context.chromeOverlayAcquireCount <= 0) return { ok: false };
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return { ok: false };
     try {
         const json = JSON.stringify(payload ?? {});
         if (json.length > CHROME_OVERLAY_POST_MAX_BYTES) return { ok: false };
@@ -4320,26 +4380,22 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
         return { ok: false };
     }
     const patch = payload ?? {};
+    if (patch.kind !== 'omniboxSuggestions') return { ok: false };
     try {
-        if (patch.kind === 'omniboxSuggestions') {
-            const overlayBounds = layoutChromeOverlayBounds(context, patch);
-            if (overlayBounds) patch.overlayBounds = overlayBounds;
-            ensureChromeOverlayOnTop(context);
-        } else if (patch.kind === 'lensSelection' || patch.kind === 'chromeTheme') {
-            layoutChromeOverlayBounds(context, patch);
-            ensureChromeOverlayOnTop(context);
-        } else if (isShellMenuOverlayKind(patch.kind)) {
-            return { ok: false };
-        }
-        context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
+        context.chromeOverlayOmniboxMode = true;
+        context.lastOmniboxOverlayPatch = patch;
+        const overlayBounds = layoutOmniboxOverlayBounds(context, patch);
+        if (overlayBounds) patch.overlayBounds = overlayBounds;
+        ensureChromeOverlayOnTop(context);
+        context.chromeOmniboxOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
     } catch (err) {
         console.error(C.IPC_INVOKE.CHROME_OVERLAY_POST, err?.message || err);
         return { ok: false };
     }
-    if (patch.kind === 'omniboxSuggestions' && patch.focusInput !== false) {
+    if (patch.focusInput !== false) {
         setImmediate(() => {
-            if (context.chromeOverlayAcquireCount <= 0) return;
-            focusChromeOverlayWebContents(context);
+            if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
+            focusChromeOmniboxOverlayWebContents(context);
         });
     }
     return { ok: true };
@@ -5222,6 +5278,16 @@ function sendChromeShellMenuOverlayThemePatch(context) {
     }
 }
 
+function sendChromeOmniboxOverlayThemePatch(context) {
+    const ov = context?.chromeOmniboxOverlayView;
+    if (!ov || ov.webContents.isDestroyed()) return;
+    try {
+        ov.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, getChromeOverlayThemePatchForContext(context));
+    } catch (_) {
+        /* overlay may be tearing down */
+    }
+}
+
 function broadcastThemeApply() {
     const settings = loadSettings();
     const payload = { settings };
@@ -5243,6 +5309,7 @@ function broadcastThemeApply() {
             }
         }
         sendChromeOverlayThemePatch(ctx);
+        sendChromeOmniboxOverlayThemePatch(ctx);
         sendChromeShellMenuOverlayThemePatch(ctx);
     }
 }

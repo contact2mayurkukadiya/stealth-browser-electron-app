@@ -8,7 +8,7 @@ import { profileAvatarBackground, profileInitials } from '../utils/profileAvatar
 import OmniboxInput from './omnibox/OmniboxInput';
 import ProfileMenuButton from './ProfileMenuButton';
 import ProfileEditorModal from './ProfileEditorModal';
-import { BOOKMARK, OVERLAY, PROFILE } from '../constants/conditionStrings.js';
+import { BOOKMARK, OVERLAY, PROFILE, URL as URL_C } from '../constants/conditionStrings.js';
 import {
   bookmarkStarFilledSvg,
   menuAddProfileSvg,
@@ -103,6 +103,35 @@ function flattenBookmarkMenuItems(items, depth = 0, out = []) {
   return out;
 }
 
+function isInternalOrBlankTab(tab) {
+  if (!tab || tab.isNewTab) return false;
+  const raw = String(tab.url || '').trim();
+  if (!raw) return true;
+  const lower = raw.toLowerCase();
+  return (
+    lower === URL_C.ABOUT_BLANK ||
+    lower === URL_C.NTP_DISPLAY ||
+    lower.startsWith(URL_C.NTP_LOCALHOST_PREFIX) ||
+    lower.startsWith(URL_C.SCHEME_APP) ||
+    lower.startsWith(URL_C.SCHEME_INVISURF) ||
+    lower.startsWith(URL_C.SCHEME_STEALTH)
+  );
+}
+
+function canSearchTabWithGoogleLens(tab) {
+  if (!tab || tab.isNewTab || isInternalOrBlankTab(tab)) return false;
+  const lower = String(tab.url || '').trim().toLowerCase();
+  return lower.startsWith(URL_C.SCHEME_HTTP) || lower.startsWith(URL_C.SCHEME_HTTPS);
+}
+
+function canBookmarkTab(tab) {
+  if (!tab || tab.isNewTab || isInternalOrBlankTab(tab)) return false;
+  const lower = String(tab.url || '').trim().toLowerCase();
+  if (!lower) return false;
+  if (lower.startsWith(URL_C.GOOGLE_ORIGIN_PREFIX) && !lower.includes(URL_C.SEARCH_PATH)) return false;
+  return lower.startsWith(URL_C.SCHEME_HTTP) || lower.startsWith(URL_C.SCHEME_HTTPS);
+}
+
 export default function NavBar({
   currentTabId,
   onNewTab,
@@ -121,13 +150,11 @@ export default function NavBar({
 
   const tab = tabs[currentTabId];
   const currentUrl = tab && !tab.isNewTab ? (tab.url || '') : '';
+  const canSearchWithGoogleLens = canSearchTabWithGoogleLens(tab);
 
   const existingBookmark = findBookmarkByUrl(currentUrl, bookmarksData.bar);
   const isBookmarked = !!existingBookmark;
-  const canBookmark = currentUrl && !(
-    currentUrl.startsWith('app://') ||
-    (currentUrl.startsWith('https://www.google.com/') && !currentUrl.includes('/search'))
-  );
+  const canBookmark = canBookmarkTab(tab);
 
   const starEditorActiveRef = useRef(false);
   const pendingOwnStarResetRef = useRef(false);
@@ -423,9 +450,9 @@ export default function NavBar({
     ];
     let googleLensMenuDisabled = false;
     try {
-      googleLensMenuDisabled = await window.electronAPI?.isGoogleLensActiveForProfile?.() === true;
+      googleLensMenuDisabled = !canSearchWithGoogleLens || await window.electronAPI?.isGoogleLensActiveForProfile?.() === true;
     } catch (_) {
-      googleLensMenuDisabled = false;
+      googleLensMenuDisabled = !canSearchWithGoogleLens;
     }
 
     await post({
@@ -460,7 +487,7 @@ export default function NavBar({
         find: findRows,
       },
     });
-  }, [bookmarksData.bar, buildProfileAvatarPayload, canBookmark, currentProfile, existingBookmark, profiles, recentlyClosed, post, shortcut]);
+  }, [bookmarksData.bar, buildProfileAvatarPayload, canBookmark, canSearchWithGoogleLens, currentProfile, existingBookmark, profiles, recentlyClosed, post, shortcut]);
 
   const openAppMenu = useCallback(async (e) => {
     const anchor = e.currentTarget?.getBoundingClientRect?.();
@@ -677,7 +704,9 @@ export default function NavBar({
       <button
         id="bookmark-btn"
         className={`btn star-btn${isBookmarked ? ' starred' : ''}`}
-        title="Bookmark this page"
+        title={canBookmark ? 'Bookmark this page' : 'This page cannot be bookmarked'}
+        disabled={!canBookmark}
+        aria-disabled={!canBookmark}
         onClick={handleBookmark}
       >
         {isBookmarked ? STAR_FILLED : STAR_EMPTY}

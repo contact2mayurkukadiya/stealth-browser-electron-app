@@ -1097,6 +1097,10 @@
       submenu.id = 'submenu';
       document.body.appendChild(submenu);
       const api = window.electronAPI;
+      const overlaySearch = window.location.search || '';
+      const IS_SHELL_MENU_OVERLAY = overlaySearch.indexOf('shellMenu=1') >= 0;
+      const IS_OMNIBOX_OVERLAY = overlaySearch.indexOf('omnibox=1') >= 0;
+      const IS_LENS_OVERLAY = !IS_SHELL_MENU_OVERLAY && !IS_OMNIBOX_OVERLAY;
       let submenuHideTimer = null;
       let lensLayer = null;
       let lensPointerId = null;
@@ -1122,9 +1126,7 @@
         }
       }
 
-      function hideAll(options) {
-        const opts = options && typeof options === 'object' ? options : {};
-        const hideLens = opts.hideLens !== false;
+      function hideAll() {
         omniboxFocusGen += 1;
         disableOmniboxEscapeDismiss();
         omniboxDismissPending = false;
@@ -1148,7 +1150,7 @@
           clearTimeout(submenuHideTimer);
           submenuHideTimer = null;
         }
-        if (hideLens) hideLensSelection();
+        hideLensSelection();
       }
 
       function hideLensSelection() {
@@ -1161,6 +1163,7 @@
 
       function renderLensSelection(patch) {
         hideAll();
+        hideLensSelection();
         lensLayer = document.createElement('div');
         lensLayer.className = 'co-lens-layer';
         lensLayer.setAttribute('role', 'application');
@@ -2797,16 +2800,26 @@
       if (api && api.onChromeOverlayV1Patch) {
         api.onChromeOverlayV1Patch(function (patch) {
           if (!patch || patch.kind === 'hide') {
-            hideAll({ hideLens: patch && patch.preserveLens === true ? false : true });
+            hideAll();
             return;
           }
           if (patch.kind === 'chromeTheme') {
             applyChromeThemeTokens(patch);
             return;
           }
+          if (IS_OMNIBOX_OVERLAY) {
+            if (patch.kind === 'omniboxSuggestions') {
+              renderOmniboxSuggestions(patch);
+            }
+            return;
+          }
+          if (IS_LENS_OVERLAY) {
+            if (patch.kind === 'lensSelection') {
+              renderLensSelection(patch);
+            }
+            return;
+          }
           if (patch.kind === 'lensSelection') {
-            if (window.location.search.indexOf('shellMenu=1') >= 0) return;
-            renderLensSelection(patch);
             return;
           }
           if (patch.kind === 'profileMenu') {
@@ -2826,7 +2839,6 @@
             return;
           }
           if (patch.kind === 'omniboxSuggestions') {
-            renderOmniboxSuggestions(patch);
             return;
           }
           if (patch.kind === 'bookmarkEditor') {
