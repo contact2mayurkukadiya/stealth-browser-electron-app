@@ -2188,7 +2188,7 @@ function openUrlInNewTab(targetUrl, options = {}) {
     const resolvedTargetUrl = resolveInternalPageUrl(targetUrl);
     if (!isAllowedTabNavigationUrl(resolvedTargetUrl)) return false;
 
-    if (!openInBackground && getLensSession(context, context.activeTabId, false)?.selectionActive) {
+    if (!openInBackground && !options.keepLensOpen && getLensSession(context, context.activeTabId, false)?.selectionActive) {
         closeGoogleLensSelection(context, { closeSidebar: true });
     }
     const newTabId = generateTabId();
@@ -2607,6 +2607,39 @@ function createLensSidebarHostView(context) {
     }
 }
 
+function isGoogleLensSidebarUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    if (url.startsWith('data:') || url === 'about:blank') return true;
+    if (url.startsWith('invisurf-lens://close')) return true;
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:') return false;
+        if (parsed.hostname === 'lens.google.com') return true;
+        // Lens upload POST redirects to Google Search results in the sidebar.
+        if (parsed.hostname === 'www.google.com' || parsed.hostname === 'google.com') {
+            const path = parsed.pathname || '/';
+            if (path === '/search' || path.startsWith('/search/')) return true;
+            // Result links often pass through Google's /url redirect wrapper first.
+            if (path === '/url' || path.startsWith('/url/')) return true;
+        }
+        return false;
+    } catch (_) {
+        return false;
+    }
+}
+
+function openLensSidebarNavigationInTab(context, url, options = {}) {
+    const targetUrl = String(url || '').trim();
+    if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+        return false;
+    }
+    return openUrlInNewTab(targetUrl, {
+        context,
+        background: options.background === true,
+        keepLensOpen: true,
+    });
+}
+
 function createLensSidebar(context, tabId = context?.activeTabId) {
     if (!context || context.window.isDestroyed() || !tabId) return null;
     const lensSession = getLensSession(context, tabId, true);
@@ -2632,13 +2665,19 @@ function createLensSidebar(context, tabId = context?.activeTabId) {
         }
     }
     sidebar.webContents.setUserAgent(LENS_MOBILE_USER_AGENT);
-    sidebar.webContents.setWindowOpenHandler(({ url }) => {
-        if (url && /^https?:\/\//i.test(url)) {
+    sidebar.webContents.setWindowOpenHandler(({ url, disposition }) => {
+        const lensUrl = isGoogleLensSidebarUrl(url);
+        if (lensUrl) {
             sidebar.webContents.loadURL(url).catch(() => { });
+            return { action: 'deny' };
         }
+        openLensSidebarNavigationInTab(context, url, {
+            background: disposition === 'background-tab',
+        });
         return { action: 'deny' };
     });
     sidebar.webContents.on('will-navigate', (event, url) => {
+        const lensUrl = isGoogleLensSidebarUrl(url);
         if (String(url || '').startsWith('invisurf-lens://close')) {
             event.preventDefault();
             if (context.activeTabId === tabId) {
@@ -2646,6 +2685,18 @@ function createLensSidebar(context, tabId = context?.activeTabId) {
             } else {
                 destroyLensSession(context, tabId);
             }
+            return;
+        }
+        if (!lensUrl) {
+            event.preventDefault();
+            openLensSidebarNavigationInTab(context, url);
+        }
+    });
+    sidebar.webContents.on('will-redirect', (event, url) => {
+        const lensUrl = isGoogleLensSidebarUrl(url);
+        if (!lensUrl) {
+            event.preventDefault();
+            openLensSidebarNavigationInTab(context, url);
         }
     });
     sidebar.webContents.on('did-finish-load', () => {

@@ -929,6 +929,7 @@
       transform: translate(-50%, -50%);
       cursor: col-resize;
       pointer-events: auto;
+      touch-action: none;
       z-index: 6;
     }
 
@@ -1321,8 +1322,6 @@
         const resizer = document.createElement('div');
         resizer.className = 'co-lens-resizer';
         resizer.setAttribute('title', 'Resize Lens sidebar');
-        resizer.style.left = Math.max(0, sidebar.x - Math.floor(panelGap / 2)) + 'px';
-        resizer.style.top = Math.round(sidebar.y + (sidebar.height / 2)) + 'px';
         lensLayer.appendChild(resizer);
 
         const cursorTooltip = document.createElement('div');
@@ -1345,6 +1344,15 @@
               height: Math.max(0, Number(patch.selectionRatio.height) || 0),
             }
           : null;
+
+        const positionResizer = function () {
+          resizer.style.left = Math.max(0, sidebar.x - Math.floor(panelGap / 2)) + 'px';
+          resizer.style.top = Math.round(sidebar.y + (sidebar.height / 2)) + 'px';
+          resizer.style.width = Math.max(12, panelGap) + 'px';
+          resizer.style.height = Math.max(96, sidebar.height) + 'px';
+        };
+
+        positionResizer();
 
         const rectFromSelectionRatio = function () {
           if (!selectedRatio) return null;
@@ -1387,7 +1395,7 @@
           leftClose.style.left = Math.max(8, site.x + site.width - 14) + 'px';
           leftClose.style.top = Math.max(8, site.y - 14) + 'px';
           renderPanelBackdrops();
-          resizer.style.left = Math.max(0, sidebar.x - Math.floor(panelGap / 2)) + 'px';
+          positionResizer();
           const scaledSelection = rectFromSelectionRatio();
           if (scaledSelection) {
             currentRect = scaledSelection;
