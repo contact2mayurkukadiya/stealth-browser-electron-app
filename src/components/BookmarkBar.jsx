@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { setBookmarks } from '../store/bookmarksSlice';
-import { useChromeOverlay } from '../context/ChromeOverlayContext';
+import { useChromeShellMenuOverlay } from '../context/ChromeOverlayContext';
 import BookmarkItem from './BookmarkItem';
 import { bookmarkAddFolderSvg } from '../constants/appAssetUrls';
 import { BOOKMARK, OVERLAY, KEYBOARD } from '../constants/conditionStrings.js';
@@ -30,7 +30,7 @@ export default function BookmarkBar({ currentTabId }) {
   const bookmarksBarRef = useRef(bookmarksData.bar);
   bookmarksBarRef.current = bookmarksData.bar;
 
-  const { reset, acquire, release, post } = useChromeOverlay();
+  const { reset, acquire, release, post } = useChromeShellMenuOverlay();
 
   const [showFolderPrompt, setShowFolderPrompt] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -144,7 +144,7 @@ export default function BookmarkBar({ currentTabId }) {
   }, [dismissBookmarkOverlay, dismissFolderOverlay, applyBookmarkMenuAction, handleNavigate]);
 
   useEffect(() => {
-    const unsub = window.electronAPI?.onChromeOverlaySuperseded?.(() => {
+    const unsub = window.electronAPI?.onChromeShellMenuOverlaySuperseded?.(() => {
       if (pendingOwnBookmarkResetRef.current || pendingOwnFolderResetRef.current) return;
       if (bookmarkMenuActiveRef.current) bookmarkMenuActiveRef.current = false;
       if (folderMenuActiveRef.current) {
@@ -158,7 +158,7 @@ export default function BookmarkBar({ currentTabId }) {
   const openBookmarkContextMenu = useCallback(
     async (e, item, isFolder) => {
       const api = window.electronAPI;
-      if (!api?.chromeOverlayV1Reset) return;
+      if (!api?.chromeShellMenuOverlayV1Reset) return;
       const menuItems = [];
       if (!isFolder) {
         menuItems.push({ type: 'item', id: 'openBookmark', label: 'Open', enabled: true });
@@ -200,7 +200,7 @@ export default function BookmarkBar({ currentTabId }) {
     async (e, folderItem) => {
       if (folderItem.type !== BOOKMARK.TYPE_FOLDER) return;
       const api = window.electronAPI;
-      if (!api?.chromeOverlayV1Reset) return;
+      if (!api?.chromeShellMenuOverlayV1Reset) return;
 
       const folder = findFolderInBookmarkTree(bookmarksBarRef.current, folderItem.id) || folderItem;
       if (folderMenuActiveRef.current && folderMenuSessionFolderIdRef.current === folder.id) {

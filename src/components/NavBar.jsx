@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTabOverlay } from '../context/TabOverlayContext';
-import { useChromeOverlay } from '../context/ChromeOverlayContext';
+import { useChromeShellMenuOverlay } from '../context/ChromeOverlayContext';
 import { setBookmarks } from '../store/bookmarksSlice';
 import { collectFolderOptions } from '../utils/bookmarkFolderList';
 import { profileAvatarBackground, profileInitials } from '../utils/profileAvatar';
@@ -113,7 +113,7 @@ export default function NavBar({
 }) {
   const dispatch = useDispatch();
   const { beginOverlay, endOverlay } = useTabOverlay();
-  const { reset, acquire, release, post } = useChromeOverlay();
+  const { reset, acquire, release, post } = useChromeShellMenuOverlay();
   const tabs = useSelector(s => s.browser.tabs);
   const bookmarksData = useSelector(s => s.bookmarks.data);
   const bookmarksBarRef = useRef(bookmarksData.bar);
@@ -142,6 +142,7 @@ export default function NavBar({
   const [profileEditorMode, setProfileEditorMode] = useState('create');
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const appMenuOpenRef = useRef(false);
+  const appMenuSkipRefreshRef = useRef(false);
   const pendingOwnAppMenuResetRef = useRef(false);
   const appMenuAnchorRef = useRef(null);
   const profilesRef = useRef([]);
@@ -355,6 +356,7 @@ export default function NavBar({
   const closeAppMenu = useCallback(async () => {
     if (!appMenuOpenRef.current) return;
     appMenuOpenRef.current = false;
+    appMenuSkipRefreshRef.current = false;
     setAppMenuOpen(false);
     try {
       await release();
@@ -478,6 +480,7 @@ export default function NavBar({
       await reset();
       await acquire();
       appMenuOpenRef.current = true;
+      appMenuSkipRefreshRef.current = true;
       setAppMenuOpen(true);
       await postAppMenuPatch();
     } catch (err) {
@@ -641,7 +644,7 @@ export default function NavBar({
   ]);
 
   useEffect(() => {
-    const unsub = window.electronAPI?.onChromeOverlaySuperseded?.(() => {
+    const unsub = window.electronAPI?.onChromeShellMenuOverlaySuperseded?.(() => {
       if (pendingOwnStarResetRef.current || pendingOwnAppMenuResetRef.current) return;
       if (appMenuOpenRef.current) {
         appMenuOpenRef.current = false;
@@ -656,6 +659,10 @@ export default function NavBar({
 
   useEffect(() => {
     if (!appMenuOpen) return;
+    if (appMenuSkipRefreshRef.current) {
+      appMenuSkipRefreshRef.current = false;
+      return;
+    }
     void postAppMenuPatch();
   }, [appMenuOpen, postAppMenuPatch]);
 

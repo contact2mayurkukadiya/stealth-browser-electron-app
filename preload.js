@@ -31,6 +31,10 @@ const C = Object.freeze({
         "CHROME_OVERLAY_ACQUIRE": "chrome-overlay:v1:acquire",
         "CHROME_OVERLAY_RELEASE": "chrome-overlay:v1:release",
         "CHROME_OVERLAY_POST": "chrome-overlay:v1:post",
+        "CHROME_SHELL_MENU_OVERLAY_RESET": "chrome-shell-menu-overlay:v1:reset",
+        "CHROME_SHELL_MENU_OVERLAY_ACQUIRE": "chrome-shell-menu-overlay:v1:acquire",
+        "CHROME_SHELL_MENU_OVERLAY_RELEASE": "chrome-shell-menu-overlay:v1:release",
+        "CHROME_SHELL_MENU_OVERLAY_POST": "chrome-shell-menu-overlay:v1:post",
         "SETTINGS_GET": "settings:get",
         "SETTINGS_SAVE": "settings:save",
         "APP_RELAUNCH": "app:relaunch",
@@ -107,6 +111,7 @@ const C = Object.freeze({
         "TAB_STRIP_MENU_ACTION": "tab-strip-context-menu:action",
         "CHROME_OVERLAY_HOST": "chrome-overlay:v1:host-event",
         "CHROME_OVERLAY_SUPERSEDED": "chrome-overlay:v1:superseded",
+        "CHROME_SHELL_MENU_OVERLAY_SUPERSEDED": "chrome-shell-menu-overlay:v1:superseded",
         "CHROME_OVERLAY_PATCH": "chrome-overlay:v1:patch",
         "THEME_APPLY": "theme:apply",
         "TAB_AWOKEN": "tab:awoken",
@@ -281,6 +286,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     chromeOverlayV1Acquire: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_ACQUIRE),
     chromeOverlayV1Release: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE),
     chromeOverlayV1Post: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_POST, payload),
+    chromeShellMenuOverlayV1Reset: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_RESET),
+    chromeShellMenuOverlayV1Acquire: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_ACQUIRE),
+    chromeShellMenuOverlayV1Release: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_RELEASE),
+    chromeShellMenuOverlayV1Post: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, payload),
     onChromeOverlayV1HostEvent: (callback) => {
         const handler = (_event, data) => callback(data);
         ipcRenderer.on(C.IPC_EVENT.CHROME_OVERLAY_HOST, handler);
@@ -290,6 +299,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         const handler = () => callback();
         ipcRenderer.on(C.IPC_EVENT.CHROME_OVERLAY_SUPERSEDED, handler);
         return () => ipcRenderer.removeListener(C.IPC_EVENT.CHROME_OVERLAY_SUPERSEDED, handler);
+    },
+    onChromeShellMenuOverlaySuperseded: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on(C.IPC_EVENT.CHROME_SHELL_MENU_OVERLAY_SUPERSEDED, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.CHROME_SHELL_MENU_OVERLAY_SUPERSEDED, handler);
     },
     /** Chrome overlay page only: user actions back to shell via main. */
     chromeOverlayNotifyHost: (data) => ipcRenderer.send(C.IPC_SEND.CHROME_OVERLAY_FROM_OVERLAY, data),

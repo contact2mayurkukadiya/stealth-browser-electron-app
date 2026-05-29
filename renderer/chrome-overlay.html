@@ -2191,6 +2191,37 @@
         }
       }
 
+      function getCompactMenuMetrics(payload) {
+        var overlayBounds = payload && payload.overlayBounds ? payload.overlayBounds : null;
+        var viewport = payload && payload.overlayViewport ? payload.overlayViewport : null;
+        var offsetX = overlayBounds && Number.isFinite(Number(overlayBounds.x))
+          ? Number(overlayBounds.x)
+          : 0;
+        var offsetY = overlayBounds && Number.isFinite(Number(overlayBounds.y))
+          ? Number(overlayBounds.y)
+          : 0;
+        var viewportWidth = viewport && Number.isFinite(Number(viewport.width))
+          ? Number(viewport.width)
+          : window.innerWidth;
+        var viewportHeight = viewport && Number.isFinite(Number(viewport.height))
+          ? Number(viewport.height)
+          : window.innerHeight;
+        return {
+          offsetX: offsetX,
+          offsetY: offsetY,
+          viewportWidth: viewportWidth,
+          viewportHeight: viewportHeight,
+        };
+      }
+
+      function toCompactMenuPoint(payload, left, top) {
+        var metrics = getCompactMenuMetrics(payload);
+        return {
+          left: Math.round(left - metrics.offsetX),
+          top: Math.round(top - metrics.offsetY),
+        };
+      }
+
       function renderBookmarkContextMenu(payload) {
         hideAll({ hideLens: false });
         const bookmarkItemId = payload.bookmarkItemId;
@@ -2200,12 +2231,14 @@
         const y = Math.round(Number(payload.clientY) || 0);
         const menuWidth = 220;
         const pad = 8;
+        const metrics = getCompactMenuMetrics(payload);
         let left = x;
         let top = y;
-        left = Math.max(pad, Math.min(left, window.innerWidth - menuWidth - pad));
-        top = Math.max(pad, Math.min(top, window.innerHeight - 48 - pad));
-        panel.style.left = left + 'px';
-        panel.style.top = top + 'px';
+        left = Math.max(pad, Math.min(left, metrics.viewportWidth - menuWidth - pad));
+        top = Math.max(pad, Math.min(top, metrics.viewportHeight - 48 - pad));
+        const panelPoint = toCompactMenuPoint(payload, left, top);
+        panel.style.left = panelPoint.left + 'px';
+        panel.style.top = panelPoint.top + 'px';
         panel.style.width = menuWidth + 'px';
         panel.style.minWidth = menuWidth + 'px';
 
@@ -2259,13 +2292,15 @@
         var left = Math.round(Number(ar.left) || 0);
         var top = Math.round(Number(ar.top) || 0) + Math.round(Number(ar.height) || 0) + 4;
         var pad = 8;
-        left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
-        top = Math.max(pad, Math.min(top, window.innerHeight - 80 - pad));
-        var maxH = Math.min(window.innerHeight * 0.9, window.innerHeight - top - pad);
+        var metrics = getCompactMenuMetrics(payload);
+        left = Math.max(pad, Math.min(left, metrics.viewportWidth - w - pad));
+        top = Math.max(pad, Math.min(top, metrics.viewportHeight - 80 - pad));
+        var maxH = Math.min(metrics.viewportHeight * 0.9, metrics.viewportHeight - top - pad);
         maxH = Math.max(100, maxH);
+        var panelPoint = toCompactMenuPoint(payload, left, top);
 
-        panel.style.left = left + 'px';
-        panel.style.top = top + 'px';
+        panel.style.left = panelPoint.left + 'px';
+        panel.style.top = panelPoint.top + 'px';
         panel.style.width = w + 'px';
         panel.style.minWidth = w + 'px';
         panel.style.maxWidth = w + 'px';
@@ -2359,13 +2394,15 @@
         const top0 = Math.round(Number(ar.top) || 0);
         const w0 = Math.max(1, Math.round(Number(ar.width) || 32));
         const h0 = Math.max(1, Math.round(Number(ar.height) || 32));
+        const metrics = getCompactMenuMetrics(payload);
         let left = left0 + w0 - panelWidth;
-        left = Math.max(8, Math.min(left, window.innerWidth - panelWidth - 8));
+        left = Math.max(8, Math.min(left, metrics.viewportWidth - panelWidth - 8));
         let top = top0 + h0 + 6;
         const estH = 280;
-        top = Math.max(8, Math.min(top, window.innerHeight - estH - 8));
-        panel.style.left = left + 'px';
-        panel.style.top = top + 'px';
+        top = Math.max(8, Math.min(top, metrics.viewportHeight - estH - 8));
+        const panelPoint = toCompactMenuPoint(payload, left, top);
+        panel.style.left = panelPoint.left + 'px';
+        panel.style.top = panelPoint.top + 'px';
         panel.style.width = panelWidth + 'px';
         panel.style.minWidth = panelWidth + 'px';
         panel.style.maxWidth = panelWidth + 'px';
@@ -2541,11 +2578,13 @@
       function renderProfileMenu(payload) {
         hideAll({ hideLens: false });
         const r = payload.menuRect || {};
-        const left = Math.round(r.left != null ? r.left : 0);
-        const top = Math.round(r.top != null ? r.top : 0);
         const width = Math.round(r.width != null ? r.width : 260);
-        panel.style.left = left + 'px';
-        panel.style.top = top + 'px';
+        const metrics = getCompactMenuMetrics(payload);
+        const left = Math.max(8, Math.min(Math.round(r.left != null ? r.left : 0), metrics.viewportWidth - width - 8));
+        const top = Math.max(8, Math.min(Math.round(r.top != null ? r.top : 0), metrics.viewportHeight - 80 - 8));
+        const panelPoint = toCompactMenuPoint(payload, left, top);
+        panel.style.left = panelPoint.left + 'px';
+        panel.style.top = panelPoint.top + 'px';
         panel.style.width = width + 'px';
 
         const items = Array.isArray(payload.items) ? payload.items : [];
@@ -2632,16 +2671,21 @@
       function renderAppMenu(payload) {
         hideAll({ hideLens: false });
         const r = payload.menuRect || {};
-        const left = Math.round(r.left != null ? r.left : 0);
-        const top = Math.round(r.top != null ? r.top : 0);
         const width = Math.round(r.width != null ? r.width : 320);
+        const metrics = getCompactMenuMetrics(payload);
+        const left = Math.max(8, Math.min(Math.round(r.left != null ? r.left : 0), metrics.viewportWidth - width - 8));
+        const top = Math.max(8, Math.min(Math.round(r.top != null ? r.top : 0), metrics.viewportHeight - 80 - 8));
+        const panelPoint = toCompactMenuPoint(payload, left, top);
         const submenus = payload.submenus && typeof payload.submenus === 'object' ? payload.submenus : {};
-        panel.style.left = left + 'px';
-        panel.style.top = top + 'px';
+        panel.style.left = panelPoint.left + 'px';
+        panel.style.top = panelPoint.top + 'px';
         panel.style.width = width + 'px';
         panel.style.minWidth = width + 'px';
         panel.style.maxWidth = width + 'px';
-        panel.style.maxHeight = Math.max(240, window.innerHeight - top - 8) + 'px';
+        panel.style.maxHeight = Math.max(
+          240,
+          Math.min(metrics.viewportHeight - top - 8, window.innerHeight - panelPoint.top - 8)
+        ) + 'px';
         panel.style.overflow = 'visible';
         panel.classList.add('co-panel--app-menu');
 
@@ -2753,6 +2797,7 @@
             return;
           }
           if (patch.kind === 'lensSelection') {
+            if (window.location.search.indexOf('shellMenu=1') >= 0) return;
             renderLensSelection(patch);
             return;
           }

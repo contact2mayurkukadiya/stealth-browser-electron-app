@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useChromeOverlay } from '../context/ChromeOverlayContext';
+import { useChromeShellMenuOverlay } from '../context/ChromeOverlayContext';
 import ProfileAvatar from './ProfileAvatar';
 import './ProfileMenuButton.css';
 import { OVERLAY } from '../constants/conditionStrings.js';
@@ -29,7 +29,7 @@ export default function ProfileMenuButton({
   const pendingOwnResetRef = useRef(false);
   /** Main `chrome-overlay:v1:reset` cleared our acquire; effect cleanup must not call `release()`. */
   const leaseRevokedByResetRef = useRef(false);
-  const { reset, acquire, release, post } = useChromeOverlay();
+  const { reset, acquire, release, post } = useChromeShellMenuOverlay();
 
   const close = useCallback(() => setOpen(false), []);
   openRef.current = open;
@@ -55,7 +55,7 @@ export default function ProfileMenuButton({
     try {
       await post(payload);
     } catch (err) {
-      console.error('ProfileMenuButton chromeOverlayV1Post', err);
+      console.error('ProfileMenuButton chromeShellMenuOverlayV1Post', err);
     }
   }, [profiles, activeProfile, onEditProfile, post]);
 
@@ -104,7 +104,7 @@ export default function ProfileMenuButton({
   }, [open, syncMenuToOverlay]);
 
   useEffect(() => {
-    const unsub = window.electronAPI?.onChromeOverlaySuperseded?.(() => {
+    const unsub = window.electronAPI?.onChromeShellMenuOverlaySuperseded?.(() => {
       if (pendingOwnResetRef.current) return;
       if (!openRef.current) return;
       leaseRevokedByResetRef.current = true;

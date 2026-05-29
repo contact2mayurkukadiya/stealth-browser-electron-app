@@ -6,6 +6,7 @@ import React, {
 } from 'react';
 
 const ChromeOverlayContext = createContext(null);
+const ChromeShellMenuOverlayContext = createContext(null);
 
 /**
  * Tier 2 (preferred for rich HTML above the tab WebContentsView): a dedicated full-window
@@ -35,14 +36,42 @@ export function ChromeOverlayProvider({ children }) {
     await window.electronAPI.chromeOverlayV1Post?.(payload);
   }, []);
 
-  const value = useMemo(
+  const shellReset = useCallback(async () => {
+    await window.electronAPI.chromeShellMenuOverlayV1Reset?.();
+  }, []);
+
+  const shellAcquire = useCallback(async () => {
+    await window.electronAPI.chromeShellMenuOverlayV1Acquire?.();
+  }, []);
+
+  const shellRelease = useCallback(async () => {
+    await window.electronAPI.chromeShellMenuOverlayV1Release?.();
+  }, []);
+
+  const shellPost = useCallback(async (payload) => {
+    await window.electronAPI.chromeShellMenuOverlayV1Post?.(payload);
+  }, []);
+
+  const overlayValue = useMemo(
     () => ({ reset, acquire, release, post }),
     [reset, acquire, release, post],
   );
 
+  const shellMenuValue = useMemo(
+    () => ({
+      reset: shellReset,
+      acquire: shellAcquire,
+      release: shellRelease,
+      post: shellPost,
+    }),
+    [shellReset, shellAcquire, shellRelease, shellPost],
+  );
+
   return (
-    <ChromeOverlayContext.Provider value={value}>
-      {children}
+    <ChromeOverlayContext.Provider value={overlayValue}>
+      <ChromeShellMenuOverlayContext.Provider value={shellMenuValue}>
+        {children}
+      </ChromeShellMenuOverlayContext.Provider>
     </ChromeOverlayContext.Provider>
   );
 }
@@ -51,6 +80,15 @@ export function useChromeOverlay() {
   const ctx = useContext(ChromeOverlayContext);
   if (!ctx) {
     throw new Error('useChromeOverlay must be used within ChromeOverlayProvider');
+  }
+  return ctx;
+}
+
+/** Compact overlay for settings/bookmark/profile menus — isolated from Lens + omnibox overlay. */
+export function useChromeShellMenuOverlay() {
+  const ctx = useContext(ChromeShellMenuOverlayContext);
+  if (!ctx) {
+    throw new Error('useChromeShellMenuOverlay must be used within ChromeOverlayProvider');
   }
   return ctx;
 }

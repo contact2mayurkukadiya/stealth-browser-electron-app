@@ -870,8 +870,12 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         tooltipView: null,
         /** Full-window WebContentsView for HTML menus above tab layer (no tab detach). */
         chromeOverlayView: null,
+        /** Compact WebContentsView for shell menus (settings, bookmarks, profile). */
+        chromeShellMenuOverlayView: null,
         /** Ref-count for chrome-overlay:v1 acquire/release from trusted shell. */
         chromeOverlayAcquireCount: 0,
+        /** Ref-count for chrome-shell-menu-overlay:v1 acquire/release. */
+        chromeShellMenuOverlayAcquireCount: 0,
         chromeOverlayOmniboxMode: false,
         chromeOverlayBlurDismissPending: false,
         lastOmniboxOverlayPatch: null,
@@ -951,6 +955,15 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
             } catch (_) { }
             context.chromeOverlayView = null;
         }
+        if (context.chromeShellMenuOverlayView) {
+            try { context.window.contentView.removeChildView(context.chromeShellMenuOverlayView); } catch (_) { }
+            try {
+                if (!context.chromeShellMenuOverlayView.webContents.isDestroyed()) {
+                    context.chromeShellMenuOverlayView.webContents.destroy();
+                }
+            } catch (_) { }
+            context.chromeShellMenuOverlayView = null;
+        }
         if (context.lensSessions) {
             for (const sessionState of context.lensSessions.values()) {
                 const sidebarView = sessionState?.sidebarView;
@@ -970,6 +983,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
             context.tabContentView = null;
         }
         context.chromeOverlayAcquireCount = 0;
+        context.chromeShellMenuOverlayAcquireCount = 0;
     });
 
     window.on('closed', () => {
@@ -989,6 +1003,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     });
 
     createChromeOverlayLayer(context);
+    createChromeShellMenuOverlayLayer(context);
     createTooltipOverlay(context);
     ensureChromeOverlayOnTop(context);
     return context;
@@ -1129,6 +1144,28 @@ function createChromeOverlayLayer(context) {
     context.chromeOverlayView = overlayView;
 }
 
+function createChromeShellMenuOverlayLayer(context) {
+    if (context.chromeShellMenuOverlayView) return;
+    const overlayView = new WebContentsView({
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+        },
+    });
+    overlayView.setBackgroundColor('#00000000');
+    overlayView.webContents.once('did-finish-load', () => {
+        sendChromeShellMenuOverlayThemePatch(context);
+    });
+    overlayView.webContents.loadURL('app://localhost/chrome-overlay.html?shellMenu=1').catch((err) => {
+        console.error('chrome-shell-menu-overlay load', err);
+    });
+    context.window.contentView.addChildView(overlayView);
+    overlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    context.chromeShellMenuOverlayView = overlayView;
+}
+
 /**
  * Tab WebContentsView stays below chrome overlay; Lens sidebar stays above overlay
  * so Google Lens results remain clickable/scrollable; tooltip stays topmost.
@@ -1155,6 +1192,9 @@ function ensureChromeOverlayOnTop(context) {
         }
         if (context.chromeOverlayView && !context.chromeOverlayView.webContents.isDestroyed()) {
             cv.addChildView(context.chromeOverlayView);
+        }
+        if (context.chromeShellMenuOverlayView && !context.chromeShellMenuOverlayView.webContents.isDestroyed()) {
+            cv.addChildView(context.chromeShellMenuOverlayView);
         }
         if (lensSession?.selectionActive && lensSession.sidebarView && !lensSession.sidebarView.webContents.isDestroyed()) {
             addTabContentChildView(context, lensSession.sidebarHostView || lensSession.sidebarView);
@@ -1686,6 +1726,143 @@ function computeOmniboxOverlayBounds(context, patch) {
     };
 }
 
+function clampNumber(value, min, max) {
+    return Math.max(min, Math.min(value, max));
+}
+
+function estimateMenuRowsHeight(items, rowHeight = 38, separatorHeight = 13, padding = 12) {
+    if (!Array.isArray(items) || items.length === 0) return padding;
+    return items.reduce((sum, item) => (
+        sum + (item?.type === 'separator' ? separatorHeight : rowHeight)
+    ), padding);
+}
+
+function menuOverlayBoundsFromPanel(context, panelRect, options = {}) {
+    const pad = 8;
+    const shadowMargin = Number.isFinite(Number(options.shadowMargin))
+        ? Number(options.shadowMargin)
+        : 16;
+    const { width: windowW, height: windowH } = context.window.getContentBounds();
+    const panelLeft = clampNumber(Math.round(Number(panelRect.left) || 0), pad, windowW - pad);
+    const panelTop = clampNumber(Math.round(Number(panelRect.top) || 0), pad, windowH - pad);
+    const panelWidth = Math.max(1, Math.round(Number(panelRect.width) || 1));
+    const panelHeight = Math.max(1, Math.round(Number(panelRect.height) || 1));
+    const extraLeft = Math.max(0, Math.round(Number(options.extraLeft) || 0));
+    const extraRight = Math.max(0, Math.round(Number(options.extraRight) || 0));
+    const extraTop = Math.max(0, Math.round(Number(options.extraTop) || 0));
+    const extraBottom = Math.max(0, Math.round(Number(options.extraBottom) || 0));
+
+    const wantedLeft = panelLeft - extraLeft - shadowMargin;
+    const wantedTop = panelTop - extraTop - shadowMargin;
+    const wantedRight = panelLeft + panelWidth + extraRight + shadowMargin;
+    const wantedBottom = panelTop + panelHeight + extraBottom + shadowMargin;
+    const x = Math.max(0, Math.min(windowW - 1, wantedLeft));
+    const y = Math.max(0, Math.min(windowH - 1, wantedTop));
+    const right = Math.max(x + 1, Math.min(windowW, wantedRight));
+    const bottom = Math.max(y + 1, Math.min(windowH, wantedBottom));
+
+    return {
+        x,
+        y,
+        width: Math.max(1, right - x),
+        height: Math.max(1, bottom - y),
+        viewportWidth: windowW,
+        viewportHeight: windowH,
+    };
+}
+
+function computeMenuOverlayBounds(context, patch) {
+    const pad = 8;
+    const { width: windowW, height: windowH } = context.window.getContentBounds();
+    const kind = patch?.kind;
+
+    if (kind === 'bookmarkContextMenu') {
+        const menuWidth = 220;
+        const rawItems = Array.isArray(patch.items) ? patch.items.slice(0, 20) : [];
+        const left = clampNumber(Math.round(Number(patch.clientX) || 0), pad, windowW - menuWidth - pad);
+        const top = clampNumber(Math.round(Number(patch.clientY) || 0), pad, windowH - 48 - pad);
+        const height = Math.min(windowH - top - pad, estimateMenuRowsHeight(rawItems));
+        return menuOverlayBoundsFromPanel(context, { left, top, width: menuWidth, height });
+    }
+
+    if (kind === 'bookmarkFolderMenu') {
+        const ar = patch.anchorRect || {};
+        const minW = 240;
+        const maxW = 420;
+        let width = Math.round(Number(ar.width) || 280);
+        width = clampNumber(width, minW, maxW);
+        const left = clampNumber(Math.round(Number(ar.left) || 0), pad, windowW - width - pad);
+        const top = clampNumber(
+            Math.round(Number(ar.top) || 0) + Math.round(Number(ar.height) || 0) + 4,
+            pad,
+            windowH - 80 - pad,
+        );
+        const items = Array.isArray(patch.items) ? patch.items.slice(0, 400) : [];
+        const maxH = Math.max(100, Math.min(windowH * 0.9, windowH - top - pad));
+        const listHeight = items.length === 0 ? 56 : Math.min(items.length * 36 + 8, maxH - 40);
+        const height = Math.min(maxH, 40 + Math.max(56, listHeight));
+        return menuOverlayBoundsFromPanel(context, { left, top, width, height });
+    }
+
+    if (kind === 'bookmarkEditor') {
+        const ar = patch.anchorRect || {};
+        const panelWidth = Math.min(340, Math.max(280, windowW - 16));
+        const left0 = Math.round(Number(ar.left) || 0);
+        const top0 = Math.round(Number(ar.top) || 0);
+        const w0 = Math.max(1, Math.round(Number(ar.width) || 32));
+        const h0 = Math.max(1, Math.round(Number(ar.height) || 32));
+        const left = clampNumber(left0 + w0 - panelWidth, pad, windowW - panelWidth - pad);
+        const top = clampNumber(top0 + h0 + 6, pad, windowH - 280 - pad);
+        const height = Math.min(480, windowH - top - pad);
+        return menuOverlayBoundsFromPanel(context, { left, top, width: panelWidth, height });
+    }
+
+    if (kind === 'profileMenu') {
+        const r = patch.menuRect || {};
+        const width = Math.round(Number(r.width) || 260);
+        const left = clampNumber(Math.round(Number(r.left) || 0), pad, windowW - width - pad);
+        const top = clampNumber(Math.round(Number(r.top) || 0), pad, windowH - 80 - pad);
+        const items = Array.isArray(patch.items) ? patch.items : [];
+        const rows = items.length + 1 + (patch.showEdit ? 1 : 0);
+        const separators = 1 + (patch.showEdit ? 1 : 0);
+        const height = Math.min(windowH - top - pad, rows * 42 + separators * 13 + 16);
+        return menuOverlayBoundsFromPanel(context, { left, top, width, height });
+    }
+
+    if (kind === 'appMenu') {
+        const r = patch.menuRect || {};
+        const width = Math.round(Number(r.width) || 320);
+        const left = clampNumber(Math.round(Number(r.left) || 0), pad, windowW - width - pad);
+        const top = clampNumber(Math.round(Number(r.top) || 0), pad, windowH - 80 - pad);
+        const items = Array.isArray(patch.items) ? patch.items : [];
+        const submenus = patch.submenus && typeof patch.submenus === 'object' ? patch.submenus : {};
+        const submenuHeight = Object.values(submenus).reduce((maxHeight, submenuItems) => (
+            Math.max(maxHeight, estimateMenuRowsHeight(submenuItems, 42, 13, 20))
+        ), 0);
+        const estimatedHeight = Math.max(
+            240,
+            estimateMenuRowsHeight(items, 42, 13, 20),
+            Math.min(420, submenuHeight),
+        );
+        const height = Math.min(windowH - top - pad, estimatedHeight);
+        const submenuWidth = items.reduce((maxWidth, item) => {
+            if (!item?.submenuKey || !Array.isArray(submenus[item.submenuKey])) return maxWidth;
+            return Math.max(maxWidth, Math.round(Number(item.submenuWidth) || 320));
+        }, 0);
+        return menuOverlayBoundsFromPanel(context, {
+            left,
+            top,
+            width,
+            height,
+        }, {
+            extraLeft: submenuWidth ? submenuWidth + 6 : 0,
+            extraBottom: submenuWidth ? 16 : 0,
+        });
+    }
+
+    return null;
+}
+
 function layoutChromeOverlayBounds(context, patch) {
     if (!context?.chromeOverlayView || context.chromeOverlayView.webContents.isDestroyed()) return null;
     if (context.chromeOverlayAcquireCount <= 0) return null;
@@ -1773,6 +1950,10 @@ function getWindowContextByChromeOverlaySender(sender) {
     for (const ctx of windowContextsById.values()) {
         const ov = ctx.chromeOverlayView;
         if (ov && !ov.webContents.isDestroyed() && ov.webContents === sender) {
+            return ctx;
+        }
+        const shellOv = ctx.chromeShellMenuOverlayView;
+        if (shellOv && !shellOv.webContents.isDestroyed() && shellOv.webContents === sender) {
             return ctx;
         }
     }
@@ -3968,6 +4149,23 @@ ipcMain.on(C.IPC_SEND.TOOLTIP_HIDE, (e) => {
 // ─── Chrome overlay layer (HTML above tab WebContentsView, no tab detach) ───
 const CHROME_OVERLAY_POST_MAX_BYTES = 256 * 1024;
 
+const SHELL_MENU_OVERLAY_KINDS = new Set([
+    'appMenu',
+    'profileMenu',
+    'bookmarkContextMenu',
+    'bookmarkFolderMenu',
+    'bookmarkEditor',
+]);
+
+function isShellMenuOverlayKind(kind) {
+    return typeof kind === 'string' && SHELL_MENU_OVERLAY_KINDS.has(kind);
+}
+
+function ensureChromeShellMenuOverlayLayer(context) {
+    if (!context) return;
+    createChromeShellMenuOverlayLayer(context);
+}
+
 /** Clear shell overlay content; keep Lens ref-count so the left workspace can return after dismiss. */
 ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RESET, (e) => {
     if (!isSenderTrusted(e)) return { ok: false };
@@ -4007,10 +4205,6 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_ACQUIRE, (e) => {
     const context = getWindowContextByEventSender(e.sender);
     if (!context?.chromeOverlayView) return { ok: false };
     context.chromeOverlayAcquireCount = (context.chromeOverlayAcquireCount || 0) + 1;
-    layoutChromeOverlayFullWindowBounds(context);
-    if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
-        postLensSelectionPatch(context);
-    }
     ensureChromeOverlayOnTop(context);
     return { ok: true };
 });
@@ -4080,18 +4274,11 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
             const overlayBounds = layoutChromeOverlayBounds(context, patch);
             if (overlayBounds) patch.overlayBounds = overlayBounds;
             ensureChromeOverlayOnTop(context);
-        } else if (
-            patch.kind === 'appMenu' ||
-            patch.kind === 'profileMenu' ||
-            patch.kind === 'bookmarkContextMenu' ||
-            patch.kind === 'bookmarkFolderMenu' ||
-            patch.kind === 'bookmarkEditor'
-        ) {
-            layoutChromeOverlayFullWindowBounds(context);
-            if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
-                postLensSelectionPatch(context);
-            }
+        } else if (patch.kind === 'lensSelection' || patch.kind === 'chromeTheme') {
+            layoutChromeOverlayBounds(context, patch);
             ensureChromeOverlayOnTop(context);
+        } else if (isShellMenuOverlayKind(patch.kind)) {
+            return { ok: false };
         }
         context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
     } catch (err) {
@@ -4103,6 +4290,100 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
             if (context.chromeOverlayAcquireCount <= 0) return;
             focusChromeOverlayWebContents(context);
         });
+    }
+    return { ok: true };
+});
+
+ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_RESET, (e) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context?.chromeShellMenuOverlayView) return { ok: false };
+    context.chromeShellMenuOverlayAcquireCount = 0;
+    try {
+        if (!context.chromeShellMenuOverlayView.webContents.isDestroyed()) {
+            context.chromeShellMenuOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
+            context.chromeShellMenuOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        }
+    } catch (err) {
+        console.error(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_RESET, err?.message || err);
+    }
+    try {
+        if (context.window?.webContents && !context.window.webContents.isDestroyed()) {
+            context.window.webContents.send(C.IPC_EVENT.CHROME_SHELL_MENU_OVERLAY_SUPERSEDED);
+        }
+    } catch (err) {
+        console.error('chrome-shell-menu-overlay:v1:superseded send', err?.message || err);
+    }
+    return { ok: true };
+});
+
+ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_ACQUIRE, (e) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context?.chromeShellMenuOverlayView) return { ok: false };
+    ensureChromeShellMenuOverlayLayer(context);
+    context.chromeShellMenuOverlayAcquireCount = (context.chromeShellMenuOverlayAcquireCount || 0) + 1;
+    ensureChromeOverlayOnTop(context);
+    return { ok: true };
+});
+
+ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_RELEASE, (e) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context?.chromeShellMenuOverlayView) return { ok: false };
+    if (context.chromeShellMenuOverlayAcquireCount > 0) {
+        context.chromeShellMenuOverlayAcquireCount -= 1;
+    }
+    if (context.chromeShellMenuOverlayAcquireCount <= 0) {
+        context.chromeShellMenuOverlayAcquireCount = 0;
+        try {
+            if (!context.chromeShellMenuOverlayView.webContents.isDestroyed()) {
+                context.chromeShellMenuOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
+                context.chromeShellMenuOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+            }
+        } catch (err) {
+            console.error(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_RELEASE, err?.message || err);
+        }
+    }
+    ensureChromeOverlayOnTop(context);
+    return { ok: true };
+});
+
+ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, (e, payload) => {
+    if (!isSenderTrusted(e)) return { ok: false };
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context?.chromeShellMenuOverlayView || context.chromeShellMenuOverlayView.webContents.isDestroyed()) {
+        return { ok: false };
+    }
+    if ((context.chromeShellMenuOverlayAcquireCount || 0) <= 0) return { ok: false };
+    const patch = payload ?? {};
+    if (!isShellMenuOverlayKind(patch.kind)) return { ok: false };
+    try {
+        const json = JSON.stringify(patch);
+        if (json.length > CHROME_OVERLAY_POST_MAX_BYTES) return { ok: false };
+    } catch {
+        return { ok: false };
+    }
+    try {
+        const overlayBounds = computeMenuOverlayBounds(context, patch);
+        if (overlayBounds) {
+            context.chromeShellMenuOverlayView.setBounds({
+                x: overlayBounds.x,
+                y: overlayBounds.y,
+                width: overlayBounds.width,
+                height: overlayBounds.height,
+            });
+            patch.overlayBounds = overlayBounds;
+            patch.overlayViewport = {
+                width: overlayBounds.viewportWidth,
+                height: overlayBounds.viewportHeight,
+            };
+        }
+        ensureChromeOverlayOnTop(context);
+        context.chromeShellMenuOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
+    } catch (err) {
+        console.error(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, err?.message || err);
+        return { ok: false };
     }
     return { ok: true };
 });
@@ -4880,6 +5161,16 @@ function sendChromeOverlayThemePatch(context) {
     }
 }
 
+function sendChromeShellMenuOverlayThemePatch(context) {
+    const ov = context?.chromeShellMenuOverlayView;
+    if (!ov || ov.webContents.isDestroyed()) return;
+    try {
+        ov.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, getChromeOverlayThemePatchForContext(context));
+    } catch (_) {
+        /* overlay may be tearing down */
+    }
+}
+
 function broadcastThemeApply() {
     const settings = loadSettings();
     const payload = { settings };
@@ -4901,6 +5192,7 @@ function broadcastThemeApply() {
             }
         }
         sendChromeOverlayThemePatch(ctx);
+        sendChromeShellMenuOverlayThemePatch(ctx);
     }
 }
 
