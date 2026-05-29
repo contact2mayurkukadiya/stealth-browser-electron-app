@@ -1309,6 +1309,36 @@ function destroyLensSidebarViews(context, lensSession) {
     }
 }
 
+function suspendLensSessionPresentation(context, tabId = context?.activeTabId) {
+    const lensSession = getLensSession(context, tabId, false);
+    if (!context || !tabId || !lensSession?.selectionActive) return false;
+
+    if (lensSession.sidebarView) {
+        removeTabContentChildView(context, lensSession.sidebarHostView || lensSession.sidebarView);
+    }
+
+    if (lensSession.overlayAcquired && context.chromeOverlayAcquireCount > 0) {
+        context.chromeOverlayAcquireCount -= 1;
+    }
+    lensSession.overlayAcquired = false;
+    repairLensChromeOverlayAcquireCount(context);
+
+    if ((context.chromeOverlayAcquireCount || 0) <= 0 && isViewWebContentsAlive(context.chromeOverlayView)) {
+        try {
+            context.chromeOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, { kind: 'hide' });
+            context.chromeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        } catch (_) { }
+    }
+
+    if (context.activeTabId === tabId) {
+        context.lensOverlayBounds = null;
+        context.chromeOverlayFullWindowMode = false;
+        context.isActiveTabTemporarilyHidden = false;
+        context.activeTabViewRemovedForShellOverlay = false;
+    }
+    return true;
+}
+
 function getFirstActiveLensTabId(context) {
     if (!context?.lensSessions) return null;
     for (const [tabId, sessionState] of context.lensSessions.entries()) {
@@ -2147,6 +2177,7 @@ function restoreActiveTabViewFromShellOverlay(context) {
 function activateTabInContext(context, id) {
     if (!context || !context.tabs[id]) return false;
     if (context.activeTabId !== id) {
+        suspendLensSessionPresentation(context, context.activeTabId);
         dismissChromeShellMenuOverlay(context, 'browser-action');
     }
     const skipSameTab =
@@ -2304,9 +2335,6 @@ function openUrlInNewTab(targetUrl, options = {}) {
     const resolvedTargetUrl = resolveInternalPageUrl(targetUrl);
     if (!isAllowedTabNavigationUrl(resolvedTargetUrl)) return false;
 
-    if (!openInBackground && !options.keepLensOpen && getLensSession(context, context.activeTabId, false)?.selectionActive) {
-        closeGoogleLensSelection(context, { closeSidebar: true });
-    }
     const newTabId = generateTabId();
     const stealthTab = !!context.stealthWindow;
     createTab(context, newTabId, resolvedTargetUrl, stealthTab, { activate: !openInBackground });
@@ -6216,9 +6244,6 @@ ipcMain.on(C.IPC_SEND.NEW_TAB, (e, { id, isStealth, url, source, history } = {})
         markNextNavigationTransition(id, source || 'link');
     }
 
-    if (getLensSession(context, context.activeTabId, false)?.selectionActive) {
-        closeGoogleLensSelection(context, { closeSidebar: true });
-    }
     const stealthTab = !!context.stealthWindow;
     createTab(context, id, resolvedUrl, stealthTab, {
         navigationHistory: history || null,
