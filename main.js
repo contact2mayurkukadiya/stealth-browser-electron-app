@@ -1013,9 +1013,6 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         if (mainWindow === window) {
             mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed()) || null;
         }
-        if (!appIsQuitting && windowContextsById.size === 0) {
-            createProfilePickerWindow();
-        }
     });
 
     createChromeOverlayLayer(context);
@@ -1055,7 +1052,7 @@ function createProfilePickerWindow() {
     profilePickerWindow = picker;
     picker.on('closed', () => {
         profilePickerWindow = null;
-        if (windowContextsById.size === 0) {
+        if (windowContextsById.size === 0 && process.platform !== C.PLATFORM.DARWIN) {
             app.quit();
         }
     });
@@ -3738,6 +3735,27 @@ function restoreRecentlyClosedWindowEntry(entry) {
     return true;
 }
 
+function consumeRecentlyClosedWindowForProfile(profileId) {
+    if (!profileId) return null;
+    const stack = getOrCreateRecentlyClosedForProfile(profileId);
+    const index = stack.findIndex((entry) => (
+        entry?.type === 'window' &&
+        entry.profileId === profileId &&
+        Array.isArray(entry.tabs) &&
+        entry.tabs.length > 0
+    ));
+    if (index < 0) return null;
+    const [entry] = stack.splice(index, 1);
+    rebuildApplicationMenu();
+    appLogger.info('recently-closed:consume-window-for-profile', {
+        profileId,
+        closedAt: entry.closedAt,
+        tabCount: entry.tabs.length,
+        remaining: stack.length,
+    });
+    return entry;
+}
+
 function restoreRecentlyClosedEntry(context, entry) {
     if (!entry) return false;
     if (entry.type === 'window') {
@@ -4139,6 +4157,19 @@ ipcMain.handle(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH, (event) => {
     return { ok: true };
 });
 
+/** Close the browser shell window that owns the sender (normal or stealth). */
+ipcMain.handle(C.IPC_INVOKE.WINDOW_CLOSE_CURRENT, (event) => {
+    if (!isSenderTrusted(event)) return { ok: false };
+    const context = getWindowContextByEventSender(event.sender);
+    if (!context?.window || context.window.isDestroyed()) return { ok: false };
+    try {
+        context.window.close();
+    } catch (_) {
+        return { ok: false };
+    }
+    return { ok: true };
+});
+
 ipcMain.handle(C.IPC_INVOKE.WINDOW_GET_BOOTSTRAP, (event) => {
     if (!isSenderTrusted(event)) return null;
     const context = getWindowContextByEventSender(event.sender);
@@ -4277,9 +4308,20 @@ ipcMain.handle(C.IPC_INVOKE.PROFILE_OPEN_WINDOW, (event, payload = {}) => {
     const profile = ensureProfile(payload.profileId);
     saveProfiles();
     const closePicker = payload.closeProfilePicker === true;
-    const sessionForWindowId = closePicker ? startupSessionDoc : null;
+    const closedWindow = closePicker ? consumeRecentlyClosedWindowForProfile(profile.profileId) : null;
+    const sessionForWindowId = closePicker && !closedWindow
+        ? (startupSessionDoc || readDecodedSessionDoc())
+        : null;
     const resolvedWindowId = findSessionWindowIdForProfile(sessionForWindowId, profile.profileId);
     const created = createWindow({ profileId: profile.profileId, windowId: resolvedWindowId });
+    if (closedWindow) {
+        windowBootstrapById.set(created.windowId, {
+            restoreWindow: {
+                tabs: closedWindow.tabs,
+                activeTabId: closedWindow.activeTabId,
+            },
+        });
+    }
     if (closePicker) {
         startupSessionDoc = null;
         if (profilePickerWindow && !profilePickerWindow.isDestroyed()) {
@@ -4306,7 +4348,6 @@ ipcMain.handle(C.IPC_INVOKE.PROFILE_CLOSE_CURRENT, (event) => {
         !ctx.window.isDestroyed()
     ));
     if (targets.length === 0) {
-        if (windowContextsById.size === 0) createProfilePickerWindow();
         return { ok: true };
     }
     for (const target of targets) {
@@ -6293,10 +6334,13 @@ ipcMain.on(C.IPC_SEND.TAB_SET_AUDIO_MUTED, (e, { id, muted }) => {
     } catch (_) { }
 });
 
-ipcMain.on(C.IPC_SEND.CLOSE_TAB, (e, { id }) => {
+ipcMain.on(C.IPC_SEND.CLOSE_TAB, (e, payload = {}) => {
     if (!isSenderTrusted(e)) return;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return;
+    const id = payload?.id;
+    const closeWindowIfLast = payload?.closeWindowIfLast === true;
+    if (!id || typeof id !== 'string') return;
     dismissChromeShellMenuOverlay(context, 'browser-action');
 
     const tabSnapshot = captureClosedTabSnapshot(context, id);
@@ -6337,6 +6381,19 @@ ipcMain.on(C.IPC_SEND.CLOSE_TAB, (e, { id }) => {
             url: tabSnapshot.url,
             history: tabSnapshot.history,
         });
+    }
+
+    const tabsRemaining =
+        Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length;
+    if (closeWindowIfLast && tabsRemaining === 0) {
+        try {
+            if (!context.window.isDestroyed()) context.window.close();
+        } catch (err) {
+            appLogger.error('ipc:close-tab:close-window', {
+                windowId: context.windowId,
+                error: appLogger.serializeError(err),
+            });
+        }
     }
 });
 
@@ -6512,6 +6569,25 @@ app.whenReady().then(async () => {
     const decodedSession = readDecodedSessionDoc();
     startupSessionDoc = decodedSession;
     createProfilePickerWindow();
+});
+
+/** macOS: dock icon click with no browser windows opens the profile picker (not on cold start). */
+app.on('activate', () => {
+    if (process.platform !== C.PLATFORM.DARWIN) return;
+    if (appIsQuitting) return;
+    if (windowContextsById.size > 0) return;
+    if (profilePickerWindow && !profilePickerWindow.isDestroyed()) {
+        profilePickerWindow.show();
+        profilePickerWindow.focus();
+        return;
+    }
+    createProfilePickerWindow();
+});
+
+/** Windows/Linux: quit when all windows are closed; macOS stays alive with zero windows. */
+app.on('window-all-closed', () => {
+    if (process.platform === C.PLATFORM.DARWIN) return;
+    if (!appIsQuitting) app.quit();
 });
 
 app.on('before-quit', (event) => {

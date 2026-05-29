@@ -268,6 +268,7 @@ const IPC_INVOKE = freeze({
   WINDOW_CREATE: 'window:create',
   WINDOW_CREATE_STEALTH: 'window:create-stealth',
   WINDOW_CLOSE_IF_STEALTH: 'window:close-if-stealth',
+  WINDOW_CLOSE_CURRENT: 'window:close-current',
   WINDOW_GET_BOOTSTRAP: 'window:get-bootstrap',
   PROFILE_LIST: 'profile:list',
   PROFILE_GET_CURRENT: 'profile:get-current',

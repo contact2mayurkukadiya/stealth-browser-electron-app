@@ -10,6 +10,7 @@ const C = Object.freeze({
         "WINDOW_CREATE": "window:create",
         "WINDOW_CREATE_STEALTH": "window:create-stealth",
         "WINDOW_CLOSE_IF_STEALTH": "window:close-if-stealth",
+        "WINDOW_CLOSE_CURRENT": "window:close-current",
         "WINDOW_GET_BOOTSTRAP": "window:get-bootstrap",
         "PROFILE_LIST": "profile:list",
         "PROFILE_GET_CURRENT": "profile:get-current",
@@ -172,7 +173,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         history: options && options.history ? options.history : undefined,
     }),
     switchTab: (id) => ipcRenderer.send(C.IPC_SEND.SWITCH_TAB, { id }),
-    closeTab: (id) => ipcRenderer.send(C.IPC_SEND.CLOSE_TAB, { id }),
+    closeTab: (id, options = {}) => ipcRenderer.send(C.IPC_SEND.CLOSE_TAB, {
+        id,
+        closeWindowIfLast: options.closeWindowIfLast === true,
+    }),
     navigate: (id, url, options = {}) => ipcRenderer.send(C.IPC_SEND.NAVIGATE, {
         id,
         url,
@@ -215,6 +219,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE_STEALTH),
     /** Close this BrowserWindow only if it is a stealth window; normal windows ignore (returns ok: false). */
     closeStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH),
+    /** Close the shell BrowserWindow that owns this renderer (normal or stealth). */
+    closeCurrentWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CLOSE_CURRENT),
     windowGetBootstrap: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_GET_BOOTSTRAP),
     /** True when this renderer lives in a stealth (incognito) window — including tab WebContents. */
     isStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.IS_STEALTH_WINDOW),

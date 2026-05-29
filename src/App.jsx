@@ -134,27 +134,22 @@ function AppShell() {
     window.electronAPI.newTab(id, st, initialUrl, options);
   }, [dispatch]);
 
-  /** Normal windows always keep one tab; stealth windows close when the last tab goes away. */
-  const createTabOrCloseStealthWindow = useCallback(() => {
-    setTimeout(() => {
-      if (stealthWindowRef.current) {
-        window.electronAPI.closeStealthWindow?.();
-      } else {
-        createTab();
-      }
-    }, 0);
-  }, [createTab]);
+  /** Close this browser shell when the last tab is gone (main process performs teardown). */
+  const closeCurrentShellWindow = useCallback(() => {
+    window.electronAPI.closeCurrentWindow?.();
+  }, []);
 
   const closeTab = useCallback((id) => {
-    const { tabs, tabOrder, currentTabId } = stateRef.current;
+    const { tabOrder, currentTabId } = stateRef.current;
     const isActive = currentTabId === id;
+    const remaining = tabOrder.filter((tid) => tid !== id);
+    const closeWindowIfLast = remaining.length === 0;
 
     dispatch(removeTab(id));
-    window.electronAPI.closeTab(id);
+    window.electronAPI.closeTab(id, { closeWindowIfLast });
 
-    if (isActive) {
+    if (isActive && !closeWindowIfLast) {
       const idx = tabOrder.indexOf(id);
-      const remaining = tabOrder.filter(tid => tid !== id);
       const nextId = remaining[idx] ?? remaining[idx - 1];
 
       if (nextId) {
@@ -163,11 +158,9 @@ function AppShell() {
           dispatch(setCurrentTab(nextId));
           window.electronAPI.switchTab(nextId);
         }, 0);
-      } else {
-        createTabOrCloseStealthWindow();
       }
     }
-  }, [dispatch, createTabOrCloseStealthWindow]);
+  }, [dispatch]);
 
   const handleDragEnd = useCallback((newTabOrder) => {
     dispatch(reorderTabs(newTabOrder));
@@ -312,10 +305,10 @@ function AppShell() {
       if (fallbackTabId) {
         dispatch(setCurrentTab(fallbackTabId));
       } else {
-        createTabOrCloseStealthWindow();
+        closeCurrentShellWindow();
       }
     }
-  }, [dispatch, createTabOrCloseStealthWindow]);
+  }, [dispatch, closeCurrentShellWindow]);
 
   const handleTabMoveNewWindowShortcut = useCallback(() => {
     const id = stateRef.current.currentTabId;

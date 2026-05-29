@@ -229,8 +229,6 @@ npm run start
 
 - Profiles/History/Settings/Bookmarks Export and import
 - Profiles/History/Settings/Bookmarks Server Sync
-- Restore tabs
-- Restore Previous Windows which is closed recently.
 - Tab Groups
 - Extension Support
 - Download/Permission Popups
