@@ -726,18 +726,6 @@ export default function NavBar({
         {isBookmarked ? STAR_FILLED : STAR_EMPTY}
       </button>
 
-      <button
-        ref={moreBtnRef}
-        id="more-btn"
-        className="btn"
-        title="Customize and control InviSurf"
-        aria-expanded={appMenuOpen}
-        aria-haspopup="menu"
-        onClick={openAppMenu}
-      >
-        {MORE_ICON}
-      </button>
-
       <ProfileMenuButton
         profiles={profiles}
         activeProfile={currentProfile}
@@ -749,6 +737,18 @@ export default function NavBar({
         onEditProfile={handleEditCurrentProfile}
         triggerTitle={`Profiles (${currentProfile?.displayName || 'Profile'})`}
       />
+
+      <button
+        ref={moreBtnRef}
+        id="more-btn"
+        className="btn"
+        title="Customize and control InviSurf"
+        aria-expanded={appMenuOpen}
+        aria-haspopup="menu"
+        onClick={openAppMenu}
+      >
+        {MORE_ICON}
+      </button>
 
       <ProfileEditorModal
         open={profileEditorOpen}

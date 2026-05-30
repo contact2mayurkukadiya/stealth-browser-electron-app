@@ -5,14 +5,8 @@ import { PROFILE_MENU_WIDTH } from '../utils/profileMenuRows';
 import './ProfileMenuButton.css';
 import { OVERLAY } from '../constants/conditionStrings.js';
 
-const CHEVRON = (
-  <svg className="profile-menu__chevron-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden>
-    <path fill="currentColor" d="M7 10l5 5 5-5z" />
-  </svg>
-);
-
 /**
- * Navbar profile control: avatar + chevron opens Chrome-style profile menu
+ * Navbar profile control: avatar circle opens Chrome-style profile menu
  * (same rows as three-dot menu profile submenu) in the shell menu overlay.
  */
 export default function ProfileMenuButton({
@@ -162,23 +156,25 @@ export default function ProfileMenuButton({
   }, [close, onProfileMenuCommand, onOpenProfile, onEditProfile, onAddProfile]);
 
   return (
-    <div className="profile-menu profile-menu--compact">
+    <div className="profile-menu">
       <button
         ref={triggerRef}
         type="button"
-        className="profile-menu__trigger"
+        className="profile-menu__trigger profile-menu__trigger--avatar-only"
         aria-expanded={open}
         aria-haspopup="menu"
+        aria-label={
+          buttonProfile
+            ? `Profiles — ${buttonProfile.displayName || 'Profile'}`
+            : 'Profiles'
+        }
         title={
           triggerTitle ||
           (buttonProfile ? `${buttonProfile.displayName || 'Profile'} — profiles` : 'Profiles')
         }
         onClick={() => setOpen((v) => !v)}
       >
-        <ProfileAvatar profile={buttonProfile} size="md" compactTrigger />
-        <span className="profile-menu__chevron" aria-hidden>
-          {CHEVRON}
-        </span>
+        <ProfileAvatar profile={buttonProfile} size="md" />
       </button>
     </div>
   );

@@ -5,30 +5,25 @@
   z-index: 15;
 }
 
-.profile-menu--compact .profile-menu__trigger {
-  display: flex;
+.profile-menu__trigger--avatar-only {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px 4px 6px;
-  min-height: 32px;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
   border: none;
-  border-radius: 999px;
+  border-radius: 50%;
   background: transparent;
-  color: var(--chrome-toolbar-icon, var(--chrome-fg));
   cursor: pointer;
   font: inherit;
+  line-height: 0;
 }
 
-.profile-menu--compact .profile-menu__trigger:hover {
+.profile-menu__trigger--avatar-only:hover {
   background: var(--chrome-tab-hover-bg);
 }
 
-.profile-menu__chevron {
-  display: flex;
-  align-items: center;
-  opacity: 0.85;
-}
-
-.profile-menu__chevron-icon {
-  display: block;
+.profile-menu__trigger--avatar-only:focus-visible {
+  outline: 2px solid var(--chrome-omnibox-focus-border, #1a73e8);
+  outline-offset: 2px;
 }
