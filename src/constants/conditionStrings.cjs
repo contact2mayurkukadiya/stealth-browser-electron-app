@@ -305,6 +305,7 @@ const IPC_INVOKE = freeze({
   APP_LOG_CLEAR: 'app:log-clear',
   COMPAT_GET_REPORT: 'compatDiag:getReport',
   COMPAT_CLEAR: 'compatDiag:clear',
+  IDENTITY_DIAG_GET_REPORT: 'identityDiag:getReport',
   SESSION_LOAD: 'session:load',
   SESSION_SAVE: 'session:save',
   HISTORY_SEARCH: 'history:search',

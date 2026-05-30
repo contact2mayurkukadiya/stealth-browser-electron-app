@@ -280,6 +280,31 @@ export default function SettingsApp() {
   const [diagReportText, setDiagReportText] = useState('');
   const [diagLoading, setDiagLoading] = useState(false);
 
+  const [identityReportText, setIdentityReportText] = useState('');
+  const [identityLoading, setIdentityLoading] = useState(false);
+
+  const refreshIdentityReport = useCallback(async () => {
+    setIdentityLoading(true);
+    try {
+      const report = await window.electronAPI.identityDiagGetReport({});
+      if (report == null) {
+        setIdentityReportText(JSON.stringify({
+          error: 'No browser window context was found for this settings page. Focus the main InviSurf window and try again.',
+        }, null, 2));
+      } else {
+        setIdentityReportText(JSON.stringify(report, null, 2));
+      }
+    } catch (err) {
+      setIdentityReportText(JSON.stringify({ error: String(err?.message || err) }, null, 2));
+    } finally {
+      setIdentityLoading(false);
+    }
+  }, []);
+
+  const copyIdentityReport = useCallback(() => {
+    window.electronAPI.clipboardWriteText(identityReportText);
+  }, [identityReportText]);
+
   const refreshDiagReport = useCallback(async () => {
     setDiagLoading(true);
     try {
@@ -585,6 +610,53 @@ export default function SettingsApp() {
                 groupName="searchEngine"
               />
             ))}
+          </div>
+        </section>
+
+        {/* ── Browser identity verification ───────────────────────────── */}
+        <section className="settings-section">
+          <h2 className="settings-section__title">Browser identity verification</h2>
+          <div className="settings-card">
+            <div className="setting-row">
+              <div className="setting-row__text">
+                <span className="setting-row__label">Local identity diagnostics</span>
+                <span className="setting-row__desc">
+                  Read-only report of InviSurf app paths, configured User-Agent, outbound Client
+                  Hint headers, GPU state, debug guard status, and the active tab&apos;s observed
+                  navigator values. Does not modify page runtime APIs or automate third-party
+                  fingerprint sites.
+                </span>
+              </div>
+            </div>
+            <div className="diag-panel">
+              <div className="diag-panel__actions">
+                <button
+                  type="button"
+                  className="diag-btn"
+                  onClick={refreshIdentityReport}
+                  disabled={identityLoading}
+                >
+                  {identityLoading ? 'Refreshing…' : 'Refresh identity report'}
+                </button>
+              </div>
+              <div className="diag-report-wrap">
+                <button
+                  type="button"
+                  className="diag-copy-icon-btn"
+                  onClick={copyIdentityReport}
+                  aria-label="Copy identity diagnostics JSON"
+                  title="Copy JSON"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="9" y="9" width="10" height="10" rx="2" ry="2" />
+                    <rect x="5" y="5" width="10" height="10" rx="2" ry="2" />
+                  </svg>
+                </button>
+                <pre className="diag-panel__pre" role="region" aria-label="Identity diagnostics JSON report">
+                  {identityReportText || 'Click “Refresh identity report” to inspect the active tab and session.'}
+                </pre>
+              </div>
+            </div>
           </div>
         </section>
 

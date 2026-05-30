@@ -1,5 +1,312 @@
 const { contextBridge, ipcRenderer, clipboard } = require('electron');
 
+const appMajor = process.versions.chrome.split('.')[0] || '146';
+const osPlatform = process.platform === 'darwin' ? 'macOS' : 'Windows';
+
+const mappedStandardBrands = [
+    { brand: 'Not_A Brand', version: '99' },
+    { brand: 'Chromium', version: appMajor },
+    { brand: 'Google Chrome', version: appMajor }
+];
+
+const compliantUserAgentData = {
+    brands: mappedStandardBrands,
+    mobile: false,
+    platform: osPlatform,
+    getHighEntropyValues: async (queryHints) => {
+        const metadataPayload = {
+            brands: mappedStandardBrands,
+            mobile: false,
+            platform: osPlatform
+        };
+        if (queryHints.includes('platformVersion')) {
+            metadataPayload.platformVersion = process.platform === 'darwin' ? '14.0.0' : '10.0.0';
+        }
+        if (queryHints.includes('architecture')) {
+            metadataPayload.architecture = 'x86';
+        }
+        if (queryHints.includes('bitness')) {
+            metadataPayload.bitness = '64';
+        }
+        return metadataPayload;
+    }
+};
+
+try {
+    // Inject the spoofed userAgentData and other browser signals into the main world so scripts can see it.
+    const { webFrame } = require('electron');
+    if (webFrame && typeof webFrame.executeJavaScript === 'function') {
+        webFrame.executeJavaScript(`
+            try {
+                // 1. Spoof navigator.userAgentData
+                Object.defineProperty(navigator, 'userAgentData', {
+                    get: () => (${JSON.stringify(compliantUserAgentData)}),
+                    configurable: true,
+                    enumerable: true
+                });
+
+                // 2. Spoof window.chrome (essential for Google login)
+                if (!window.chrome) {
+                    window.chrome = {};
+                }
+                window.chrome.app = window.chrome.app || {
+                    isInstalled: false,
+                    InstallState: {
+                        DISABLED: 'disabled',
+                        INSTALLED: 'installed',
+                        NOT_INSTALLED: 'not_installed'
+                    },
+                    RunningState: {
+                        CANNOT_RUN: 'cannot_run',
+                        READY_TO_RUN: 'ready_to_run',
+                        RUNNING: 'running'
+                    }
+                };
+                window.chrome.runtime = window.chrome.runtime || {
+                    OnInstalledReason: {
+                        CHROME_UPDATE: 'chrome_update',
+                        INSTALL: 'install',
+                        SHARED_MODULE_UPDATE: 'shared_module_update',
+                        UPDATE: 'update'
+                    },
+                    OnRestartRequiredReason: {
+                        APP_UPDATE: 'app_update',
+                        OS_UPDATE: 'os_update',
+                        PERIODIC: 'periodic'
+                    },
+                    PlatformArch: {
+                        ARM: 'arm',
+                        ARM64: 'arm64',
+                        MIPS: 'mips',
+                        MIPS64: 'mips64',
+                        X86_32: 'x86-32',
+                        X86_64: 'x86-64'
+                    },
+                    PlatformNaclArch: {
+                        ARM: 'arm',
+                        MIPS: 'mips',
+                        MIPS64: 'mips64',
+                        X86_32: 'x86-32',
+                        X86_64: 'x86-64'
+                    },
+                    PlatformOs: {
+                        ANDROID: 'android',
+                        CROS: 'cros',
+                        LINUX: 'linux',
+                        MAC: 'mac',
+                        OPENBSD: 'openbsd',
+                        WIN: 'win'
+                    },
+                    RequestUpdateCheckStatus: {
+                        NO_UPDATE: 'no_update',
+                        THROTTLED: 'throttled',
+                        UPDATE_AVAILABLE: 'update_available'
+                    }
+                };
+                // Mock loadTimes (deprecated but often checked by legacy scripts)
+                window.chrome.loadTimes = window.chrome.loadTimes || function() {
+                    return {
+                        requestTime: performance.timing.navigationStart / 1000,
+                        startLoadTime: performance.timing.navigationStart / 1000,
+                        commitLoadTime: performance.timing.responseStart / 1000,
+                        finishDocumentLoadTime: performance.timing.domContentLoadedEventEnd / 1000,
+                        finishLoadTime: performance.timing.loadEventEnd / 1000,
+                        firstPaintTime: (performance.timing.navigationStart + performance.now()) / 1000,
+                        firstPaintAfterLoadTime: 0,
+                        navigationType: "Other",
+                        wasFetchedViaSpdy: true,
+                        wasNpnNegotiated: true,
+                        npnNegotiatedProtocol: "h2",
+                        wasAlternateProtocolAvailable: false,
+                        connectionInfo: "h2"
+                    };
+                };
+                // Mock csi
+                window.chrome.csi = window.chrome.csi || function() {
+                    return {
+                        startE: performance.timing.navigationStart,
+                        onloadT: performance.timing.domContentLoadedEventEnd,
+                        pageT: performance.timing.loadEventEnd - performance.timing.navigationStart,
+                        tran: 15
+                    };
+                };
+
+                // 3. Spoof Plugins and MimeTypes
+                if (navigator.plugins.length === 0) {
+                    const PluginArray = function() {};
+                    PluginArray.prototype = Object.create(Array.prototype);
+                    PluginArray.prototype.refresh = function() {};
+                    PluginArray.prototype.item = function(i) { return this[i]; };
+                    PluginArray.prototype.namedItem = function(name) {
+                        for (let i = 0; i < this.length; i++) {
+                            if (this[i].name === name) return this[i];
+                        }
+                        return null;
+                    };
+
+                    const plugins = new PluginArray();
+                    const pdfPlugin = {
+                        0: { type: "application/pdf", suffixes: "pdf", description: "Portable Document Format", enabledPlugin: null },
+                        1: { type: "text/pdf", suffixes: "pdf", description: "Portable Document Format", enabledPlugin: null },
+                        description: "Portable Document Format",
+                        filename: "internal-pdf-viewer",
+                        length: 2,
+                        name: "Chrome PDF Plugin"
+                    };
+                    pdfPlugin[0].enabledPlugin = pdfPlugin;
+                    pdfPlugin[1].enabledPlugin = pdfPlugin;
+                    
+                    const pdfViewer = {
+                        0: { type: "application/pdf", suffixes: "pdf", description: "Portable Document Format", enabledPlugin: null },
+                        1: { type: "text/pdf", suffixes: "pdf", description: "Portable Document Format", enabledPlugin: null },
+                        description: "Portable Document Format",
+                        filename: "internal-pdf-viewer",
+                        length: 2,
+                        name: "Chrome PDF Viewer"
+                    };
+                    pdfViewer[0].enabledPlugin = pdfViewer;
+                    pdfViewer[1].enabledPlugin = pdfViewer;
+
+                    const nativeClient = {
+                        0: { type: "application/x-nacl", suffixes: "", description: "Native Client Executable", enabledPlugin: null },
+                        1: { type: "application/x-pnacl", suffixes: "", description: "Portable Native Client Executable", enabledPlugin: null },
+                        description: "",
+                        filename: "internal-nacl-plugin",
+                        length: 2,
+                        name: "Native Client"
+                    };
+                    nativeClient[0].enabledPlugin = nativeClient;
+                    nativeClient[1].enabledPlugin = nativeClient;
+
+                    plugins.push(pdfPlugin, pdfViewer, nativeClient);
+                    
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => plugins,
+                        configurable: true,
+                        enumerable: true
+                    });
+
+                    const MimeTypeArray = function() {};
+                    MimeTypeArray.prototype = Object.create(Array.prototype);
+                    MimeTypeArray.prototype.item = function(i) { return this[i]; };
+                    MimeTypeArray.prototype.namedItem = function(name) {
+                        for (let i = 0; i < this.length; i++) {
+                            if (this[i].type === name) return this[i];
+                        }
+                        return null;
+                    };
+
+                    const mimeTypes = new MimeTypeArray();
+                    mimeTypes.push(pdfPlugin[0], pdfPlugin[1], nativeClient[0], nativeClient[1]);
+
+                    Object.defineProperty(navigator, 'mimeTypes', {
+                        get: () => mimeTypes,
+                        configurable: true,
+                        enumerable: true
+                    });
+                }
+
+                // 4. Override WebAuthn (navigator.credentials)
+                if (window.__invisurf_webauthn) {
+                    const originalCreate = navigator.credentials.create.bind(navigator.credentials);
+                    const originalGet = navigator.credentials.get.bind(navigator.credentials);
+
+                    navigator.credentials.create = async function(options) {
+                        if (options && options.publicKey) {
+                            try {
+                                const result = await window.__invisurf_webauthn.create(options.publicKey);
+                                if (result && result.success) {
+                                    // Convert base64url strings back to ArrayBuffers
+                                    const base64urlToBuffer = (base64url) => {
+                                        if (!base64url) return null;
+                                        const padding = '='.repeat((4 - base64url.length % 4) % 4);
+                                        const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+                                        const rawData = window.atob(base64);
+                                        const outputArray = new Uint8Array(rawData.length);
+                                        for (let i = 0; i < rawData.length; ++i) {
+                                            outputArray[i] = rawData.charCodeAt(i);
+                                        }
+                                        return outputArray.buffer;
+                                    };
+
+                                    return {
+                                        id: result.data.credentialId,
+                                        rawId: base64urlToBuffer(result.data.credentialId),
+                                        type: 'public-key',
+                                        response: {
+                                            clientDataJSON: base64urlToBuffer(result.data.clientDataJSON),
+                                            attestationObject: base64urlToBuffer(result.data.attestationObject),
+                                            getAuthenticatorData: () => base64urlToBuffer(result.data.authData),
+                                            getPublicKey: () => base64urlToBuffer(result.data.publicKey),
+                                            getPublicKeyAlgorithm: () => result.data.publicKeyAlgorithm,
+                                            getTransports: () => result.data.transports
+                                        },
+                                        authenticatorAttachment: 'platform',
+                                        getClientExtensionResults: () => ({})
+                                    };
+                                } else {
+                                    throw new DOMException(result.error || 'NotAllowedError', result.error || 'NotAllowedError');
+                                }
+                            } catch (e) {
+                                throw new DOMException(e.message, 'NotAllowedError');
+                            }
+                        }
+                        return originalCreate(options);
+                    };
+
+                    navigator.credentials.get = async function(options) {
+                        if (options && options.publicKey) {
+                            try {
+                                const result = await window.__invisurf_webauthn.get(options.publicKey);
+                                if (result && result.success) {
+                                    const base64urlToBuffer = (base64url) => {
+                                        if (!base64url) return null;
+                                        const padding = '='.repeat((4 - base64url.length % 4) % 4);
+                                        const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+                                        const rawData = window.atob(base64);
+                                        const outputArray = new Uint8Array(rawData.length);
+                                        for (let i = 0; i < rawData.length; ++i) {
+                                            outputArray[i] = rawData.charCodeAt(i);
+                                        }
+                                        return outputArray.buffer;
+                                    };
+
+                                    return {
+                                        id: result.data.credentialId,
+                                        rawId: base64urlToBuffer(result.data.credentialId),
+                                        type: 'public-key',
+                                        response: {
+                                            clientDataJSON: base64urlToBuffer(result.data.clientDataJSON),
+                                            authenticatorData: base64urlToBuffer(result.data.authenticatorData),
+                                            signature: base64urlToBuffer(result.data.signature),
+                                            userHandle: base64urlToBuffer(result.data.userHandle)
+                                        },
+                                        authenticatorAttachment: 'platform',
+                                        getClientExtensionResults: () => ({})
+                                    };
+                                } else {
+                                    throw new DOMException(result.error || 'NotAllowedError', result.error || 'NotAllowedError');
+                                }
+                            } catch (e) {
+                                throw new DOMException(e.message, 'NotAllowedError');
+                            }
+                        }
+                        return originalGet(options);
+                    };
+                }
+
+            } catch (_) {}
+        `);
+    }
+    
+    // Also apply userAgentData to the isolated world just in case
+    Object.defineProperty(navigator, 'userAgentData', {
+        get: () => compliantUserAgentData,
+        configurable: true,
+        enumerable: true
+    });
+} catch (_) {}
+
 // Keep preload self-contained: it runs with sandbox: true, where requiring
 // arbitrary local project files can fail before electronAPI is exposed.
 const C = Object.freeze({
@@ -47,6 +354,7 @@ const C = Object.freeze({
         "APP_LOG_CLEAR": "app:log-clear",
         "COMPAT_GET_REPORT": "compatDiag:getReport",
         "COMPAT_CLEAR": "compatDiag:clear",
+        "IDENTITY_DIAG_GET_REPORT": "identityDiag:getReport",
         "SESSION_LOAD": "session:load",
         "SESSION_SAVE": "session:save",
         "HISTORY_SEARCH": "history:search",
@@ -161,6 +469,11 @@ window.addEventListener('unhandledrejection', (event) => {
     sendRendererLog('error', 'renderer:unhandled-rejection', {
         reason: serializeRendererError(event.reason),
     });
+});
+
+contextBridge.exposeInMainWorld('__invisurf_webauthn', {
+    create: (options) => ipcRenderer.invoke('webauthn:create', options),
+    get: (options) => ipcRenderer.invoke('webauthn:get', options)
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -344,6 +657,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     compatDiagGetReport: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.COMPAT_GET_REPORT, payload),
     compatDiagClear: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.COMPAT_CLEAR, payload),
+    identityDiagGetReport: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.IDENTITY_DIAG_GET_REPORT, payload),
     clipboardWriteText: (text) => clipboard.writeText(String(text || '')),
 
     // New Tab Page

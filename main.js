@@ -7,6 +7,28 @@ const electronMain = (() => {
     }
 })();
 const app = electron.app || electronMain.app;
+
+const { configureAppPaths } = require('./runtime/appPaths');
+const {
+    configureBrowserIdentity,
+    applyIdentityToWebContents,
+    logStartupIdentity,
+} = require('./runtime/browserIdentity');
+const { buildSecureWebPreferences } = require('./runtime/webPreferences');
+const {
+    configureProductionGuards,
+    applyContentProtection,
+    applyShellWindowSecurity,
+    applyProfilePickerSecurity,
+} = require('./runtime/windowSecurity');
+const { configureSession } = require('./runtime/sessionPolicy');
+const identityDiagnostics = require('./runtime/identityDiagnostics');
+const { setupWebAuthn } = require('./runtime/webauthn');
+
+/** Must run before app.ready and before any getPath('userData') consumers. */
+configureAppPaths(app);
+configureBrowserIdentity(app);
+
 const BrowserWindow = electron.BrowserWindow;
 const WebContentsView = electron.WebContentsView;
 const View = electron.View || electronMain.View;
@@ -29,11 +51,11 @@ const crypto = require('crypto');
 const encryption = require('./encryption');
 const { createAppLogger } = require('./appLogger');
 const compatDiagnostics = require('./compatibilityDiagnostics');
-const authPolicy = require('./authPolicy'); // <--- ADD THIS
 const { HistoryService } = require('./historyService');
 const chromeTheme = require(path.join(__dirname, 'src', 'theme', 'chromeTheme.cjs'));
 const C = require(path.join(__dirname, 'src', 'constants', 'conditionStrings.cjs'));
 const appLogger = createAppLogger({ app, encryptionModule: encryption });
+configureProductionGuards(app, appLogger);
 
 process.on('uncaughtException', (error) => {
     const message = error?.stack || error?.message || String(error);
@@ -435,40 +457,6 @@ function getProfileAvatarDataUrl(profileId) {
     return `data:${mime};base64,${buf.toString('base64')}`;
 }
 
-// app.name = 'Google Chrome'; // Mimics OS execution signature matching processes exactly.
-app.name = 'Google Chrome'; // Mimics OS execution signature matching processes exactly.
-
-
-function getBrowserLikeUserAgent() {
-    // const chromeVersion = process.versions.chrome || '120.0.0.0';
-    const chromeMajor = process.versions.chrome.split('.')[0] || '120';
-    const reducedVersion = `${chromeMajor}.0.0.0`;
-
-
-    const platform = process.platform;
-    if (platform === C.PLATFORM.DARWIN) {
-        return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
-    }
-    if (platform === C.PLATFORM.WIN32) {
-        return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
-    }
-    return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
-}
-
-
-// Reduce obvious automation fingerprints and align with Chromium browser signals.
-if (app?.commandLine) {
-    app.commandLine.removeSwitch('enable-automation');
-
-    app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
-    // app.commandLine.appendSwitch('disable-features', 'UserAgentClientHint');
-
-    app.commandLine.appendSwitch('disable-site-isolation-trials');
-    app.commandLine.appendSwitch('lang', 'en-US,en');
-}
-
-app.userAgentFallback = getBrowserLikeUserAgent();
-
 function classifyNavigationError(errorCode, errorDescription) {
     const code = Number(errorCode);
     const normalized = (errorDescription || '').toUpperCase();
@@ -522,7 +510,6 @@ const TRACKING_REDIRECT_HOST_MARKERS = [
     'smilewanted.com',
     'adsrvr.org',
 ];
-const sessionNetworkGuardsInstalled = new WeakSet();
 const mainFrameRequestWindowsByWebContents = new Map();
 
 function getHostnameSafe(rawUrl) {
@@ -591,94 +578,21 @@ function buildRedirectBlockedPage(targetUrl, reasonText) {
     `;
 }
 
-function installSessionNetworkGuards(session) {
-    if (!session || sessionNetworkGuardsInstalled.has(session)) return;
-    sessionNetworkGuardsInstalled.add(session);
+function getSessionPolicyDeps() {
+    return {
+        resourceTypeMainFrame: C.RESOURCE_TYPE.MAIN_FRAME,
+        maxMainFrameRedirects: MAX_MAINFRAME_REDIRECTS,
+        redirectWindowMs: REDIRECT_WINDOW_MS,
+        isLikelyTrackingRedirectUrl,
+        webContentsIdToTabId,
+        recordCompatEvent,
+        pickResponseHeadersForDiag,
+        mainFrameRequestWindowsByWebContents,
+    };
+}
 
-    // Keep request headers consistently browser-like across all resources.
-    const chromeVer = process.versions.chrome.split('.')[0];
-    const nativeCHUA = `"Google Chrome";v="${chromeVer}", "Chromium";v="${chromeVer}", "Not_A Brand";v="99"`;
-
-
-    // session.webRequest.onBeforeSendHeaders((details, callback) => {
-    //     const { requestHeaders } = details;
-    //     let finalHeaders = {};
-
-    //     // Loop seamlessly to keep structural header parity for HTTP2
-    //     for (const [key, value] of Object.entries(requestHeaders)) {
-    //         const loweredKey = key.toLowerCase();
-
-    //         // Rewrite the internal network user-agent to the unified version.
-    //         if (loweredKey === 'user-agent') {
-    //             finalHeaders[key] = getBrowserLikeUserAgent();
-    //         }
-    //         // Aggressively map 'Electron' completely out of Client Hints
-    //         else if (loweredKey === 'sec-ch-ua') {
-    //             finalHeaders[key] = nativeCHUA;
-    //         }
-    //         else if (loweredKey === 'sec-ch-ua-mobile') {
-    //             finalHeaders[key] = '?0';
-    //         }
-    //         else {
-    //             finalHeaders[key] = value;
-    //         }
-    //     }
-
-    //     callback({ requestHeaders: finalHeaders });
-    // });
-
-    // Network-layer redirect/loop guard (more robust than will-redirect alone).
-
-    session.webRequest.onBeforeRequest((details, callback) => {
-        if (details.resourceType !== C.RESOURCE_TYPE.MAIN_FRAME) {
-            callback({});
-            return;
-        }
-
-        const webContentsId = details.webContentsId;
-        const now = Date.now();
-        const currentWindow = mainFrameRequestWindowsByWebContents.get(webContentsId);
-        let state = currentWindow;
-        if (!state || now - state.startedAt > REDIRECT_WINDOW_MS) {
-            state = { startedAt: now, count: 0 };
-            mainFrameRequestWindowsByWebContents.set(webContentsId, state);
-        }
-        state.count += 1;
-
-        const trackingRedirect = isLikelyTrackingRedirectUrl(details.url);
-        const redirectLoop = state.count > MAX_MAINFRAME_REDIRECTS;
-        if (!trackingRedirect && !redirectLoop) {
-            callback({});
-            return;
-        }
-
-        const reasonText = redirectLoop
-            ? `Blocked because this tab requested more than ${MAX_MAINFRAME_REDIRECTS} top-level pages within ${Math.round(REDIRECT_WINDOW_MS / 1000)} seconds.`
-            : 'Blocked because the request matched known tracking/csync redirect patterns.';
-        console.warn(`[RedirectGuard][webRequest] Blocked ${details.url}. Reason: ${reasonText}`);
-        const tabIdForRequest = webContentsIdToTabId.get(webContentsId);
-        recordCompatEvent(tabIdForRequest, {
-            type: 'main-frame-request-blocked',
-            url: details.url,
-            reason: reasonText,
-        });
-        callback({ cancel: true });
-    });
-
-    session.webRequest.onHeadersReceived((details, callback) => {
-        if (details.resourceType !== C.RESOURCE_TYPE.MAIN_FRAME) {
-            callback({});
-            return;
-        }
-        const tabIdForHeaders = webContentsIdToTabId.get(details.webContentsId);
-        recordCompatEvent(tabIdForHeaders, {
-            type: 'main-frame-response',
-            url: details.url,
-            statusCode: details.statusCode,
-            headers: pickResponseHeadersForDiag(details.responseHeaders),
-        });
-        callback({});
-    });
+function installSessionNetworkGuards(targetSession) {
+    configureSession(targetSession, getSessionPolicyDeps());
 }
 
 // Dev-only chokidar watchers tracked so they can be closed before quit.
@@ -753,9 +667,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     ensureProfile(resolvedProfileId);
     const partition = `persist:profile-${resolvedProfileId}`;
     const mappedSession = session.fromPartition(partition);
-    // mappedSession.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
     registerAppProtocolForSession(mappedSession, partition);
-    authPolicy.applyGoogleAuthPolicy(mappedSession); // Force auth checks for the profile session
+    installSessionNetworkGuards(mappedSession);
 
     /** One shared in-memory session per stealth window (all tabs incognito; discarded with the window). */
     let stealthTabsPartition = null;
@@ -763,7 +676,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         stealthTabsPartition = `in-memory:stealth-win-${crypto.randomUUID()}`;
         const stealthTabSession = session.fromPartition(stealthTabsPartition);
         registerAppProtocolForSession(stealthTabSession, stealthTabsPartition);
-        authPolicy.applyGoogleAuthPolicy(stealthTabSession);
+        installSessionNetworkGuards(stealthTabSession);
     }
 
     const isMac = process.platform === C.PLATFORM.DARWIN;
@@ -794,44 +707,14 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
                 titleBarOverlay: stealthWindow ? stealthTitleBarOverlay : getTitleBarOverlayOptionsForNativeTheme(),
             }
         ),
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            partition,
-        }
+        webPreferences: buildSecureWebPreferences({ partition }),
     });
 
-    // Keep main renderer UA/browser identity close to Chrome.
-    window.webContents.setUserAgent(getBrowserLikeUserAgent());
+    applyIdentityToWebContents(window.webContents);
 
-    // Security constraints for main window
-    window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
-        if (permission === C.PERMISSION.FULLSCREEN) return callback(true);
-        callback(false); // Deny all other permissions safely
-    });
+    applyShellWindowSecurity(window, { permissionFullscreen: C.PERMISSION.FULLSCREEN });
 
-    window.webContents.setWindowOpenHandler(() => {
-        return { action: 'deny' }; // Block popups
-    });
-
-    window.webContents.on('will-navigate', (event, url) => {
-        // Only allow staying on the app:// UI page
-        if (!url.startsWith('app://')) {
-            event.preventDefault();
-        }
-    });
-
-    window.webContents.on('will-attach-webview', (event) => {
-        event.preventDefault(); // Prevent unexpected webview attachments
-    });
-
-    // mainWindow.webContents.openDevTools();
-
-
-    // --- STEALTH MODE: apply persisted setting (defaults to true) ---
-    window.setContentProtection(loadSettings().contentProtection);
+    applyContentProtection(window, loadSettings().contentProtection);
 
     // Load renderer through app:// so IPC sender validation stays consistent.
     const shellEntryUrl = 'app://dist/index.html';
@@ -1039,13 +922,10 @@ function createProfilePickerWindow() {
         title: 'Choose profile',
         titleBarStyle: 'default',
         fullscreen: false,
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
+        webPreferences: buildSecureWebPreferences(),
     });
+    applyProfilePickerSecurity(picker, loadSettings().contentProtection);
+    applyIdentityToWebContents(picker.webContents);
     picker.loadURL('app://dist/profile-picker.html').catch((error) => {
         console.error('Failed to load profile picker:', error);
     });
@@ -1135,13 +1015,9 @@ function removeTabContentChildView(context, view) {
 function createChromeOverlayLayer(context) {
     if (context.chromeOverlayView) return;
     const overlayView = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
+        webPreferences: buildSecureWebPreferences(),
     });
+    applyIdentityToWebContents(overlayView.webContents);
     overlayView.setBackgroundColor('#00000000');
     overlayView.webContents.once('did-finish-load', () => {
         sendChromeOverlayThemePatch(context);
@@ -1157,13 +1033,9 @@ function createChromeOverlayLayer(context) {
 function createChromeOmniboxOverlayLayer(context) {
     if (context.chromeOmniboxOverlayView) return;
     const overlayView = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
+        webPreferences: buildSecureWebPreferences(),
     });
+    applyIdentityToWebContents(overlayView.webContents);
     overlayView.setBackgroundColor('#00000000');
     overlayView.webContents.once('did-finish-load', () => {
         sendChromeOmniboxOverlayThemePatch(context);
@@ -1182,13 +1054,9 @@ function createChromeOmniboxOverlayLayer(context) {
 function createChromeShellMenuOverlayLayer(context) {
     if (context.chromeShellMenuOverlayView) return;
     const overlayView = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
+        webPreferences: buildSecureWebPreferences(),
     });
+    applyIdentityToWebContents(overlayView.webContents);
     overlayView.setBackgroundColor('#00000000');
     overlayView.webContents.once('did-finish-load', () => {
         sendChromeShellMenuOverlayThemePatch(context);
@@ -2102,14 +1970,10 @@ function getWindowContextByChromeOverlaySender(sender) {
 
 function createTooltipOverlay(context) {
     const tooltipView = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        }
+        webPreferences: buildSecureWebPreferences(),
     });
 
+    applyIdentityToWebContents(tooltipView.webContents);
     tooltipView.setBackgroundColor('#00000000'); // Transparent background
     tooltipView.webContents.loadURL('app://localhost/tooltip.html');
 
@@ -2820,12 +2684,7 @@ function createLensSidebar(context, tabId = context?.activeTabId) {
     }
 
     const sidebar = new WebContentsView({
-        webPreferences: {
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            partition: context.partition,
-        },
+        webPreferences: buildSecureWebPreferences({ partition: context.partition }),
     });
     try { sidebar.webContents.setBackgroundColor(getChromeShellBackgroundColor(context)); } catch (_) { }
     let sidebarHostView = createLensSidebarHostView(context);
@@ -2836,6 +2695,7 @@ function createLensSidebar(context, tabId = context?.activeTabId) {
             sidebarHostView = null;
         }
     }
+    // Lens mobile layout requires a mobile Safari UA; scoped to Lens sidebar only.
     sidebar.webContents.setUserAgent(LENS_MOBILE_USER_AGENT);
     sidebar.webContents.setWindowOpenHandler(({ url, disposition }) => {
         const lensUrl = isGoogleLensSidebarUrl(url);
@@ -4774,13 +4634,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     const effectiveStealth = !!context.stealthWindow;
     const tabPartition = context.stealthWindow ? context.stealthTabsPartition : context.partition;
     const view = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            partition: tabPartition,
-        }
+        webPreferences: buildSecureWebPreferences({ partition: tabPartition }),
     });
 
     context.tabs[id] = view;
@@ -4814,11 +4668,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
         webContentsIdToTabId.delete(webContentsNumericId);
     });
 
-    // Make tab requests look like a regular Chrome browser, not Electron.
-    view.webContents.setUserAgent(getBrowserLikeUserAgent());
-    // view.webContents.session.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
-    authPolicy.setupTabForGoogleAuth(view.webContents, getBrowserLikeUserAgent);
-
+    applyIdentityToWebContents(view.webContents);
     installSessionNetworkGuards(view.webContents.session);
     installDevToolsTypographyOnOpen(view.webContents);
 
@@ -5031,19 +4881,6 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     });
 
     view.webContents.on('before-input-event', handleShortcuts);
-
-    // A subset of anti-automation checks look at navigator.webdriver.
-    // This mirrors mainstream browser behavior for regular tabs.
-    // view.webContents.on('dom-ready', () => {
-    //     view.webContents.executeJavaScript(`
-    //         try {
-    //             Object.defineProperty(navigator, 'webdriver', {
-    //                 get: () => undefined,
-    //                 configurable: true
-    //             });
-    //         } catch (_) {}
-    //     `).catch(() => { });
-    // });
 
     const getDisplayUrl = toDisplayUrl;
 
@@ -5597,13 +5434,82 @@ ipcMain.handle(C.IPC_INVOKE.APP_LOG_CLEAR, (e, { since = null } = {}) => {
     }
 });
 
-ipcMain.handle(C.IPC_INVOKE.COMPAT_GET_REPORT, (e, payload = {}) => {
+function resolveWebContentsForIdentityProbe(context, { tabIdOverride = null, sender = null } = {}) {
+    const senderTabId = sender && !sender.isDestroyed?.()
+        ? webContentsIdToTabId.get(sender.id)
+        : null;
+
+    const tabId = tabIdOverride || senderTabId || context?.activeTabId || null;
+
+    let wc = null;
+    if (sender && !sender.isDestroyed?.() && senderTabId) {
+        wc = sender;
+    } else if (tabId && context?.tabs?.[tabId]) {
+        const view = context.tabs[tabId];
+        if (view?.webContents && !view.webContents.isDestroyed()) {
+            wc = view.webContents;
+        }
+    }
+
+    return { tabId, webContents: wc, senderTabId };
+}
+
+async function resolveIdentityReportForContext(context, tabIdOverride, sender = null) {
+    const { tabId, webContents: wc } = resolveWebContentsForIdentityProbe(context, {
+        tabIdOverride,
+        sender,
+    });
+    const targetSession = context?.partition && session
+        ? session.fromPartition(context.partition)
+        : session?.defaultSession || null;
+    return identityDiagnostics.buildIdentityReport({
+        app,
+        context,
+        webContents: wc,
+        tabId,
+        session: targetSession,
+    });
+}
+
+ipcMain.handle(C.IPC_INVOKE.IDENTITY_DIAG_GET_REPORT, async (e, payload = {}) => {
+    if (!isSenderTrusted(e)) return null;
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context) return null;
+    const tabId = payload && payload.tabId != null ? String(payload.tabId) : undefined;
+    try {
+        const report = await resolveIdentityReportForContext(context, tabId, e.sender);
+        appLogger.info('identity-diag:report-generated', {
+            tabId: report.tabId,
+            profileId: report.profileId,
+            userAgentMatchesConfigured: report.analysis?.userAgentMatchesConfigured,
+        });
+        return report;
+    } catch (err) {
+        appLogger.error('identity-diag:report-failed', {
+            error: appLogger.serializeError(err),
+        });
+        return { error: String(err?.message || err), generatedAt: Date.now() };
+    }
+});
+
+ipcMain.handle(C.IPC_INVOKE.COMPAT_GET_REPORT, async (e, payload = {}) => {
     if (!isSenderTrusted(e)) return null;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return null;
     const tabId = payload && payload.tabId != null ? String(payload.tabId) : undefined;
     const report = compatDiagnostics.getReport(tabId);
-    return { ...report, activeTabId: context.activeTabId };
+    let identitySummary = null;
+    try {
+        const identityReport = await resolveIdentityReportForContext(
+            context,
+            tabId || context.activeTabId,
+            e.sender,
+        );
+        identitySummary = identityDiagnostics.getCompactSummary(identityReport);
+    } catch (_) {
+        identitySummary = null;
+    }
+    return { ...report, activeTabId: context.activeTabId, identitySummary };
 });
 
 ipcMain.handle(C.IPC_INVOKE.COMPAT_CLEAR, (e, payload = {}) => {
@@ -6525,13 +6431,15 @@ function applyDockIconForSystemAppearance() {
 }
 
 app.whenReady().then(async () => {
+    setupWebAuthn();
     appLogger.info('app:ready', {
         logDir: appLogger.getLogDir(),
         logFile: appLogger.getCurrentLogFile(),
         isPackaged: app.isPackaged,
     });
     registerAppProtocolForSession(session.defaultSession, 'default');
-    authPolicy.applyGoogleAuthPolicy(session.defaultSession); // Force auth checks for the default session
+    installSessionNetworkGuards(session.defaultSession);
+    logStartupIdentity(app, appLogger);
 
     applyColorThemeFromSettings();
 
