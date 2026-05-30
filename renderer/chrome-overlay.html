@@ -293,21 +293,41 @@
       font-size: 13px;
       cursor: pointer;
       text-align: left;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .co-bk-link:hover {
       text-decoration: underline;
     }
 
+    .co-bk-link__icon {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+      background: currentColor;
+      -webkit-mask: url('assets/images/plus-circle.svg') center / contain no-repeat;
+      mask: url('assets/images/plus-circle.svg') center / contain no-repeat;
+    }
+
     .co-bk-new-folder {
       display: none;
-      margin-top: 8px;
-      padding-top: 10px;
+      margin: 10px -16px 2px;
+      padding: 16px 16px 12px;
       border-top: 1px solid var(--chrome-tab-separator, #e8eaed);
+      background: color-mix(in srgb, var(--chrome-nav-bg, #ffffff) 92%, var(--chrome-url-well, #f8fafd));
     }
 
     .co-bk-new-folder.co-bk-visible {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .co-bk-new-folder__actions {
+      margin-top: 0;
+      padding-top: 0;
     }
 
     .co-bk-actions {
@@ -317,6 +337,12 @@
       justify-content: flex-end;
       margin-top: 4px;
       padding-top: 4px;
+    }
+
+    .co-bk-footer-actions {
+      margin: 12px -16px -4px;
+      padding: 12px 16px 0;
+      border-top: 1px solid var(--chrome-tab-separator, #e8eaed);
     }
 
     .co-bk-btn {
@@ -329,18 +355,19 @@
     }
 
     .co-bk-btn--primary {
-      background: #1a73e8;
-      color: #fff;
+      background: var(--chrome-omnibox-focus-border, #1a73e8);
+      color: var(--chrome-omnibox-selection-fg, #fff);
       font-weight: 500;
     }
 
     .co-bk-btn--primary:hover {
-      background: #1557b0;
+      background: color-mix(in srgb, var(--chrome-omnibox-focus-border, #1a73e8) 84%, #000000);
     }
 
     .co-bk-btn--secondary {
-      background: var(--chrome-tab-hover-bg, #f1f3f4);
+      background: transparent;
       color: var(--chrome-fg, #202124);
+      font-weight: 500;
     }
 
     .co-bk-btn--secondary:hover {
@@ -890,6 +917,7 @@
         width: 100%;
         height: 100%;
       }
+
       to {
         width: 24px;
         height: 24px;
@@ -1341,11 +1369,11 @@
         let selectionStarted = !!patch.hasSelection;
         let selectedRatio = patch.selectionRatio && typeof patch.selectionRatio === 'object'
           ? {
-              x: Math.max(0, Number(patch.selectionRatio.x) || 0),
-              y: Math.max(0, Number(patch.selectionRatio.y) || 0),
-              width: Math.max(0, Number(patch.selectionRatio.width) || 0),
-              height: Math.max(0, Number(patch.selectionRatio.height) || 0),
-            }
+            x: Math.max(0, Number(patch.selectionRatio.x) || 0),
+            y: Math.max(0, Number(patch.selectionRatio.y) || 0),
+            width: Math.max(0, Number(patch.selectionRatio.width) || 0),
+            height: Math.max(0, Number(patch.selectionRatio.height) || 0),
+          }
           : null;
 
         const positionResizer = function () {
@@ -2479,7 +2507,13 @@
         const newFolderToggle = document.createElement('button');
         newFolderToggle.type = 'button';
         newFolderToggle.className = 'co-bk-link';
-        newFolderToggle.textContent = 'New folder…';
+        const newFolderIcon = document.createElement('span');
+        newFolderIcon.className = 'co-bk-link__icon';
+        newFolderIcon.setAttribute('aria-hidden', 'true');
+        const newFolderText = document.createElement('span');
+        newFolderText.textContent = 'New folder';
+        newFolderToggle.appendChild(newFolderIcon);
+        newFolderToggle.appendChild(newFolderText);
         scroll.appendChild(newFolderToggle);
 
         const nfBlock = document.createElement('div');
@@ -2490,7 +2524,7 @@
         nfInput.placeholder = 'Folder name';
         nfInput.setAttribute('maxlength', '80');
         const nfRow = document.createElement('div');
-        nfRow.className = 'co-bk-actions';
+        nfRow.className = 'co-bk-actions co-bk-new-folder__actions';
         const nfCancel = document.createElement('button');
         nfCancel.type = 'button';
         nfCancel.className = 'co-bk-btn co-bk-btn--secondary';
@@ -2531,7 +2565,7 @@
         });
 
         const actions = document.createElement('div');
-        actions.className = 'co-bk-actions';
+        actions.className = 'co-bk-actions co-bk-footer-actions';
         if (mode === 'edit') {
           const rem = document.createElement('button');
           rem.type = 'button';
