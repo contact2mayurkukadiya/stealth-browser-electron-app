@@ -1,0 +1,243 @@
+/* ── Omnibox icon ─────────────────────────────────────────────────────────── */
+.omnibox-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  z-index: 3;
+  color: var(--chrome-toolbar-icon, var(--chrome-fg));
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+/* When overlay B is open, neutralize A's well so it cannot show beneath B. */
+.url-container.omnibox-overlay-active {
+  background: var(--chrome-nav-bg, transparent);
+  box-shadow: none;
+  transition: none;
+}
+
+.url-container.omnibox-overlay-active:focus-within {
+  border-color: transparent;
+}
+
+.url-container.omnibox-overlay-active #url-input {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.url-container.omnibox-overlay-active .omnibox-ghost {
+  display: none;
+}
+
+/* When the omnibox is focused, shift the input text to make room for the icon */
+.url-container:focus-within #url-input {
+  padding-left: 30px;
+}
+
+.url-container:focus-within .omnibox-ghost {
+  padding-left: 30px;
+}
+
+/* Empty-state placeholder when toolbar input is not focused */
+.omnibox-unfocused-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  font-size: 14px;
+  color: var(--chrome-url-ghost, rgba(255, 255, 255, 0.45));
+  pointer-events: none;
+  z-index: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* ── Ghost text (inline autocomplete) ────────────────────────────────────── */
+.omnibox-ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  /* Must exactly match #url-input typography */
+  padding: 0 15px;
+  font-size: 14px;
+  font-family: inherit;
+  letter-spacing: inherit;
+  white-space: pre;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+  color: transparent; /* typed portion transparent */
+}
+
+.omnibox-ghost__suffix {
+  color: var(--chrome-url-ghost, rgba(255, 255, 255, 0.35));
+}
+
+/* ── Dropdown container ───────────────────────────────────────────────────── */
+/* position/top/left/width are set via inline styles by the React portal */
+.omnibox-dropdown {
+  background: var(--chrome-nav-bg, #243038);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+  z-index: 9999;
+  overflow: hidden;
+  padding: 4px 0;
+
+  /* Enter animation */
+  animation: omnibox-enter 0.12s ease;
+}
+
+@keyframes omnibox-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Individual suggestion row ────────────────────────────────────────────── */
+.omnibox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+  min-height: 36px;
+  -webkit-app-region: no-drag;
+  transition: background 0.08s ease;
+}
+
+.omnibox-row:hover,
+.omnibox-row--selected {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.omnibox-row--selected {
+  background: rgba(255, 180, 48, 0.12); /* amber tint matching the app focus ring */
+}
+
+/* ── Favicon / type icon ──────────────────────────────────────────────────── */
+.omnibox-row__icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.omnibox-row__favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  object-fit: contain;
+}
+
+.omnibox-row__type-icon {
+  width: 14px;
+  height: 14px;
+  opacity: 0.55;
+}
+
+/* ── Text content ─────────────────────────────────────────────────────────── */
+.omnibox-row__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.omnibox-row__text {
+  flex-shrink: 0;
+  max-width: 55%;
+  font-size: 13px;
+  color: #e8eaed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.omnibox-row__text strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.omnibox-row__description {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Type badge ───────────────────────────────────────────────────────────── */
+.omnibox-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.omnibox-badge--history  { background: rgba(255, 255, 255, 0.08); color: #aaa; }
+.omnibox-badge--search   { background: rgba(66, 133, 244, 0.18);  color: #8ab4f8; }
+.omnibox-badge--keyword  { background: rgba(52, 168, 83, 0.18);   color: #81c995; }
+.omnibox-badge--bookmark { background: rgba(251, 188, 4, 0.18);   color: #fdd663; }
+.omnibox-badge--url      { background: rgba(255, 255, 255, 0.08); color: #aaa; }
+
+@media (prefers-color-scheme: light) {
+  .omnibox-dropdown {
+    background: #ffffff;
+    border: 1px solid rgba(23, 27, 32, 0.12);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12), 0 4px 10px rgba(15, 23, 42, 0.08);
+  }
+
+  .omnibox-ghost__suffix {
+    color: rgba(23, 27, 32, 0.35);
+  }
+
+  .omnibox-row:hover,
+  .omnibox-row--selected {
+    background: rgba(23, 27, 32, 0.06);
+  }
+
+  .omnibox-row--selected {
+    background: rgba(255, 152, 0, 0.14);
+  }
+
+  .omnibox-row__text {
+    color: rgba(23, 27, 32, 0.9);
+  }
+
+  .omnibox-row__text strong {
+    color: #111827;
+  }
+
+  .omnibox-row__description {
+    color: rgba(23, 27, 32, 0.45);
+  }
+
+  .omnibox-badge--history  { background: rgba(23, 27, 32, 0.06); color: #616161; }
+  .omnibox-badge--search   { background: rgba(66, 133, 244, 0.15);  color: #1967d2; }
+  .omnibox-badge--keyword  { background: rgba(52, 168, 83, 0.15);   color: #137333; }
+  .omnibox-badge--bookmark { background: rgba(251, 188, 4, 0.22);   color: #b06000; }
+  .omnibox-badge--url      { background: rgba(23, 27, 32, 0.06); color: #616161; }
+}

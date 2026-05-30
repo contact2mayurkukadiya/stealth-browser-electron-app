@@ -1,0 +1,90 @@
+.profile-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 500;
+  user-select: none;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Custom photo: neutral fill + ring so transparent PNGs read as a clear circle (nav, picker, menus) */
+.profile-avatar:has(.profile-avatar__img) {
+  background-color: #f1f3f4;
+  border: 1px solid #dadce0;
+  box-sizing: border-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.profile-avatar--wrap {
+  position: relative;
+}
+
+.profile-avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+/* Preset pack art: inset + contain so nothing is cropped (uploads stay cover above). */
+.profile-avatar--photo-preset {
+  box-sizing: border-box;
+}
+
+.profile-avatar--photo-preset.profile-avatar--lg {
+  padding: 10px;
+}
+
+.profile-avatar--photo-preset.profile-avatar--md,
+.profile-avatar--photo-preset.profile-avatar--md-compact,
+.profile-avatar--photo-preset.profile-avatar--sm {
+  padding: 4px;
+}
+
+.profile-avatar--photo-preset .profile-avatar__img {
+  object-fit: contain;
+}
+
+.profile-avatar__initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.profile-avatar--lg {
+  width: 72px;
+  height: 72px;
+  font-size: 26px;
+}
+
+.profile-avatar--md {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+
+.profile-avatar--md-compact {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+}
+
+.profile-avatar--sm {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .profile-avatar:has(.profile-avatar__img) {
+    background-color: #3c4043;
+    border-color: #5f6368;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  }
+}

@@ -1,0 +1,1718 @@
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+@font-face {
+    font-family: 'InviSurfUIFont';
+    src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'InviSurfUIFont';
+    src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'InviSurfUIFont';
+    src: url('app://localhost/assets/fonts/Roboto/static/Roboto-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Chrome tokens · Effective scheme comes from Electron `nativeTheme` (Appearance in Settings) */
+:root {
+    color-scheme: dark light;
+    --chrome-shell-bg: #253035;
+    --chrome-body-bg: var(--chrome-shell-bg);
+    --chrome-bg-snapshot: var(--chrome-shell-bg);
+    --chrome-header-bg: var(--chrome-shell-bg);
+    --chrome-fg: rgba(255, 255, 255, 0.95);
+    --chrome-slider: #394d55;
+    --chrome-slider-stealth: #394d55;
+    --chrome-nav-bg: #394d55;
+    --chrome-nav-stealth: #394d55;
+    --chrome-url-well: #2f3c42;
+    --chrome-url-well-stealth: #2f3c42;
+    --chrome-domain: #ffffff;
+    --chrome-url-ghost: rgba(255, 255, 255, 0.4);
+    --chrome-bookmark-bar: #2d3e45;
+    --chrome-bkm-text: rgba(255, 255, 255, 0.85);
+    --chrome-tab-separator: rgba(74, 97, 107, 0.62);
+    --chrome-tab-hover-bg: rgba(255, 255, 255, 0.1);
+    --chrome-close-hover: rgba(255, 255, 255, 0.1);
+    --chrome-star-muted: rgba(255, 255, 255, 0.5);
+    /* Toolbar / tab strip: icons tuned for strip luminance (runtime overrides via injection) */
+    --chrome-toolbar-icon: rgba(255, 255, 255, 0.92);
+    --chrome-toolbar-icon-muted: rgba(255, 255, 255, 0.58);
+    --chrome-toolbar-img-filter: brightness(0) invert(1);
+    --chrome-omnibox-focus-border: #9aa0a6;
+    --chrome-omnibox-selection-bg: #b9d8c7;
+    --chrome-omnibox-selection-fg: #000000;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        color-scheme: light;
+        --chrome-shell-bg: #ffffff;
+        --chrome-body-bg: #ffffff;
+        --chrome-bg-snapshot: #ffffff;
+        /* Light: tab bar = frame; nav row = white (slider); omnibox = between white & frame */
+        --chrome-header-bg: #ebebeb;
+        --chrome-fg: #171b20;
+        --chrome-slider: #ffffff;
+        --chrome-slider-stealth: #394d55;
+        --chrome-nav-bg: #ffffff;
+        --chrome-nav-stealth: #394d55;
+        --chrome-url-well: #f2f3f3;
+        --chrome-url-well-stealth: #2f3c42;
+        --chrome-domain: #171b20;
+        --chrome-url-ghost: rgba(23, 27, 32, 0.45);
+        --chrome-bookmark-bar: #ffffff;
+        --chrome-bkm-text: rgba(23, 27, 32, 0.88);
+        --chrome-tab-separator: rgba(0, 0, 0, 0.1);
+        --chrome-tab-hover-bg: rgba(0, 0, 0, 0.045);
+        --chrome-close-hover: rgba(0, 0, 0, 0.07);
+        --chrome-star-muted: rgba(23, 27, 32, 0.42);
+        --chrome-toolbar-icon: #3c4043;
+        --chrome-toolbar-icon-muted: rgba(60, 64, 67, 0.72);
+        --chrome-toolbar-img-filter: brightness(0);
+        --chrome-omnibox-focus-border: #3c4043;
+        --chrome-omnibox-selection-bg: #1e4d34;
+        --chrome-omnibox-selection-fg: #ffffff;
+    }
+}
+
+/*
+ * OS color scheme can disagree with InviSurf “Light / Dark / Device”.
+ * Mirror prefers-color-scheme rules so chrome paints correctly before/without accent injection.
+ */
+html[data-forced-appearance="light"] {
+    color-scheme: light;
+    --chrome-shell-bg: #ffffff;
+    --chrome-body-bg: #ffffff;
+    --chrome-bg-snapshot: #ffffff;
+    --chrome-header-bg: #ebebeb;
+    --chrome-fg: #171b20;
+    --chrome-slider: #ffffff;
+    --chrome-slider-stealth: #394d55;
+    --chrome-nav-bg: #ffffff;
+    --chrome-nav-stealth: #394d55;
+    --chrome-url-well: #f2f3f3;
+    --chrome-url-well-stealth: #2f3c42;
+    --chrome-domain: #171b20;
+    --chrome-url-ghost: rgba(23, 27, 32, 0.45);
+    --chrome-bookmark-bar: #ffffff;
+    --chrome-bkm-text: rgba(23, 27, 32, 0.88);
+    --chrome-tab-separator: rgba(0, 0, 0, 0.1);
+    --chrome-tab-hover-bg: rgba(0, 0, 0, 0.045);
+    --chrome-close-hover: rgba(0, 0, 0, 0.07);
+    --chrome-star-muted: rgba(23, 27, 32, 0.42);
+    --chrome-toolbar-icon: #3c4043;
+    --chrome-toolbar-icon-muted: rgba(60, 64, 67, 0.72);
+    --chrome-toolbar-img-filter: brightness(0);
+    --chrome-omnibox-focus-border: #3c4043;
+    --chrome-omnibox-selection-bg: #1e4d34;
+    --chrome-omnibox-selection-fg: #ffffff;
+}
+
+html[data-forced-appearance="light"] .bk-add-folder {
+    color: var(--chrome-toolbar-icon-muted);
+}
+
+html[data-forced-appearance="light"] .bk-add-folder:hover {
+    background: var(--chrome-tab-hover-bg);
+    color: var(--chrome-toolbar-icon);
+}
+
+html[data-forced-appearance="dark"] {
+    color-scheme: dark;
+    --chrome-shell-bg: #253035;
+    --chrome-body-bg: #253035;
+    --chrome-bg-snapshot: #253035;
+    --chrome-header-bg: #253035;
+    --chrome-fg: rgba(255, 255, 255, 0.95);
+    --chrome-slider: #394d55;
+    --chrome-slider-stealth: #394d55;
+    --chrome-nav-bg: #394d55;
+    --chrome-nav-stealth: #394d55;
+    --chrome-url-well: #2f3c42;
+    --chrome-url-well-stealth: #2f3c42;
+    --chrome-domain: #ffffff;
+    --chrome-url-ghost: rgba(255, 255, 255, 0.4);
+    --chrome-bookmark-bar: #2d3e45;
+    --chrome-bkm-text: rgba(255, 255, 255, 0.85);
+    --chrome-tab-separator: rgba(74, 97, 107, 0.62);
+    --chrome-tab-hover-bg: rgba(255, 255, 255, 0.1);
+    --chrome-close-hover: rgba(255, 255, 255, 0.1);
+    --chrome-star-muted: rgba(255, 255, 255, 0.5);
+    --chrome-toolbar-icon: rgba(255, 255, 255, 0.92);
+    --chrome-toolbar-icon-muted: rgba(255, 255, 255, 0.58);
+    --chrome-toolbar-img-filter: brightness(0) invert(1);
+    --chrome-omnibox-focus-border: #9aa0a6;
+    --chrome-omnibox-selection-bg: #b9d8c7;
+    --chrome-omnibox-selection-fg: #000000;
+}
+
+body {
+    position: relative;
+    margin: 0;
+    background-color: var(--chrome-body-bg);
+    color: var(--chrome-fg);
+    font-family: 'InviSurfUIFont', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    overflow: hidden;
+}
+
+/* Frozen capture of tab while profile menu hides the WebContentsView */
+.tab-content-snapshot {
+    position: fixed;
+    top: 122px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background: var(--chrome-bg-snapshot);
+}
+
+.tab-content-snapshot img {
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+    display: block;
+    pointer-events: none;
+}
+
+/* ── Header shell ────────────────────────────────────────────────────────── */
+.header {
+    position: relative;
+    z-index: 1;
+    height: 122px;
+    background: var(--chrome-header-bg);
+    display: flex;
+    flex-direction: column;
+    -webkit-app-region: drag;
+}
+
+/*
+ * Dedicated stealth (incognito) window: pin chrome to InvSurf dark (same strip/well as default dark theme).
+ * Keeps tab strip / omnibox stable even if theme tokens briefly mismatch injection order.
+ */
+.header--stealth-window {
+    background: #253035;
+}
+
+.header--stealth-window .tab-active-slider,
+.header--stealth-window .tab-active-slider::before,
+.header--stealth-window .tab-active-slider::after {
+    background: var(--chrome-slider-stealth);
+}
+
+.header--stealth-window .nav-bar {
+    background: var(--chrome-nav-stealth);
+}
+
+.header--stealth-window .url-container {
+    background: var(--chrome-url-well-stealth);
+}
+
+.header--stealth-window .bookmark-bar {
+    background: #2d3e45;
+}
+
+body:has(.header--stealth-window) {
+    background-color: #253035;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+body:has(.header--stealth-window) .tab-content-snapshot {
+    background: #253035;
+}
+
+@media (prefers-color-scheme: light) {
+    /* Seamless tab strip + omnibox row — no divider between them */
+
+    .bookmark-bar {
+        border-top: 1px solid rgba(23, 27, 32, 0.07);
+        border-bottom: 1px solid rgba(23, 27, 32, 0.07);
+        box-sizing: border-box;
+    }
+}
+
+/* ── Tab bar ─────────────────────────────────────────────────────────────── */
+.tab-bar {
+    display: flex;
+    position: relative;
+    padding: 5px 0px 0px 0px;
+    gap: 5px;
+    height: 45px;
+    align-items: center;
+    /* border: 1px solid red; */
+}
+
+.tab-container {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 100px);
+    height: 100%;
+    overflow: hidden;
+    /* border: 1px solid blue; */
+    padding: 0px 10px 3px;
+    /* border: 1px solid green; */
+}
+
+.tab-track {
+    --active-left: 0px;
+    --active-width: 0px;
+    position: relative;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    gap: 5px;
+    /* border: 1px solid blue; */
+}
+
+/* Add-tab sits immediately right of .tab-container. The 60px slack on the
+   right of .tab-container (from its max-width) hosts this button plus the
+   remaining OS drag region. */
+.tab-bar #add-tab {
+    flex-shrink: 0;
+}
+
+.tab-active-slider {
+    position: absolute;
+    left: var(--active-left);
+    top: 4px;
+    width: var(--active-width);
+    height: calc(100% - 2px);
+    background: var(--chrome-slider);
+    border-radius: 10px 10px 0 0;
+    pointer-events: none;
+    z-index: 1;
+    transition: left 0.28s ease, width 0.28s ease;
+}
+
+.tab-bar.tab-bar--dragging .tab-active-slider {
+    transition: none;
+}
+
+.tab-active-slider::before,
+.tab-active-slider::after {
+    content: "";
+    position: absolute;
+    bottom: -1px;
+    width: 25px;
+    aspect-ratio: 1;
+    background: var(--chrome-slider);
+    z-index: 1;
+}
+
+.tab-active-slider::after {
+    right: -24px;
+    --r: 0px;
+    --s: 15px;
+    --x: 9px;
+    --y: 9px;
+    border-radius: var(--r);
+    --_m: /calc(2*var(--r)) calc(2*var(--r)) radial-gradient(#000 70%, #0000 72%);
+    --_g: conic-gradient(at calc(100% - var(--r)) var(--r), #0000 25%, #000 0);
+    --_d: (var(--s) + var(--r));
+    mask:
+        calc(100% - var(--_d) - var(--x)) 0 var(--_m),
+        100% calc(var(--_d) + var(--y)) var(--_m),
+        radial-gradient(var(--s) at 100% 0, #0000 99%, #000 calc(100% + 1px)) calc(-1*var(--r) - var(--x)) calc(var(--r) + var(--y)),
+        var(--_g) calc(-1*var(--_d) - var(--x)) 0,
+        var(--_g) 0 calc(var(--_d) + var(--y));
+    mask-repeat: no-repeat;
+}
+
+.tab-active-slider::before {
+    left: -24px;
+    --r: 0px;
+    --s: 15px;
+    --x: 9px;
+    --y: 9px;
+    border-radius: var(--r);
+    --_m: /calc(2*var(--r)) calc(2*var(--r)) radial-gradient(#000 70%, #0000 72%);
+    --_g: conic-gradient(at var(--r) var(--r), #000 75%, #0000 0);
+    --_d: (var(--s) + var(--r));
+    mask:
+        calc(var(--_d) + var(--x)) 0 var(--_m),
+        0 calc(var(--_d) + var(--y)) var(--_m),
+        radial-gradient(var(--s) at 0 0, #0000 99%, #000 calc(100% + 1px)) calc(var(--r) + var(--x)) calc(var(--r) + var(--y)),
+        var(--_g) calc(var(--_d) + var(--x)) 0,
+        var(--_g) 0 calc(var(--_d) + var(--y));
+    mask-repeat: no-repeat;
+}
+
+/* macOS — reserve space for the traffic-light buttons on the left */
+.tab-bar--mac {
+    padding-left: 90px;
+}
+
+/* Windows — reserve space for the native caption-button overlay on the right */
+.tab-bar--win {
+    padding-right: 150px;
+}
+
+.tab {
+    position: relative;
+    padding: 5px 12px;
+    border-radius: 10px 10px 0 0;
+    flex: 1 1 200px;
+    min-width: 20px;
+    max-width: 240px;
+    transition: all 0.3s ease;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+    z-index: 2;
+    color: var(--chrome-toolbar-icon);
+}
+
+.icon-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.tab-bar.tab-bar--dragging .tab {
+    transition: none !important;
+}
+
+.tab-bar.tab-bar--dragging .tab::before {
+    transition: none !important;
+}
+
+.tab+.tab:not(.active)::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 2px;
+    height: 15px;
+    transform: translateY(-50%);
+    background: var(--chrome-tab-separator);
+    pointer-events: none;
+    z-index: 1;
+    transition: opacity 0.2s ease;
+}
+
+/* Keep the active tab visually merged with neighbors like Chrome. */
+.tab.active+.tab::before {
+    opacity: 0;
+}
+
+.tab:not(.active):hover::before,
+.tab:hover+.tab:not(.active)::before {
+    opacity: 0;
+}
+
+.tab:not(.active):hover {
+    background-color: var(--chrome-tab-hover-bg);
+    border-radius: 10px 10px 10px 10px;
+}
+
+.tab-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    /* Default: fade near tab edge when close button is hidden. */
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
+    pointer-events: none;
+}
+
+/* ── Nav bar ──────────────────────────────────────────────────────────────── */
+.nav-bar {
+    display: flex;
+    align-items: center;
+    padding: 5px 10px;
+    gap: 10px;
+    background: var(--chrome-nav-bg);
+    height: 45px;
+}
+
+.url-container {
+    position: relative;
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    background: var(--chrome-url-well);
+    border-radius: 20px;
+    height: 34px;
+    overflow: visible;
+    box-sizing: border-box;
+    transition: border 0.2s;
+}
+
+#url-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    color: var(--chrome-fg);
+    padding: 0 15px;
+    outline: none;
+    z-index: 2;
+    font-size: 14px;
+    -webkit-app-region: no-drag;
+}
+
+#url-input:not(:focus) {
+    /* Completely hide input text and selection when not focused */
+    opacity: 0;
+}
+
+.url-display {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    font-size: 14px;
+    color: var(--chrome-url-ghost);
+    /* Gray for non-domain */
+    pointer-events: none;
+    z-index: 1;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.url-display .domain {
+    color: var(--chrome-domain);
+}
+
+#url-input:focus~.url-display {
+    opacity: 0;
+}
+
+.url-container:focus-within {
+    border: 1px solid var(--chrome-omnibox-focus-border, #FFB430);
+}
+
+#url-input:focus {
+    background: transparent;
+    outline: none;
+}
+
+#url-input::selection {
+    background: var(--chrome-omnibox-selection-bg, #FFB430);
+    color: var(--chrome-omnibox-selection-fg, #ffffff);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.btn {
+    position: relative;
+    z-index: 15;
+    background: transparent;
+    border: none;
+    color: var(--chrome-fg);
+    cursor: pointer;
+    font-size: 18px;
+    -webkit-app-region: no-drag;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease;
+}
+
+/* Tab bar + omnibox rows: icon colours follow strip contrast (inverted vs page chrome-fg) */
+.tab-bar .btn,
+.nav-bar .btn {
+    color: var(--chrome-toolbar-icon);
+}
+
+.tab-bar .btn img.chrome-toolbar-icon-img,
+.nav-bar .btn img.chrome-toolbar-icon-img,
+.bookmark-bar img.chrome-toolbar-icon-img {
+    filter: var(--chrome-toolbar-img-filter);
+}
+
+.close-btn .chrome-toolbar-icon-img {
+    filter: var(--chrome-toolbar-img-filter);
+}
+
+.btn:hover {
+    background: var(--chrome-close-hover);
+}
+
+/* ── Star / Bookmark button ──────────────────────────────────────────────── */
+.star-btn {
+    color: var(--chrome-toolbar-icon-muted);
+    transition: color 0.2s ease, transform 0.15s ease;
+    flex-shrink: 0;
+}
+
+.star-btn:hover {
+    color: var(--chrome-toolbar-icon);
+}
+
+.star-btn.starred {
+    color: #FFB430;
+}
+
+.star-btn.starred:hover {
+    color: #e8a020;
+}
+
+.star-btn.starred img.chrome-toolbar-icon-img {
+    filter: none;
+}
+
+.star-btn.pop {
+    animation: star-pop 0.25s ease;
+}
+
+@keyframes star-pop {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.45);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+.bookmark-bar {
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 2px;
+    background: var(--chrome-bookmark-bar);
+    height: 32px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    -webkit-app-region: no-drag;
+    flex-shrink: 0;
+}
+
+/* Hide scrollbar for bookmark bar but allow scrolling */
+.bookmark-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.bk-item-wrap {
+    display: flex;
+    align-items: center;
+    position: relative;
+    -webkit-app-region: no-drag;
+}
+
+.bk-item,
+.bk-folder {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 5px;
+    background: transparent;
+    border: none;
+    color: var(--chrome-bkm-text);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+}
+
+.bk-item:hover,
+.bk-folder:hover {
+    background: var(--chrome-tab-hover-bg);
+    color: var(--chrome-fg);
+}
+
+.bk-del-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 0;
+    overflow: hidden;
+    height: 18px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 100, 100, 0.4);
+    cursor: pointer;
+    padding: 0;
+    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s;
+    border-radius: 4px;
+    margin-left: -2px;
+}
+
+.bk-item-wrap:hover .bk-del-btn {
+    width: 18px;
+    margin-left: 2px;
+    margin-right: 4px;
+}
+
+.bk-del-btn:hover {
+    color: #ff6b6b;
+    background: rgba(255, 100, 100, 0.15);
+}
+
+.bk-item.dragging,
+.bk-folder.dragging {
+    opacity: 0.4;
+}
+
+.bk-item.bk-drag-over,
+.bk-folder.bk-drag-over {
+    background: rgba(255, 180, 48, 0.25);
+    outline: 2px dashed #FFB430;
+    outline-offset: -2px;
+}
+
+.bk-label {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bk-favicon {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+.bk-favicon-placeholder {
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.bk-folder {
+    gap: 4px;
+}
+
+
+.bk-breadcrumb-del {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 100%;
+    background: transparent;
+    border: none;
+    border-left: 1px solid rgba(255, 180, 48, 0.25);
+    color: rgba(255, 107, 107, 0.6);
+    cursor: pointer;
+    font-size: 10px;
+    transition: background 0.15s, color 0.15s;
+    -webkit-app-region: no-drag;
+}
+
+.bk-breadcrumb-del:hover {
+    background: rgba(255, 107, 107, 0.2);
+    color: #ff6b6b;
+}
+
+.bk-breadcrumb-sep {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 11px;
+    flex-shrink: 0;
+    padding: 0 2px;
+}
+
+.bk-empty-hint {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 12px;
+    font-style: italic;
+    padding: 0 8px;
+    flex-shrink: 0;
+}
+
+
+.bk-add-folder {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    -webkit-app-region: no-drag;
+    flex-shrink: 0;
+    margin-left: 2px;
+}
+
+.bk-add-folder:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* ── Shared bookmark modal backdrop + card ───────────────────────────────── */
+.bk-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+.bk-modal-card {
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32), 0 4px 16px rgba(0, 0, 0, 0.16);
+    animation: bk-modal-appear 0.18s cubic-bezier(0.34, 1.4, 0.64, 1);
+    overflow: hidden;
+}
+
+@keyframes bk-modal-appear {
+    from {
+        opacity: 0;
+        transform: scale(0.92) translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* ── Folder contents modal ───────────────────────────────────────────────── */
+.bk-folder-modal {
+    width: 320px;
+    max-height: 460px;
+    display: flex;
+    flex-direction: column;
+    background: #2D3E45;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.bk-folder-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+    flex-shrink: 0;
+}
+
+.bk-folder-modal-title {
+    font-size: 14px;
+    font-weight: 600;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.bk-folder-modal-list {
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex: 1;
+}
+
+/* ── Shared dropdown item styles (used inside folder modal list) ─────────── */
+/* .bk-dropdown class kept for backward compatibility; no wrapper styles needed. */
+
+.bk-dropdown-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.12s;
+}
+
+.bk-dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+/* Icon slot: fixed size, never shrinks */
+.bk-dropdown-item-icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    opacity: 0.75;
+}
+
+/* Label slot: takes remaining space and truncates long titles with ellipsis */
+.bk-dropdown-item-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.bk-dropdown-empty {
+    padding: 8px 12px;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* ── Bookmark edit modal card (rendered inside .bk-modal-backdrop) ───────── */
+.bk-edit-popup {
+    position: relative;
+    /* needed for the new-folder overlay (position: absolute) */
+    width: 300px;
+    background: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #2F3C42;
+}
+
+.bk-edit-form {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.bk-edit-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.bk-edit-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(47, 60, 66, 0.55);
+}
+
+.bk-edit-input {
+    padding: 8px 10px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 7px;
+    font-size: 13px;
+    background: #F5F7F8;
+    color: #2F3C42;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.bk-edit-input:focus {
+    border-color: #007AFF;
+    background: #ffffff;
+}
+
+.bk-edit-select {
+    padding: 8px 10px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 7px;
+    font-size: 13px;
+    background: #F5F7F8;
+    color: #2F3C42;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    appearance: auto;
+}
+
+.bk-edit-select:focus {
+    border-color: #007AFF;
+    background: #ffffff;
+}
+
+.bk-edit-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.bk-edit-btn {
+    padding: 8px 16px;
+    border-radius: 7px;
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.bk-edit-btn:hover {
+    opacity: 0.82;
+}
+
+.bk-edit-btn--primary {
+    flex: 1;
+    background: #007AFF;
+    color: #ffffff;
+}
+
+.bk-edit-btn--secondary {
+    background: rgba(0, 0, 0, 0.06);
+    color: #2F3C42;
+}
+
+.bk-edit-btn--danger {
+    background: transparent;
+    color: #FF3B30;
+}
+
+/* New-folder mini-dialog overlaid inside the card */
+.bk-edit-new-folder-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+}
+
+.bk-edit-new-folder-dialog {
+    width: 88%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: #ffffff;
+    padding: 16px;
+    border-radius: 10px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+
+    .bk-edit-popup {
+        color-scheme: dark;
+        background: #2d2f31;
+        color: #e8eaed;
+    }
+
+    .bk-edit-label {
+        color: rgba(232, 234, 237, 0.55);
+    }
+
+    .bk-edit-input,
+    .bk-edit-select {
+        border: 1px solid #5f6368;
+        background: #35363a;
+        color: #e8eaed;
+    }
+
+    .bk-edit-input::placeholder {
+        color: rgba(232, 234, 237, 0.45);
+    }
+
+    .bk-edit-input:focus,
+    .bk-edit-select:focus {
+        border-color: #8ab4f8;
+        background: #3c4043;
+    }
+
+    .bk-edit-btn--primary {
+        background: #8ab4f8;
+        color: #202124;
+    }
+
+    .bk-edit-btn--primary:hover {
+        opacity: 0.92;
+    }
+
+    .bk-edit-btn--secondary {
+        background: rgba(255, 255, 255, 0.08);
+        color: #e8eaed;
+    }
+
+    .bk-edit-btn--danger {
+        color: #f28b82;
+    }
+
+    .bk-edit-new-folder-overlay {
+        background: rgba(32, 33, 37, 0.88);
+    }
+
+    .bk-edit-new-folder-dialog {
+        background: #35363a;
+        border: 1px solid #5f6368;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    }
+}
+
+/* ── Context menu ────────────────────────────────────────────────────────── */
+.bk-context-menu {
+    position: fixed;
+    z-index: 1000;
+    min-width: 200px;
+    background: #2D3E45;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 4px 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.bk-context-separator {
+    height: 1px;
+    margin: 4px 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    padding: 0;
+}
+
+.bk-context-item:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.bk-context-item {
+    width: 100%;
+    padding: 7px 14px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.12s;
+}
+
+.bk-context-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.bk-context-item.danger {
+    color: #ff6b6b;
+}
+
+.bk-context-item.danger:hover {
+    background: rgba(255, 100, 100, 0.15);
+}
+
+/* Tab context menu (light Chrome-like popup) */
+.bk-context-menu--tab {
+    min-width: 220px;
+    padding: 6px 0;
+    background: #ffffff;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
+}
+
+.bk-context-separator--tab {
+    margin: 6px 12px;
+    background: #e6e6e6;
+}
+
+.bk-context-item--tab {
+    padding: 7px 14px;
+    color: #202124;
+    font-size: 13px;
+    line-height: 1.35;
+    font-weight: 500;
+}
+
+.bk-context-item--tab:hover {
+    background: rgba(32, 33, 36, 0.08);
+    color: #202124;
+}
+
+.bk-context-item--tab:disabled {
+    opacity: 1;
+    color: #d1d3d4;
+    cursor: default;
+}
+
+.bk-context-item--tab:disabled:hover {
+    background: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+
+    /* Tab strip context menu · match dark chrome (electron nativeTheme drives prefers-color-scheme) */
+    .bk-context-menu--tab {
+        background: #35363a;
+        border: 1px solid #5f6368;
+        box-shadow:
+            0 4px 8px rgba(0, 0, 0, 0.4),
+            0 16px 32px rgba(0, 0, 0, 0.45);
+    }
+
+    .bk-context-separator--tab {
+        background: rgba(255, 255, 255, 0.12);
+    }
+
+    .bk-context-item--tab {
+        color: #e8eaed;
+    }
+
+    .bk-context-item--tab:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #fafafa;
+    }
+
+    .bk-context-item--tab:disabled {
+        color: rgba(232, 234, 237, 0.38);
+    }
+
+    .bk-context-item.danger.bk-context-item--tab {
+        color: #f28b82;
+    }
+
+    .bk-context-item.danger.bk-context-item--tab:hover:not(:disabled) {
+        background: rgba(242, 139, 130, 0.16);
+        color: #faa;
+    }
+
+    .bk-context-item--tab:disabled:hover {
+        background: transparent;
+    }
+}
+
+/* ── Folder inline prompt ────────────────────────────────────────────────── */
+.bk-folder-prompt {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    -webkit-app-region: no-drag;
+}
+
+.bk-folder-prompt input {
+    background: #1e2c32;
+    border: 1px solid #FFB430;
+    border-radius: 5px;
+    color: white;
+    font-size: 12px;
+    padding: 3px 8px;
+    outline: none;
+    width: 120px;
+}
+
+.bk-folder-prompt button {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 3px 7px;
+    transition: background 0.12s;
+}
+
+.bk-folder-prompt button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Tab active chrome ────────────────────────────────────────────────────── */
+.tab.active {
+    z-index: 10;
+    position: relative;
+}
+
+/* ── Tab icon / spinner ─────────────────────────────────────────────────── */
+.tab-icon {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+.spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--chrome-toolbar-icon-muted);
+    border-top: 2px solid var(--chrome-toolbar-icon);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ── Close button ─────────────────────────────────────────────────────────── */
+.close-btn {
+    opacity: 0;
+    font-size: 12px;
+    width: 0;
+    height: 20px;
+    padding: 0;
+    box-sizing: border-box;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: width 0.15s ease, padding 0.15s ease, opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.close-btn .tab-close-icon {
+    display: block;
+    width: 12px;
+    height: 12px;
+}
+
+.nav-bar .btn img {
+    display: block;
+    pointer-events: none;
+}
+
+.close-btn:hover {
+    background: var(--chrome-close-hover);
+}
+
+.tab--mode-full .tab-title {
+    display: block;
+}
+
+.tab--mode-full .close-btn {
+    opacity: 0;
+    width: 0;
+    padding: 0;
+}
+
+.tab--mode-full:hover .close-btn {
+    opacity: 1;
+    width: 20px;
+    padding: 4px;
+}
+
+.tab--mode-full:hover .tab-title {
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+}
+
+.tab--mode-icon-only {
+    justify-content: center;
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.tab--mode-icon-only .tab-title {
+    display: none;
+}
+
+.tab--mode-icon-only .icon-container,
+.tab--mode-icon-only .close-btn {
+    margin: 0 auto;
+}
+
+.tab--mode-icon-only .icon-container {
+    opacity: 1;
+    display: flex;
+    width: 16px;
+    height: 16px;
+    flex-basis: 16px;
+}
+
+.tab--mode-icon-only .close-btn {
+    display: none;
+    opacity: 0;
+    width: 0;
+    height: 16px;
+    padding: 0;
+}
+
+.tab--mode-icon-only:hover .icon-container {
+    display: none;
+    opacity: 0;
+    width: 0;
+    flex-basis: 0;
+}
+
+.tab--mode-icon-only:hover .close-btn {
+    display: flex;
+    opacity: 1;
+    width: 16px;
+    height: 16px;
+    padding: 2px;
+}
+
+.tab--mode-icon-only .close-btn .tab-close-icon {
+    width: 10px;
+    height: 10px;
+}
+
+.tab--mode-extreme-overflow {
+    justify-content: center;
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tab--mode-extreme-overflow .tab-title {
+    display: none;
+}
+
+.tab--mode-extreme-overflow .icon-container {
+    display: flex;
+    width: 10px;
+    height: 16px;
+}
+
+.tab--mode-extreme-overflow .close-btn {
+    display: none;
+    opacity: 0;
+    width: 0;
+    height: 16px;
+    padding: 0;
+}
+
+.tab--mode-extreme-overflow:hover .close-btn {
+    opacity: 0;
+    width: 0;
+    padding: 0;
+}
+
+.tab--mode-extreme-overflow.active .icon-container {
+    display: none;
+    opacity: 0;
+    width: 0;
+    flex-basis: 0;
+}
+
+.tab--mode-extreme-overflow.active .close-btn {
+    display: flex;
+    opacity: 1;
+    width: 16px;
+    height: 16px;
+    padding: 2px;
+}
+
+.tab--mode-extreme-overflow.active .close-btn .tab-close-icon {
+    width: 10px;
+    height: 10px;
+}
+
+/* ── Tab drag-and-drop ─────────────────────────────────────────────────────── */
+.tab.tab-dragging {
+    transition: none !important;
+    background-color: inherit;
+}
+
+/* ── Pinned tab (narrow) ─────────────────────────────────────────────────── */
+.tab.tab--pinned {
+    flex: 0 0 auto;
+    min-width: 36px;
+    max-width: 52px;
+    padding-left: 6px;
+    padding-right: 6px;
+    cursor: default;
+}
+
+/* ── Search Tabs modal ───────────────────────────────────────────────────── */
+.search-tabs-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 80px;
+    pointer-events: auto;
+}
+
+.search-tabs-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(0, 0, 0, 0.35);
+    cursor: default;
+}
+
+.command-palette-panel {
+    max-width: 520px;
+}
+
+.command-palette-row {
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.command-palette-shortcut {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: #9ca3af;
+    font-variant-numeric: tabular-nums;
+}
+
+.search-tabs-panel {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    max-height: min(560px, 70vh);
+    background: #f4f6f8;
+    color: #1a1a1a;
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+}
+
+.search-tabs-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    background: #fff;
+}
+
+.search-tabs-search-icon {
+    color: #6b7280;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.search-tabs-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 14px;
+    font-family: inherit;
+    background: transparent;
+    color: #111;
+}
+
+.search-tabs-input::placeholder {
+    color: #9ca3af;
+}
+
+.search-tabs-shortcut-hint {
+    font-size: 11px;
+    color: #9ca3af;
+    white-space: nowrap;
+}
+
+.search-tabs-divider {
+    height: 1px;
+    background: #e5e7eb;
+}
+
+.search-tabs-section-label {
+    padding: 8px 14px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.search-tabs-list {
+    overflow-y: auto;
+    flex: 1;
+    padding: 4px 0 12px;
+    min-height: 120px;
+}
+
+.search-tabs-empty {
+    padding: 24px 14px;
+    text-align: center;
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.search-tabs-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px 8px 14px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.search-tabs-row:hover,
+.search-tabs-row--selected {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.search-tabs-row--active .search-tabs-row-title {
+    font-weight: 600;
+}
+
+.search-tabs-row-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #e5e7eb;
+}
+
+.search-tabs-row-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.search-tabs-favicon-fallback {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #d1d5db;
+}
+
+.search-tabs-row-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.search-tabs-row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #111827;
+}
+
+.search-tabs-row-meta {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.search-tabs-row-close {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 0;
+    opacity: 0;
+}
+
+.search-tabs-row:hover .search-tabs-row-close,
+.search-tabs-row--selected .search-tabs-row-close {
+    opacity: 1;
+}
+
+.search-tabs-row-close:hover {
+    background: rgba(0, 0, 0, 0.08);
+    color: #111;
+}
+
+/* ── Light scheme: bookmark bar menus (paired with Electron theme) ───────────── */
+@media (prefers-color-scheme: light) {
+
+    .bk-breadcrumb-sep,
+    .bk-empty-hint {
+        color: rgba(23, 27, 32, 0.35);
+    }
+
+    .bk-add-folder {
+        color: var(--chrome-toolbar-icon-muted);
+    }
+
+    .bk-add-folder:hover {
+        background: var(--chrome-tab-hover-bg);
+        color: var(--chrome-toolbar-icon);
+    }
+
+    .bk-folder-modal {
+        background: #ffffff;
+        color: rgba(23, 27, 32, 0.9);
+    }
+
+    .bk-folder-modal-header {
+        border-bottom: 1px solid rgba(23, 27, 32, 0.1);
+    }
+
+    .bk-dropdown-item {
+        color: rgba(23, 27, 32, 0.88);
+    }
+
+    .bk-dropdown-item:hover {
+        background: rgba(23, 27, 32, 0.06);
+        color: #171b20;
+    }
+
+    .bk-dropdown-empty {
+        color: rgba(23, 27, 32, 0.42);
+    }
+
+    .bk-context-menu:not(.bk-context-menu--tab) {
+        background: #ffffff;
+        border: 1px solid rgba(23, 27, 32, 0.12);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+    }
+
+    .bk-context-menu:not(.bk-context-menu--tab) .bk-context-separator {
+        background: rgba(23, 27, 32, 0.08);
+    }
+
+    .bk-context-menu:not(.bk-context-menu--tab) .bk-context-item {
+        color: rgba(23, 27, 32, 0.88);
+    }
+
+    .bk-context-menu:not(.bk-context-menu--tab) .bk-context-item:hover {
+        background: rgba(23, 27, 32, 0.06);
+        color: #171b20;
+    }
+
+    .bk-folder-prompt input {
+        background: #ffffff;
+        border: 1px solid #FFB430;
+        color: var(--chrome-fg);
+    }
+
+    .bk-folder-prompt button {
+        background: rgba(23, 27, 32, 0.06);
+        color: var(--chrome-fg);
+    }
+
+    .bk-folder-prompt button:hover {
+        background: rgba(23, 27, 32, 0.1);
+    }
+}

@@ -1,5 +1,6 @@
+const { BOOKMARK, KEYBOARD } = require('../src/constants/conditionStrings.cjs');
 /**
- * Bookmark Manager for StealthWindow Browser
+ * Bookmark Manager for InviSurf
  * Handles: star toggle, bookmark bar render, overlay folder navigation, drag-to-reorder
  */
 
@@ -10,12 +11,10 @@ const STAR_EMPTY = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" 
   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
 </svg>`;
 
-const STAR_FILLED = `<svg width="18" height="18" viewBox="0 0 24 24" fill="#FFB430" stroke="#FFB430" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-</svg>`;
+const STAR_FILLED = '<img src="app://localhost/assets/images/bookmark-star-filled.svg" width="18" height="18" alt="">';
 
 const FOLDER_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 640 640"><path fill="currentColor" opacity="0.7" d="M128 512L512 512C547.3 512 576 483.3 576 448L576 208C576 172.7 547.3 144 512 144L362.7 144C355.8 144 349 141.8 343.5 137.6L305.1 108.8C294 100.5 280.5 96 266.7 96L128 96C92.7 96 64 124.7 64 160L64 448C64 483.3 92.7 512 128 512z"/></svg>`;
-const ADD_FOLDER_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 640 640"><path fill="white" d="M576 448C576 512 547.3 512 512 512L128 512C92.7 512 64 483.3 64 448L64 160C64 124.7 92.7 96 128 96L266.7 96C280.5 96 294 100.5 305.1 108.8L343.5 137.6C349 141.8 355.8 144 362.7 144L512 144C547.3 144 576 172.7 576 208L576 448zM320 224C306.7 224 296 234.7 296 248L296 296L248 296C234.7 296 224 306.7 224 320C224 333.3 234.7 344 248 344L296 344L296 392C296 405.3 306.7 416 320 416C333.3 416 344 405.3 344 392L344 344L392 344C405.3 344 416 333.3 416 320C416 306.7 405.3 296 392 296L344 296L344 248C344 234.7 333.3 224 320 224z"/></svg>`;
+const ADD_FOLDER_ICON = '<img src="app://localhost/assets/images/bookmark-add-folder.svg" width="30" height="30" alt="">';
 
 const CHEVRON_RIGHT = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="9 18 15 12 9 6"/></svg>`;
 const DELETE_ICON = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
@@ -64,7 +63,7 @@ function renderBar() {
 
     // ── Root view: show all top-level items ──
     bookmarksData.bar.forEach(item => {
-        if (item.type === 'folder') {
+        if (item.type === C.BOOKMARK.TYPE_FOLDER) {
             bar.appendChild(createFolderEl(item));
         } else {
             bar.appendChild(createBookmarkEl(item));
@@ -88,7 +87,7 @@ function createBookmarkEl(item) {
     const el = document.createElement('button');
     el.className = 'bk-item';
     el.id = 'bk-' + item.id;
-    el.draggable = true; 
+    el.draggable = true;
     el.title = item.title;
 
     const faviconHtml = item.favicon
@@ -97,9 +96,9 @@ function createBookmarkEl(item) {
 
     el.innerHTML = `${faviconHtml}<span class="bk-label">${escapeHtml(item.title)}</span>`;
 
-    el.onclick = (e) => { 
-        e.stopPropagation(); 
-        navigateCurrentTab(item.url); 
+    el.onclick = (e) => {
+        e.stopPropagation();
+        navigateCurrentTab(item.url);
         window.electronAPI.bookmarkPopupHide();
     };
 
@@ -209,7 +208,7 @@ function setupDropTarget(el, id) {
         const targetItem = bookmarksData.bar.find(b => b.id === id);
         const srcItemIdx = bookmarksData.bar.findIndex(b => b.id === dragSrcId);
 
-        if (targetItem && targetItem.type === 'folder' && srcItemIdx !== -1) {
+        if (targetItem && targetItem.type === C.BOOKMARK.TYPE_FOLDER && srcItemIdx !== -1) {
             const [srcItem] = bookmarksData.bar.splice(srcItemIdx, 1);
             bookmarksData = await window.electronAPI.bookmarksRemove(srcItem.id);
             bookmarksData = await window.electronAPI.bookmarksAddToFolder(id, srcItem);
@@ -238,12 +237,12 @@ function showContextMenu(e, item) {
     menu.id = 'bk-context-menu';
 
     const actions = [];
-    if (item.type === 'bookmark') {
+    if (item.type === C.BOOKMARK.TYPE_BOOKMARK) {
         actions.push({ label: 'Open', action: () => navigateCurrentTab(item.url) });
     }
 
     actions.push({
-        label: item.type === 'folder' ? 'Delete folder' : 'Remove bookmark',
+        label: item.type === C.BOOKMARK.TYPE_FOLDER ? 'Delete folder' : 'Remove bookmark',
         action: async () => {
             bookmarksData = await window.electronAPI.bookmarksRemove(item.id);
             renderBar();
@@ -316,8 +315,8 @@ function promptAddFolder() {
     prompt.querySelector('#bk-folder-ok').onclick = create;
     prompt.querySelector('#bk-folder-cancel').onclick = () => prompt.remove();
     input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') create();
-        if (e.key === 'Escape') prompt.remove();
+        if (e.key === C.KEYBOARD.ENTER) create();
+        if (e.key === C.KEYBOARD.ESCAPE) prompt.remove();
     });
 }
 
@@ -329,8 +328,8 @@ function findBookmarkByUrl(url, list) {
     const target = norm(url);
 
     for (const item of list) {
-        if (item.type === 'bookmark' && norm(item.url || '') === target) return item;
-        if (item.type === 'folder' && item.children) {
+        if (item.type === C.BOOKMARK.TYPE_BOOKMARK && norm(item.url || '') === target) return item;
+        if (item.type === C.BOOKMARK.TYPE_FOLDER && item.children) {
             const found = findBookmarkByUrl(url, item.children);
             if (found) return found;
         }

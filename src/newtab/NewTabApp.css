@@ -1,0 +1,559 @@
+/* ── Tokens (aligned with supplied NTP reference, CSP-safe — no CDN) ─────── */
+
+:root {
+  --ntp-surface: #f8f9ff;
+  --ntp-surface-low: #eff4ff;
+  --ntp-on-surface: #0b1c30;
+  --ntp-on-variant: #45464d;
+  --ntp-primary: #000000;
+  --ntp-secondary: #5c5f61;
+  --ntp-outline-variant: #c6c6cd;
+  --ntp-white: #ffffff;
+  --ntp-container: #e5eeff;
+  --ntp-shadow-soft: 0 4px 20px rgba(15, 23, 42, 0.05);
+  --ntp-shadow-hover: 0 8px 30px rgba(15, 23, 42, 0.08);
+  --ntp-ring: rgba(0, 0, 0, 0.05);
+  --ntp-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ntp-surface: #12141a;
+    --ntp-surface-low: #1a2030;
+    --ntp-on-surface: #eaf1ff;
+    --ntp-on-variant: #a8acb8;
+    --ntp-primary: #f8f9ff;
+    --ntp-secondary: #9399a9;
+    --ntp-outline-variant: #3f4555;
+    --ntp-white: #1c2433;
+    --ntp-container: #252e40;
+    --ntp-shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.35);
+    --ntp-shadow-hover: 0 8px 36px rgba(0, 0, 0, 0.45);
+    --ntp-ring: rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* When Settings forces light/dark, OS colour scheme media queries can disagree — mirror tokens here. */
+html[data-forced-appearance="dark"] {
+  --ntp-surface: #12141a;
+  --ntp-surface-low: #1a2030;
+  --ntp-on-surface: #eaf1ff;
+  --ntp-on-variant: #a8acb8;
+  --ntp-primary: #f8f9ff;
+  --ntp-secondary: #9399a9;
+  --ntp-outline-variant: #3f4555;
+  --ntp-white: #1c2433;
+  --ntp-container: #252e40;
+  --ntp-shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.35);
+  --ntp-shadow-hover: 0 8px 36px rgba(0, 0, 0, 0.45);
+  --ntp-ring: rgba(255, 255, 255, 0.08);
+}
+
+html[data-forced-appearance="light"] {
+  --ntp-surface: #f8f9ff;
+  --ntp-surface-low: #eff4ff;
+  --ntp-on-surface: #0b1c30;
+  --ntp-on-variant: #45464d;
+  --ntp-primary: #000000;
+  --ntp-secondary: #5c5f61;
+  --ntp-outline-variant: #c6c6cd;
+  --ntp-white: #ffffff;
+  --ntp-container: #e5eeff;
+  --ntp-shadow-soft: 0 4px 20px rgba(15, 23, 42, 0.05);
+  --ntp-shadow-hover: 0 8px 30px rgba(15, 23, 42, 0.08);
+  --ntp-ring: rgba(0, 0, 0, 0.05);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#newtab-root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: var(--chrome-slider, var(--chrome-body-bg, var(--ntp-surface)));
+  color: var(--ntp-on-surface);
+  font-family: var(--ntp-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scrollbar-color: var(--chrome-scrollbar-thumb, #9aa0a6) var(--chrome-scrollbar-track, #e8eaed);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--chrome-scrollbar-track, #e8eaed);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--chrome-scrollbar-thumb, #9aa0a6);
+  border-radius: 6px;
+  border: 2px solid var(--chrome-scrollbar-track, #e8eaed);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--chrome-scrollbar-thumb-hover, #80868b);
+}
+
+/* ── Page shell ───────────────────────────────────────────────────────────── */
+
+.ntp-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--chrome-slider, var(--chrome-body-bg, var(--ntp-surface)));
+}
+
+/* Logos and favicons: avoid accidental drag into chromed UI / OS */
+.ntp-root img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.ntp-bg-gradient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--chrome-slider, var(--chrome-body-bg, var(--ntp-surface)));
+  opacity: 1;
+}
+
+/* ── Main — search + frequent links centered in viewport ──────────────────── */
+
+.ntp-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  width: 100%;
+  padding: 24px 16px;
+}
+
+@media (min-width: 768px) {
+  .ntp-main {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
+.ntp-main__center {
+  width: 100%;
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 28px;
+}
+
+/* ── Hero (centered with search + links) ──────────────────────────────────── */
+
+.ntp-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.ntp-hero__mark {
+  width: 96px;
+  height: 96px;
+  border-radius: 16px;
+  background: var(--ntp-white);
+  border: 1px solid rgba(118, 119, 125, 0.12);
+  box-shadow: var(--ntp-shadow-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ntp-hero__logo {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+}
+
+/* Stealth NTP: purple-icognito-dark.svg — matches stealth tab / document favicon */
+.ntp-hero__logo--stealth {
+  display: block;
+}
+
+.ntp-hero__logo--scheme-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ntp-hero__logo--scheme-light {
+    display: none;
+  }
+
+  .ntp-hero__logo--scheme-dark {
+    display: block;
+  }
+}
+
+html[data-forced-appearance="dark"] .ntp-hero__logo--scheme-light {
+  display: none;
+}
+
+html[data-forced-appearance="dark"] .ntp-hero__logo--scheme-dark {
+  display: block;
+}
+
+html[data-forced-appearance="light"] .ntp-hero__logo--scheme-dark {
+  display: none;
+}
+
+html[data-forced-appearance="light"] .ntp-hero__logo--scheme-light {
+  display: block;
+}
+
+.ntp-hero__name {
+  font-size: clamp(2rem, 6vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ntp-primary);
+}
+
+/* ── Search (field layout styled here; input rules in omnibox + below) ─────── */
+
+.ntp-search-box {
+  width: 100%;
+  position: relative;
+  overflow: visible;
+}
+
+.ntp-search-box__field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 64px;
+  padding: 0;
+  border-radius: 9999px;
+  background: var(--ntp-white);
+  border: 1px solid rgba(118, 119, 125, 0.2);
+  box-shadow: var(--ntp-shadow-soft);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.ntp-search-box__field:focus-within {
+  border-color: rgba(11, 28, 48, 0.2);
+  box-shadow:
+    var(--ntp-shadow-soft),
+    0 0 0 2px var(--ntp-ring);
+}
+
+@media (prefers-color-scheme: dark) {
+  .ntp-search-box__field:focus-within {
+    border-color: rgba(234, 241, 255, 0.15);
+  }
+}
+
+.ntp-search-box__icon-left {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  opacity: 0.4;
+  color: var(--ntp-secondary);
+  z-index: 2;
+}
+
+.ntp-search-box__icon-svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.ntp-search-box__input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 64px;
+  margin-left: 48px;
+  margin-right: 52px;
+  display: flex;
+  align-items: center;
+}
+
+.ntp-search-box__input-wrap .omnibox-ghost--ntp {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  font-family: inherit;
+  white-space: pre;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.ntp-search-box__input-wrap .omnibox-ghost__suffix {
+  color: rgba(95, 99, 104, 0.72);
+}
+
+@media (prefers-color-scheme: dark) {
+  .ntp-search-box__input-wrap .omnibox-ghost__suffix {
+    color: rgba(147, 153, 169, 0.75);
+  }
+}
+
+.ntp-search-box__input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 16px;
+  line-height: 1.5;
+  font-family: inherit;
+  color: var(--ntp-on-surface);
+  caret-color: var(--ntp-primary);
+  position: relative;
+  z-index: 2;
+}
+
+.ntp-search-box__input::placeholder {
+  color: var(--ntp-secondary);
+  opacity: 0.72;
+}
+
+.ntp-search-box__mic {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 12px;
+  color: var(--ntp-secondary);
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ntp-search-box__mic:disabled {
+  opacity: 0.45;
+}
+
+/* ── Autocomplete dropdown (light canvas for NTP) ─────────────────────────── */
+
+.ntp-search-dropdown.omnibox-dropdown {
+  background: var(--ntp-white);
+  border: 1px solid rgba(118, 119, 125, 0.18);
+  box-shadow:
+    var(--ntp-shadow-soft),
+    0 16px 40px rgba(15, 23, 42, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .ntp-search-dropdown.omnibox-dropdown {
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  }
+
+  .ntp-search-dropdown .omnibox-row:hover,
+  .ntp-search-dropdown .omnibox-row--selected {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .ntp-search-dropdown .omnibox-row__text {
+    color: var(--ntp-on-surface);
+  }
+
+  .ntp-search-dropdown .omnibox-row__description {
+    color: var(--ntp-on-variant);
+    opacity: 0.85;
+  }
+}
+
+.ntp-search-dropdown .omnibox-row:hover,
+.ntp-search-dropdown .omnibox-row--selected {
+  background: rgba(11, 28, 48, 0.05);
+}
+
+.ntp-search-dropdown .omnibox-row__text {
+  color: var(--ntp-on-surface);
+}
+
+.ntp-search-dropdown .omnibox-row__description {
+  color: var(--ntp-on-variant);
+}
+
+.ntp-search-dropdown .omnibox-badge {
+  opacity: 0.8;
+}
+
+/* ── Shortcut grid ────────────────────────────────────────────────────────── */
+
+.ntp-shortcuts__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .ntp-shortcuts__grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.ntp-shortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 12px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid transparent;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.02);
+  transition:
+    background 0.3s ease,
+    box-shadow 0.3s ease,
+    border-color 0.3s ease;
+  cursor: pointer;
+  outline: none;
+}
+
+/* Favicons / text sometimes keep I-beam or default unless inheritance is explicit */
+.ntp-shortcut * {
+  cursor: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ntp-shortcut {
+    background: rgba(28, 36, 51, 0.55);
+  }
+}
+
+.ntp-shortcut:hover,
+.ntp-shortcut:focus-visible {
+  background: var(--ntp-white);
+  border-color: rgba(118, 119, 125, 0.12);
+  box-shadow: var(--ntp-shadow-hover);
+}
+
+@media (prefers-color-scheme: dark) {
+  .ntp-shortcut:hover,
+  .ntp-shortcut:focus-visible {
+    background: var(--ntp-container);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.ntp-shortcut:focus-visible {
+  box-shadow:
+    var(--ntp-shadow-hover),
+    0 0 0 2px rgba(117, 53, 226, 0.35);
+}
+
+.ntp-shortcut__icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: var(--ntp-container);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ntp-secondary);
+  transition: color 0.2s ease;
+}
+
+.ntp-shortcut:hover .ntp-shortcut__icon-wrap,
+.ntp-shortcut:focus-visible .ntp-shortcut__icon-wrap {
+  color: var(--ntp-primary);
+}
+
+.ntp-shortcut__glyph {
+  width: 28px;
+  height: 28px;
+}
+
+.ntp-shortcut__favicon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.ntp-shortcut__letter {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ntp-secondary);
+}
+
+.ntp-shortcut__label {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ntp-secondary);
+  text-align: center;
+  max-width: 112px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.2s ease;
+}
+
+.ntp-shortcut:hover .ntp-shortcut__label,
+.ntp-shortcut:focus-visible .ntp-shortcut__label {
+  color: var(--ntp-primary);
+}
+
+/*
+ * Stealth NTP: default tile fill matches the dark “hover” navy used in dark mode
+ * (~ --ntp-white / #1c2436); hover lifts slightly so tiles still feel interactive.
+ */
+.ntp-root--stealth {
+  --ntp-stealth-shortcut-fill: #1c2436;
+  --ntp-stealth-shortcut-fill-hover: #252e40;
+}
+
+.ntp-root--stealth .ntp-shortcut {
+  background: var(--ntp-stealth-shortcut-fill);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+}
+
+.ntp-root--stealth .ntp-shortcut:hover,
+.ntp-root--stealth .ntp-shortcut:focus-visible {
+  background: var(--ntp-stealth-shortcut-fill-hover);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.ntp-root--stealth .ntp-shortcut__icon-wrap {
+  background: rgba(255, 255, 255, 0.06);
+}
