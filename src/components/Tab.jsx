@@ -50,8 +50,12 @@ export default function Tab({
     if (tabRef.current) onHoverEnter(id, tabRef.current);
   };
 
-  // Middle-click to close
+  // Middle-click closes on release, matching Chrome's wheel-button behavior.
   const handleMouseDown = (e) => {
+    if (e.button === 1) e.preventDefault();
+  };
+
+  const handleMouseUp = (e) => {
     if (e.button === 1) { e.preventDefault(); onHideTooltip(); onClose(); }
   };
 
@@ -78,6 +82,7 @@ export default function Tab({
       onMouseEnter={handleHoverEnter}
       onMouseLeave={onHoverLeave}
       onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
       onContextMenu={handleContextMenu}
     >
       {/* Icon / Spinner */}

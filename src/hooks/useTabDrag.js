@@ -1,5 +1,46 @@
 import { useEffect, useRef } from 'react';
 
+function isTransparentDragBackground(bg) {
+  if (!bg) return true;
+  const normalized = bg.trim().toLowerCase();
+  return (
+    normalized === 'transparent'
+    || normalized === 'rgba(0, 0, 0, 0)'
+    || normalized === 'rgba(0,0,0,0)'
+  );
+}
+
+function isStealthTabChrome(tabEl) {
+  return !!tabEl.closest('.header--stealth-window');
+}
+
+function readChromeCssVar(name) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || '';
+}
+
+/**
+ * Match the tab's visible fill: use computed background when set (e.g. hover),
+ * otherwise the active slider token (active tabs are transparent over the slider).
+ */
+function resolveTabDragBackgroundColor(tabEl) {
+  const computed = window.getComputedStyle(tabEl).backgroundColor;
+  if (!isTransparentDragBackground(computed)) {
+    return computed;
+  }
+
+  const sliderToken = isStealthTabChrome(tabEl)
+    ? '--chrome-slider-stealth'
+    : '--chrome-slider';
+  const fromToken = readChromeCssVar(sliderToken);
+  if (fromToken) return fromToken;
+
+  const headerBg = readChromeCssVar('--chrome-header-bg');
+  if (headerBg) return headerBg;
+
+  return computed;
+}
+
 /**
  * Pointer-based tab drag hook.
  * Attaches listeners imperatively to avoid triggering React re-renders
@@ -72,11 +113,7 @@ export function useTabDrag({
           const rect = originalRects[draggingIndex];
           offsetX = me.clientX - rect.left;
           tabEl.classList.add('tab-dragging');
-          dragBackgroundColor = window.getComputedStyle(tabEl).backgroundColor;
-          if (!dragBackgroundColor || dragBackgroundColor === 'rgba(0, 0, 0, 0)' || dragBackgroundColor === 'transparent') {
-            // Fallback for tabs that are visually transparent because of the active slider.
-            dragBackgroundColor = 'rgba(57, 77, 85, 0.95)';
-          }
+          dragBackgroundColor = resolveTabDragBackgroundColor(tabEl);
           tabEl.style.backgroundColor = dragBackgroundColor;
           // Flag used by tooltip hover guard
           window._draggingTabId = id;
