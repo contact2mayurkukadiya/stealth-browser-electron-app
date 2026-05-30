@@ -4,8 +4,9 @@ import React, {
 import './omnibox.css';
 import AutocompleteController from './AutocompleteController.js';
 import { toNavigateUrl } from './AutocompleteInput.js';
-import { useChromeOverlay } from '../../context/ChromeOverlayContext.jsx';
+import { useChromeOverlay, useChromeShellMenuOverlay } from '../../context/ChromeOverlayContext.jsx';
 import { buildDisplayParts, isNtpOmniboxUrl, toOmniboxBarValue } from '../../utils/omniboxDisplayUrl.js';
+import { adjustSvg, menuFindSvg } from '../../constants/appAssetUrls.js';
 import {
   URL as URL_C,
   KEYBOARD,
@@ -14,10 +15,7 @@ import {
 } from '../../constants/conditionStrings.js';
 
 const SearchIcon = () => (
-  <svg className="omnibox-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="7" />
-    <line x1="16.5" y1="16.5" x2="22" y2="22" />
-  </svg>
+  <img src={menuFindSvg} className="omnibox-icon" width="16" height="16" alt="" />
 );
 
 const LockIcon = () => (
@@ -25,6 +23,10 @@ const LockIcon = () => (
     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
   </svg>
+);
+
+const TuneIcon = () => (
+  <img src={adjustSvg} className="omnibox-icon" width="16" height="16" alt="" />
 );
 
 function escapeHtml(str) {
@@ -89,12 +91,15 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
   const displayUrl = tab && !tab.isNewTab ? (tab.url || '') : '';
 
   const { reset, acquire, release, post } = useChromeOverlay();
+  const { reset: shellReset, acquire: shellAcquire, release: shellRelease, post: shellPost } = useChromeShellMenuOverlay();
 
   const [isFocused, setIsFocused] = useState(false);
   const [draftValue, setDraftValue] = useState(displayUrl);
   const [hasUncommittedDraft, setHasUncommittedDraft] = useState(false);
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [overlayAnchorVersion, setOverlayAnchorVersion] = useState(0);
+  const [siteInfoOpen, setSiteInfoOpen] = useState(false);
+  const [siteInfoAnchor, setSiteInfoAnchor] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [ghostSuffix, setGhostSuffix] = useState('');
@@ -852,12 +857,112 @@ export default function OmniboxInput({ currentTabId, tabsData, searchEngine = 'g
 
   const showShellInput = isFocused && !overlayOpen;
 
+  const siteInfoOpenRef = useRef(false);
+  const pendingOwnSiteInfoResetRef = useRef(false);
+
+  const closeSiteInfo = useCallback(async () => {
+    if (!siteInfoOpenRef.current) return;
+    siteInfoOpenRef.current = false;
+    setSiteInfoOpen(false);
+    if (!pendingOwnSiteInfoResetRef.current) {
+      try {
+        await shellRelease();
+      } catch (_) {}
+    }
+  }, [shellRelease]);
+
+  const openSiteInfo = useCallback(async (e) => {
+    const anchor = e.currentTarget?.getBoundingClientRect?.();
+    if (!anchor) return;
+    if (siteInfoOpenRef.current) {
+      await closeSiteInfo();
+      return;
+    }
+    
+    pendingOwnSiteInfoResetRef.current = true;
+    try {
+      await shellReset();
+      await shellAcquire();
+      siteInfoOpenRef.current = true;
+      setSiteInfoOpen(true);
+          await shellPost({
+            kind: 'siteInfo',
+            anchorRect: {
+              left: anchor.left,
+              top: anchor.top,
+              right: anchor.right,
+              bottom: anchor.bottom,
+              width: anchor.width,
+              height: anchor.height
+            },
+            domain: displayParts?.domain || '',
+            isSecure: isSecure,
+            favicon: tab?.favicon || null
+          });
+    } catch (err) {
+      console.error('site info overlay open', err);
+      siteInfoOpenRef.current = false;
+      setSiteInfoOpen(false);
+      try {
+        await shellRelease();
+      } catch (_) {}
+    } finally {
+      pendingOwnSiteInfoResetRef.current = false;
+    }
+  }, [closeSiteInfo, shellReset, shellAcquire, shellPost, shellRelease, displayParts]);
+
+  useEffect(() => {
+    const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
+      if (siteInfoOpenRef.current && data?.type === OVERLAY.DISMISS) {
+        void closeSiteInfo();
+      }
+    });
+    return () => unsub?.();
+  }, [closeSiteInfo]);
+
+  useEffect(() => {
+    const handleGlobalMouseDown = (e) => {
+      if (!siteInfoOpenRef.current) return;
+      if (e.target.closest('.site-info-btn')) return;
+      void closeSiteInfo();
+    };
+    window.addEventListener('mousedown', handleGlobalMouseDown);
+    return () => window.removeEventListener('mousedown', handleGlobalMouseDown);
+  }, [closeSiteInfo]);
+
+  const handleSiteInfoClick = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void openSiteInfo(e);
+  }, [openSiteInfo]);
+
+  const handleSiteInfoMouseDown = useCallback((e) => {
+    // Prevent focus from shifting to the input when clicking the button
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
   return (
     <div
       className={`url-container${overlayOpen ? ' omnibox-overlay-active' : ''}`}
       ref={containerRef}
     >
-      {showShellInput && (isSecure ? <LockIcon /> : <SearchIcon />)}
+      {showShellInput && (
+        <div className="omnibox-icon-wrapper">
+          <SearchIcon />
+        </div>
+      )}
+
+      {!showShellInput && displayParts && (
+        <button 
+          className="site-info-btn" 
+          onClick={handleSiteInfoClick} 
+          onMouseDown={handleSiteInfoMouseDown}
+          title="View site information"
+        >
+          {isSecure ? <TuneIcon /> : <SearchIcon />}
+        </button>
+      )}
 
       {showShellInput && ghostSuffix && (
         <div className="omnibox-ghost" aria-hidden="true">

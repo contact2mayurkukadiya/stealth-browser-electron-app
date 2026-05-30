@@ -584,6 +584,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sessionSave: (data) => ipcRenderer.invoke(C.IPC_INVOKE.SESSION_SAVE, data),
     sessionLoad: () => ipcRenderer.invoke(C.IPC_INVOKE.SESSION_LOAD),
 
+    // WebAuthn / Cookies
+    webauthnGetCookieUsage: () => ipcRenderer.invoke('webauthn:getCookieUsage'),
+    webauthnDeleteCookies: (domain) => ipcRenderer.invoke('webauthn:deleteCookies', domain),
+    webauthnBlockCookies: (domain) => ipcRenderer.invoke('webauthn:blockCookies', domain),
+
     getTabInfo: (id) => ipcRenderer.invoke(C.IPC_INVOKE.TAB_GET_INFO, { id }),
     tabHideActive: () => ipcRenderer.invoke(C.IPC_INVOKE.TAB_HIDE_ACTIVE),
     tabRestoreActive: () => ipcRenderer.invoke(C.IPC_INVOKE.TAB_RESTORE_ACTIVE),

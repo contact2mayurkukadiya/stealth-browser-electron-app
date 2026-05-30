@@ -471,7 +471,7 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     background: transparent;
     border: none;
     color: var(--chrome-fg);
-    padding: 0 15px;
+    padding: 0 15px 0 38px;
     outline: none;
     z-index: 2;
     font-size: 14px;
@@ -488,7 +488,7 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     inset: 0;
     display: flex;
     align-items: center;
-    padding: 0 15px;
+    padding: 0 15px 0 38px;
     font-size: 14px;
     color: var(--chrome-url-ghost);
     /* Gray for non-domain */

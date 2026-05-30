@@ -11,6 +11,12 @@ const installedSessions = new WeakSet();
 /** @type {Map<number, object[]>} webContentsId -> recent header observations */
 const headerObservationsByWebContentsId = new Map();
 
+/** @type {Map<number, Set<string>>} webContentsId -> domains loaded in the current page */
+const tabNetworkDomains = new Map();
+
+/** @type {Set<string>} domains blocked from setting or sending cookies */
+const cookieBlocklist = new Set();
+
 const MAX_HEADER_OBSERVATIONS_PER_WEB_CONTENTS = 40;
 
 /** Client Hint and identity-related header names to snapshot (values only, redacted if needed). */
@@ -131,6 +137,37 @@ function installSessionPolicy(targetSession, deps) {
         requestHeaders['sec-ch-ua-platform'] = `"${platform}"`;
         requestHeaders['sec-ch-ua-platform-version'] = `"${platformVersion}"`;
 
+        // Track embedded domains
+        if (details.webContentsId != null) {
+            try {
+                const urlObj = new URL(details.url);
+                const domain = urlObj.hostname;
+                
+                if (details.resourceType === 'mainFrame') {
+                    // Reset tracking for new page load
+                    tabNetworkDomains.set(details.webContentsId, new Set([domain]));
+                } else if (domain) {
+                    let domains = tabNetworkDomains.get(details.webContentsId);
+                    if (!domains) {
+                        domains = new Set();
+                        tabNetworkDomains.set(details.webContentsId, domains);
+                    }
+                    domains.add(domain);
+                }
+
+                // Block cookies if domain is in blocklist
+                if (cookieBlocklist.has(domain)) {
+                    for (const key of Object.keys(requestHeaders)) {
+                        if (key.toLowerCase() === 'cookie') {
+                            delete requestHeaders[key];
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore invalid URLs
+            }
+        }
+
         recordHeaderObservation(details.webContentsId, {
             timestamp: Date.now(),
             origin: safeOrigin(details.url),
@@ -180,8 +217,28 @@ function installSessionPolicy(targetSession, deps) {
     });
 
     targetSession.webRequest.onHeadersReceived((details, callback) => {
+        const responseHeaders = { ...details.responseHeaders };
+        let modified = false;
+
+        if (details.webContentsId != null) {
+            try {
+                const urlObj = new URL(details.url);
+                const domain = urlObj.hostname;
+                if (cookieBlocklist.has(domain)) {
+                    for (const key of Object.keys(responseHeaders)) {
+                        if (key.toLowerCase() === 'set-cookie') {
+                            delete responseHeaders[key];
+                            modified = true;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore invalid URLs
+            }
+        }
+
         if (details.resourceType !== deps.resourceTypeMainFrame) {
-            callback({});
+            callback(modified ? { responseHeaders } : {});
             return;
         }
         const tabIdForHeaders = deps.webContentsIdToTabId.get(details.webContentsId);
@@ -191,7 +248,7 @@ function installSessionPolicy(targetSession, deps) {
             statusCode: details.statusCode,
             headers: deps.pickResponseHeadersForDiag(details.responseHeaders),
         });
-        callback({});
+        callback(modified ? { responseHeaders } : {});
     });
 }
 
@@ -211,10 +268,32 @@ function applyIdentityToSessionSafe(targetSession) {
     targetSession.setUserAgent(identity.userAgent, identity.acceptLanguage);
 }
 
+function getTabNetworkDomains(webContentsId) {
+    if (webContentsId == null) return [];
+    const domains = tabNetworkDomains.get(webContentsId);
+    return domains ? Array.from(domains) : [];
+}
+
+function getCookieBlocklist() {
+    return Array.from(cookieBlocklist);
+}
+
+function addToCookieBlocklist(domain) {
+    if (domain) cookieBlocklist.add(domain);
+}
+
+function removeFromCookieBlocklist(domain) {
+    if (domain) cookieBlocklist.delete(domain);
+}
+
 module.exports = {
     installSessionPolicy,
     configureSession,
     applyIdentityToSessionSafe,
     getHeaderObservations,
     isSessionPolicyInstalled,
+    getTabNetworkDomains,
+    getCookieBlocklist,
+    addToCookieBlocklist,
+    removeFromCookieBlocklist,
 };

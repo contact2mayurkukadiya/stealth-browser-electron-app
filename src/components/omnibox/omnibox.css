@@ -1,16 +1,49 @@
 /* ── Omnibox icon ─────────────────────────────────────────────────────────── */
 .omnibox-icon {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  color: var(--chrome-toolbar-icon, var(--chrome-fg));
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.omnibox-icon-wrapper {
   position: absolute;
   left: 10px;
   top: 50%;
   transform: translateY(-50%);
-  width: 14px;
-  height: 14px;
-  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 3;
-  color: var(--chrome-toolbar-icon, var(--chrome-fg));
-  opacity: 0.5;
-  flex-shrink: 0;
+}
+
+.site-info-btn {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  background: transparent;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  height: 24px;
+}
+
+.site-info-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .site-info-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
 }
 
 /* When overlay B is open, neutralize A's well so it cannot show beneath B. */
@@ -35,11 +68,11 @@
 
 /* When the omnibox is focused, shift the input text to make room for the icon */
 .url-container:focus-within #url-input {
-  padding-left: 30px;
+  padding-left: 38px;
 }
 
 .url-container:focus-within .omnibox-ghost {
-  padding-left: 30px;
+  padding-left: 38px;
 }
 
 /* Empty-state placeholder when toolbar input is not focused */

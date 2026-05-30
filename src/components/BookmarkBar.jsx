@@ -3,11 +3,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import { setBookmarks } from '../store/bookmarksSlice';
 import { useChromeShellMenuOverlay } from '../context/ChromeOverlayContext';
 import BookmarkItem from './BookmarkItem';
-import { bookmarkAddFolderSvg } from '../constants/appAssetUrls';
+import { addFolderSvg } from '../constants/appAssetUrls';
 import { BOOKMARK, OVERLAY, KEYBOARD } from '../constants/conditionStrings.js';
 
 const ADD_FOLDER_ICON = (
-  <img className="chrome-toolbar-icon-img" src={bookmarkAddFolderSvg} width={16} height={16} alt="" />
+  <img className="chrome-toolbar-icon-img" src={addFolderSvg} width={16} height={16} alt="" />
 );
 
 /** Resolve a folder node anywhere in the bookmark tree (bar root or nested). */

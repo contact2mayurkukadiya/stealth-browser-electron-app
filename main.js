@@ -621,7 +621,7 @@ if (!app.isPackaged) {
                     if (preloadRelaunchScheduled) return;
                     preloadRelaunchScheduled = true;
                     app.relaunch();
-                    app.exit(0);
+                    app.quit();
                 })
         );
 
@@ -1781,6 +1781,18 @@ function computeMenuOverlayBounds(context, patch) {
         const separators = 1 + (patch.showEdit ? 1 : 0);
         const height = Math.min(windowH - top - pad, rows * 42 + separators * 13 + 16);
         return menuOverlayBoundsFromPanel(context, { left, top, width, height });
+    }
+
+    if (kind === 'siteInfo') {
+        const ar = patch.anchorRect || {};
+        const panelWidth = 340;
+        const left0 = Math.round(Number(ar.left) || 0);
+        const top0 = Math.round(Number(ar.top) || 0);
+        const h0 = Math.max(1, Math.round(Number(ar.height) || 32));
+        const left = clampNumber(left0, pad, windowW - panelWidth - pad);
+        const top = clampNumber(top0 + h0 + 6, pad, windowH - 280 - pad);
+        const height = Math.max(240, Math.min(windowH * 0.6, windowH - top - pad));
+        return menuOverlayBoundsFromPanel(context, { left, top, width: panelWidth, height });
     }
 
     if (kind === 'appMenu') {
@@ -4286,6 +4298,7 @@ const SHELL_MENU_OVERLAY_KINDS = new Set([
     'bookmarkContextMenu',
     'bookmarkFolderMenu',
     'bookmarkEditor',
+    'siteInfo',
 ]);
 
 function isShellMenuOverlayKind(kind) {
@@ -4487,9 +4500,12 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, (e, payload) => {
         }
         ensureChromeOverlayOnTop(context);
         context.chromeShellMenuOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
-        setImmediate(() => {
-            focusChromeShellMenuOverlayWebContents(context);
-        });
+        
+        if (patch.focusInput !== false) {
+            setImmediate(() => {
+                focusChromeShellMenuOverlayWebContents(context);
+            });
+        }
     } catch (err) {
         console.error(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, err?.message || err);
         return { ok: false };
@@ -5036,7 +5052,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
             <!DOCTYPE html>
             <html style="background: #253035; color: white; font-family: sans-serif; height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0;">
                 <div style="text-align: center; max-width: 500px; padding: 20px;">
-                    <img src="app://localhost/assets/images/error-page-alert.svg" width="64" height="64" alt="" style="margin-bottom: 20px;" />
+                    <img src="app://localhost/assets/images/exclamation.svg" width="64" height="64" alt="" style="margin-bottom: 20px;" />
                     <h1 style="margin: 0 0 10px 0; font-size: 24px;">${errorMeta.title}</h1>
                     <p style="color: #aaa; margin: 0 0 10px 0;">${errorMeta.details}</p>
                     <p style="color: #9fc6d8; margin: 0 0 20px 0;">${errorMeta.suggestion}</p>
@@ -5361,7 +5377,7 @@ ipcMain.handle(C.IPC_INVOKE.APP_RELAUNCH, (e) => {
     if (!isSenderTrusted(e)) return;
     appLogger.info('app:relaunch-requested', {});
     app.relaunch();
-    app.exit(0);
+    app.quit();
 });
 
 ipcMain.handle(C.IPC_INVOKE.APP_LOG_INFO, (e) => {
@@ -5827,6 +5843,96 @@ function broadcastBookmarks(profileId) {
         }
     }
 }
+
+ipcMain.handle('webauthn:getCookieUsage', async (event) => {
+    if (!isSenderTrusted(event)) return { main: null, embedded: [] };
+    const context = getWindowContextByEventSender(event.sender);
+    if (!context || !context.activeTabId) return { main: null, embedded: [] };
+    
+    const tabView = context.tabs[context.activeTabId];
+    if (!tabView) return { main: null, embedded: [] };
+
+    const { getTabNetworkDomains } = require('./runtime/sessionPolicy');
+    const domains = getTabNetworkDomains(tabView.webContents.id);
+    
+    let mainDomain = '';
+    try {
+        mainDomain = new URL(tabView.webContents.getURL()).hostname;
+    } catch (e) {}
+
+    const session = tabView.webContents.session;
+    const result = { main: null, embedded: [] };
+
+    for (const domain of domains) {
+        try {
+            const cookies = await session.cookies.get({ domain });
+            const count = cookies.length;
+            if (count > 0) {
+                if (domain === mainDomain || (mainDomain && domain.endsWith(mainDomain))) {
+                    if (!result.main) {
+                        result.main = { domain, count };
+                    } else {
+                        result.main.count += count;
+                    }
+                } else {
+                    result.embedded.push({ domain, count });
+                }
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+    
+    if (!result.main && mainDomain) {
+        result.main = { domain: mainDomain, count: 0 };
+    }
+
+    return result;
+});
+
+ipcMain.handle('webauthn:deleteCookies', async (event, domain) => {
+    if (!isSenderTrusted(event) || !domain) return false;
+    const context = getWindowContextByEventSender(event.sender);
+    if (!context || !context.activeTabId) return false;
+    
+    const tabView = context.tabs[context.activeTabId];
+    if (!tabView) return false;
+
+    const session = tabView.webContents.session;
+    try {
+        const cookies = await session.cookies.get({ domain });
+        for (const cookie of cookies) {
+            let url = 'http' + (cookie.secure ? 's' : '') + '://' + cookie.domain + cookie.path;
+            await session.cookies.remove(url, cookie.name);
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+});
+
+ipcMain.handle('webauthn:blockCookies', async (event, domain) => {
+    if (!isSenderTrusted(event) || !domain) return false;
+    const { addToCookieBlocklist } = require('./runtime/sessionPolicy');
+    addToCookieBlocklist(domain);
+    
+    // Also delete existing cookies
+    const context = getWindowContextByEventSender(event.sender);
+    if (context && context.activeTabId) {
+        const tabView = context.tabs[context.activeTabId];
+        if (tabView) {
+            const session = tabView.webContents.session;
+            try {
+                const cookies = await session.cookies.get({ domain });
+                for (const cookie of cookies) {
+                    let url = 'http' + (cookie.secure ? 's' : '') + '://' + cookie.domain + cookie.path;
+                    await session.cookies.remove(url, cookie.name);
+                }
+            } catch (e) {}
+        }
+    }
+    return true;
+});
 
 ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_GET, (e) => {
     if (!isSenderTrusted(e)) return { bar: [] };
