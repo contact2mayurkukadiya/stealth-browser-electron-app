@@ -2586,61 +2586,108 @@
         panel.classList.add('co-visible');
       }
 
+      function appendMenuRows(container, rows, onItemActivate) {
+        const list = Array.isArray(rows) ? rows : [];
+        list.forEach(function (it) {
+          if (it && it.type === 'separator') {
+            const div = document.createElement('div');
+            div.className = 'co-divider';
+            div.setAttribute('role', 'separator');
+            container.appendChild(div);
+            return;
+          }
+          const row = makeRow(it || {}, function () {
+            if (typeof onItemActivate === 'function') onItemActivate(it);
+          }, false);
+          container.appendChild(row);
+        });
+      }
+
+      function isChromeStyleMenuRows(rows) {
+        if (!Array.isArray(rows) || !rows.length) return false;
+        return rows.some(function (it) {
+          return it && (it.commandId || it.header || it.type === 'separator' || it.highlight);
+        });
+      }
+
       function renderProfileMenu(payload) {
         hideAll({ hideLens: false });
         const r = payload.menuRect || {};
-        const width = Math.round(r.width != null ? r.width : 260);
+        const width = Math.round(r.width != null ? r.width : 320);
         const metrics = getCompactMenuMetrics(payload);
         const left = Math.max(8, Math.min(Math.round(r.left != null ? r.left : 0), metrics.viewportWidth - width - 8));
         const top = Math.max(8, Math.min(Math.round(r.top != null ? r.top : 0), metrics.viewportHeight - 80 - 8));
         const panelPoint = toCompactMenuPoint(payload, left, top);
+        panel.innerHTML = '';
         panel.style.left = panelPoint.left + 'px';
         panel.style.top = panelPoint.top + 'px';
         panel.style.width = width + 'px';
+        panel.style.minWidth = width + 'px';
+        panel.style.maxWidth = width + 'px';
+        panel.style.maxHeight = Math.max(
+          240,
+          Math.min(metrics.viewportHeight - top - 8, window.innerHeight - panelPoint.top - 8)
+        ) + 'px';
+        panel.style.overflowY = 'auto';
+        panel.style.overflowX = 'hidden';
+        panel.classList.remove('co-panel--app-menu');
 
         const items = Array.isArray(payload.items) ? payload.items : [];
-        items.forEach(function (it) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'co-row';
-          btn.setAttribute('role', 'menuitem');
-          btn.textContent = it.label || it.profileId || '';
-          btn.addEventListener('click', function () {
-            notifyHost({ type: 'selectProfile', profileId: it.profileId });
-          });
-          panel.appendChild(btn);
-        });
 
-        if (payload.showEdit) {
-          const div = document.createElement('div');
-          div.className = 'co-divider';
-          div.setAttribute('role', 'separator');
-          panel.appendChild(div);
-          const editBtn = document.createElement('button');
-          editBtn.type = 'button';
-          editBtn.className = 'co-row';
-          editBtn.setAttribute('role', 'menuitem');
-          editBtn.textContent = 'Edit profile…';
-          editBtn.addEventListener('click', function () {
-            notifyHost({ type: 'editProfile' });
+        if (isChromeStyleMenuRows(items)) {
+          appendMenuRows(panel, items, function (it) {
+            notifyHost({
+              type: 'appMenuCommand',
+              commandId: it.commandId || null,
+              profileId: it.profileId || null,
+            });
+            hideAll({ hideLens: false });
           });
-          panel.appendChild(editBtn);
+        } else {
+          // Legacy simple profile list (profileId + label only)
+          items.forEach(function (it) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'co-row';
+            btn.setAttribute('role', 'menuitem');
+            btn.textContent = it.label || it.profileId || '';
+            btn.addEventListener('click', function () {
+              notifyHost({ type: 'selectProfile', profileId: it.profileId });
+            });
+            panel.appendChild(btn);
+          });
+
+          if (payload.showEdit) {
+            const div = document.createElement('div');
+            div.className = 'co-divider';
+            div.setAttribute('role', 'separator');
+            panel.appendChild(div);
+            const editBtn = document.createElement('button');
+            editBtn.type = 'button';
+            editBtn.className = 'co-row';
+            editBtn.setAttribute('role', 'menuitem');
+            editBtn.textContent = 'Edit profile…';
+            editBtn.addEventListener('click', function () {
+              notifyHost({ type: 'editProfile' });
+            });
+            panel.appendChild(editBtn);
+          }
+
+          const div2 = document.createElement('div');
+          div2.className = 'co-divider';
+          div2.setAttribute('role', 'separator');
+          panel.appendChild(div2);
+
+          const addBtn = document.createElement('button');
+          addBtn.type = 'button';
+          addBtn.className = 'co-row co-row--add';
+          addBtn.setAttribute('role', 'menuitem');
+          addBtn.textContent = '+  Add new profile';
+          addBtn.addEventListener('click', function () {
+            notifyHost({ type: 'addProfile' });
+          });
+          panel.appendChild(addBtn);
         }
-
-        const div2 = document.createElement('div');
-        div2.className = 'co-divider';
-        div2.setAttribute('role', 'separator');
-        panel.appendChild(div2);
-
-        const addBtn = document.createElement('button');
-        addBtn.type = 'button';
-        addBtn.className = 'co-row co-row--add';
-        addBtn.setAttribute('role', 'menuitem');
-        addBtn.textContent = '+  Add new profile';
-        addBtn.addEventListener('click', function () {
-          notifyHost({ type: 'addProfile' });
-        });
-        panel.appendChild(addBtn);
 
         backdrop.classList.add('co-visible');
         panel.classList.add('co-visible');
@@ -2650,25 +2697,15 @@
         const rows = Array.isArray(items) ? items : [];
         const width = Math.round(submenuWidth || 300);
         submenu.innerHTML = '';
-        rows.forEach(function (it) {
-          if (it && it.type === 'separator') {
-            const div = document.createElement('div');
-            div.className = 'co-divider';
-            div.setAttribute('role', 'separator');
-            submenu.appendChild(div);
-            return;
-          }
-          const row = makeRow(it || {}, function () {
-            notifyHost({
-              type: 'appMenuCommand',
-              commandId: it.commandId || null,
-              closedAt: it.closedAt || null,
-              profileId: it.profileId || null,
-              url: it.url || null,
-            });
-            hideAll({ hideLens: false });
-          }, false);
-          submenu.appendChild(row);
+        appendMenuRows(submenu, rows, function (it) {
+          notifyHost({
+            type: 'appMenuCommand',
+            commandId: it.commandId || null,
+            closedAt: it.closedAt || null,
+            profileId: it.profileId || null,
+            url: it.url || null,
+          });
+          hideAll({ hideLens: false });
         });
 
         const left = Math.max(8, Math.round(anchorRect.left - width - 6));

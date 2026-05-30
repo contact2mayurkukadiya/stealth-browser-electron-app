@@ -4,25 +4,24 @@ import { useTabOverlay } from '../context/TabOverlayContext';
 import { useChromeShellMenuOverlay } from '../context/ChromeOverlayContext';
 import { setBookmarks } from '../store/bookmarksSlice';
 import { collectFolderOptions } from '../utils/bookmarkFolderList';
-import { profileAvatarBackground, profileInitials } from '../utils/profileAvatar';
+import {
+  buildProfileAvatarPayload,
+  buildProfileMenuRows,
+} from '../utils/profileMenuRows';
 import OmniboxInput from './omnibox/OmniboxInput';
 import ProfileMenuButton from './ProfileMenuButton';
 import ProfileEditorModal from './ProfileEditorModal';
 import { BOOKMARK, OVERLAY, PROFILE, URL as URL_C } from '../constants/conditionStrings.js';
 import {
   bookmarkStarFilledSvg,
-  menuAddProfileSvg,
   menuBookmarksSvg,
-  menuCloseProfileSvg,
   menuCopySvg,
   menuCutSvg,
   menuDeleteDataSvg,
   menuDownloadsSvg,
-  menuEditProfileSvg,
   menuFindSvg,
   menuHistorySvg,
   menuLensSvg,
-  menuManageProfilesSvg,
   menuNewTabSvg,
   menuNewWindowSvg,
   menuPasteSvg,
@@ -228,16 +227,25 @@ export default function NavBar({
     return next;
   }, []);
 
-  const buildProfileAvatarPayload = useCallback((profile) => {
-    if (!profile?.profileId) return null;
-    const label = profile.displayName || profile.profileId;
-    return {
-      src: profileAvatarsRef.current[profile.profileId] || null,
-      initials: profileInitials(label),
-      background: profileAvatarBackground(profile.profileId),
-      preset: profile.avatarSource === PROFILE.AVATAR_PRESET,
-    };
-  }, []);
+  const buildProfileAvatarPayloadForMenu = useCallback(
+    (profile) => buildProfileAvatarPayload(profile, profileAvatarsRef.current),
+    [],
+  );
+
+  const getProfileMenuRows = useCallback(() => {
+    const profileList = profilesRef.current.length ? profilesRef.current : profiles;
+    const activeProfile = currentProfileRef.current || currentProfile;
+    return buildProfileMenuRows({
+      profiles: profileList,
+      activeProfile,
+      avatarDataByProfileId: profileAvatarsRef.current,
+    });
+  }, [profiles, currentProfile]);
+
+  const prepareProfileMenu = useCallback(async () => {
+    const { profiles: nextProfiles } = await loadProfiles();
+    await loadProfileAvatars(nextProfiles);
+  }, [loadProfiles, loadProfileAvatars]);
 
   useEffect(() => {
     if (!profileEditorOpen) return undefined;
@@ -339,6 +347,21 @@ export default function NavBar({
     setProfileEditorOpen(true);
   }, [currentProfile]);
 
+  const handleProfileMenuCommand = useCallback((data) => {
+    const commandId = data?.commandId;
+    if (commandId === 'openProfile' && data?.profileId) {
+      window.electronAPI.profileOpenWindow?.(data.profileId);
+    } else if (commandId === 'addProfile') {
+      handleAddProfile();
+    } else if (commandId === 'manageProfiles') {
+      window.electronAPI.profilePickerOpen?.();
+    } else if (commandId === 'customizeCurrentProfile') {
+      handleEditCurrentProfile();
+    } else if (commandId === 'closeCurrentProfile') {
+      window.electronAPI.profileCloseCurrent?.();
+    }
+  }, [handleAddProfile, handleEditCurrentProfile]);
+
   const handleBack = () => window.electronAPI.goBack(currentTabId);
   const handleForward = () => window.electronAPI.goForward(currentTabId);
   const handleReload = () => window.electronAPI.reload(currentTabId);
@@ -401,27 +424,13 @@ export default function NavBar({
     const activeProfile = currentProfileRef.current || currentProfile;
     const closedRows = recentlyClosedRef.current.length ? recentlyClosedRef.current : recentlyClosed;
     const activeProfileLabel = activeProfile?.displayName || activeProfile?.profileId || 'Profile';
-    const activeProfileAvatar = buildProfileAvatarPayload(activeProfile);
+    const activeProfileAvatar = buildProfileAvatarPayloadForMenu(activeProfile);
     const bookmarkRows = flattenBookmarkMenuItems(bookmarksData.bar);
-    const profileRows = [
-      { header: true, label: `Signed in as ${activeProfileLabel}`, avatar: activeProfileAvatar, highlight: true },
-      { type: 'separator' },
-      { iconSrc: menuEditProfileSvg, label: 'Customize Your Chrome', commandId: 'customizeCurrentProfile' },
-      { iconSrc: menuCloseProfileSvg, label: 'Close This Profile', commandId: 'closeCurrentProfile' },
-      { type: 'separator' },
-      { header: true, label: 'Other Chrome Profiles' },
-      ...profileList
-        .filter((p) => p?.profileId && p.profileId !== activeProfile?.profileId)
-        .map((p) => ({
-          avatar: buildProfileAvatarPayload(p),
-          label: p.displayName || p.profileId,
-          commandId: 'openProfile',
-          profileId: p.profileId,
-        })),
-      { type: 'separator' },
-      { iconSrc: menuAddProfileSvg, label: 'Add New Profile', commandId: 'addProfile' },
-      { iconSrc: menuManageProfilesSvg, label: 'Manage Chrome Profiles', commandId: 'manageProfiles' },
-    ];
+    const profileRows = buildProfileMenuRows({
+      profiles: profileList,
+      activeProfile,
+      avatarDataByProfileId: profileAvatarsRef.current,
+    });
     const historyRows = [
       { iconSrc: menuHistorySvg, label: 'Open History Page', shortcut: shortcut('⌘Y', 'Ctrl+Y'), commandId: 'openHistoryPage' },
       { iconSrc: menuHistorySvg, label: 'Show History in Side Panel', commandId: 'historySidePanel', disabled: true },
@@ -487,7 +496,7 @@ export default function NavBar({
         find: findRows,
       },
     });
-  }, [bookmarksData.bar, buildProfileAvatarPayload, canBookmark, canSearchWithGoogleLens, currentProfile, existingBookmark, profiles, recentlyClosed, post, shortcut]);
+  }, [bookmarksData.bar, buildProfileAvatarPayloadForMenu, canBookmark, canSearchWithGoogleLens, currentProfile, existingBookmark, profiles, recentlyClosed, post, shortcut]);
 
   const openAppMenu = useCallback(async (e) => {
     const anchor = e.currentTarget?.getBoundingClientRect?.();
@@ -548,11 +557,15 @@ export default function NavBar({
           else if (commandId === 'cut') window.electronAPI.runMenuCommand?.('edit-cut');
           else if (commandId === 'copy') window.electronAPI.runMenuCommand?.('edit-copy');
           else if (commandId === 'paste') window.electronAPI.runMenuCommand?.('edit-paste');
-          else if (commandId === 'openProfile' && data?.profileId) window.electronAPI.profileOpenWindow?.(data.profileId);
-          else if (commandId === 'addProfile') handleAddProfile();
-          else if (commandId === 'manageProfiles') window.electronAPI.profilePickerOpen?.();
-          else if (commandId === 'customizeCurrentProfile') handleEditCurrentProfile();
-          else if (commandId === 'closeCurrentProfile') window.electronAPI.profileCloseCurrent?.();
+          else if (
+            commandId === 'openProfile'
+            || commandId === 'addProfile'
+            || commandId === 'manageProfiles'
+            || commandId === 'customizeCurrentProfile'
+            || commandId === 'closeCurrentProfile'
+          ) {
+            handleProfileMenuCommand(data);
+          }
           else if (commandId === 'restoreRecentlyClosed' && data?.closedAt) {
             window.electronAPI.recentlyClosedRestore?.(data.closedAt);
           } else if (commandId === 'openBookmark' && data?.url && currentTabId) {
@@ -662,6 +675,7 @@ export default function NavBar({
     dispatch,
     handleAddProfile,
     handleEditCurrentProfile,
+    handleProfileMenuCommand,
     onDeleteBrowsingData,
     onNewTab,
     onOpenHistory,
@@ -727,6 +741,9 @@ export default function NavBar({
       <ProfileMenuButton
         profiles={profiles}
         activeProfile={currentProfile}
+        getProfileMenuRows={getProfileMenuRows}
+        prepareProfileMenu={prepareProfileMenu}
+        onProfileMenuCommand={handleProfileMenuCommand}
         onOpenProfile={handleOpenProfileWindow}
         onAddProfile={handleAddProfile}
         onEditProfile={handleEditCurrentProfile}

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useChromeShellMenuOverlay } from '../context/ChromeOverlayContext';
 import ProfileAvatar from './ProfileAvatar';
+import { PROFILE_MENU_WIDTH } from '../utils/profileMenuRows';
 import './ProfileMenuButton.css';
 import { OVERLAY } from '../constants/conditionStrings.js';
 
@@ -11,12 +12,15 @@ const CHEVRON = (
 );
 
 /**
- * Navbar profile control: avatar + chevron opens menu (profiles + add new).
- * Menu UI renders in the chrome overlay WebContentsView (Tier 2) above the tab layer.
+ * Navbar profile control: avatar + chevron opens Chrome-style profile menu
+ * (same rows as three-dot menu profile submenu) in the shell menu overlay.
  */
 export default function ProfileMenuButton({
   profiles = [],
   activeProfile = null,
+  getProfileMenuRows,
+  prepareProfileMenu,
+  onProfileMenuCommand,
   onOpenProfile,
   onAddProfile,
   onEditProfile,
@@ -29,27 +33,29 @@ export default function ProfileMenuButton({
   const pendingOwnResetRef = useRef(false);
   /** Main `chrome-overlay:v1:reset` cleared our acquire; effect cleanup must not call `release()`. */
   const leaseRevokedByResetRef = useRef(false);
+  const getProfileMenuRowsRef = useRef(getProfileMenuRows);
+  const prepareProfileMenuRef = useRef(prepareProfileMenu);
   const { reset, acquire, release, post } = useChromeShellMenuOverlay();
 
   const close = useCallback(() => setOpen(false), []);
   openRef.current = open;
+  getProfileMenuRowsRef.current = getProfileMenuRows;
+  prepareProfileMenuRef.current = prepareProfileMenu;
 
   const buttonProfile = activeProfile || profiles[0] || null;
 
   const syncMenuToOverlay = useCallback(async () => {
     if (!triggerRef.current) return;
     const br = triggerRef.current.getBoundingClientRect();
-    const menuWidth = 260;
+    const menuWidth = PROFILE_MENU_WIDTH;
     let menuLeft = Math.round(br.right - menuWidth);
     menuLeft = Math.max(8, Math.min(menuLeft, window.innerWidth - menuWidth - 8));
     const menuTop = Math.round(br.bottom + 6);
+    const getRows = getProfileMenuRowsRef.current;
+    const rows = typeof getRows === 'function' ? getRows() : [];
     const payload = {
       kind: 'profileMenu',
-      items: profiles.map((p) => ({
-        profileId: p.profileId,
-        label: p.displayName || p.profileId,
-      })),
-      showEdit: typeof onEditProfile === 'function' && !!activeProfile?.profileId,
+      items: rows,
       menuRect: { left: menuLeft, top: menuTop, width: menuWidth },
     };
     try {
@@ -57,7 +63,7 @@ export default function ProfileMenuButton({
     } catch (err) {
       console.error('ProfileMenuButton chromeShellMenuOverlayV1Post', err);
     }
-  }, [profiles, activeProfile, onEditProfile, post]);
+  }, [post]);
 
   useLayoutEffect(() => {
     if (!open) return undefined;
@@ -67,6 +73,14 @@ export default function ProfileMenuButton({
       try {
         await reset();
         await acquire();
+        if (cancelled) {
+          await release();
+          return;
+        }
+        const prepare = prepareProfileMenuRef.current;
+        if (typeof prepare === 'function') {
+          await prepare();
+        }
         if (cancelled) {
           await release();
           return;
@@ -121,6 +135,14 @@ export default function ProfileMenuButton({
         close();
         return;
       }
+      if (t === OVERLAY.APP_MENU_COMMAND) {
+        close();
+        if (typeof onProfileMenuCommand === 'function') {
+          onProfileMenuCommand(data);
+        }
+        return;
+      }
+      // Legacy overlay events (simple profile menu payloads)
       if (t === OVERLAY.SELECT_PROFILE) {
         close();
         onOpenProfile?.(data.profileId);
@@ -137,7 +159,7 @@ export default function ProfileMenuButton({
       }
     });
     return typeof unsub === 'function' ? unsub : undefined;
-  }, [close, onOpenProfile, onEditProfile, onAddProfile]);
+  }, [close, onProfileMenuCommand, onOpenProfile, onEditProfile, onAddProfile]);
 
   return (
     <div className="profile-menu profile-menu--compact">
