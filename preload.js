@@ -345,6 +345,12 @@ const C = Object.freeze({
         "CHROME_SHELL_MENU_OVERLAY_POST": "chrome-shell-menu-overlay:v1:post",
         "SETTINGS_GET": "settings:get",
         "SETTINGS_SAVE": "settings:save",
+        "COOKIE_SUMMARY": "cookies:summary",
+        "COOKIE_DELETE_DOMAIN": "cookies:delete-domain",
+        "COOKIE_CLEAR_ALL": "cookies:clear-all",
+        "COOKIE_SETTINGS_GET": "cookies:settings-get",
+        "COOKIE_SETTINGS_UPDATE": "cookies:settings-update",
+        "CLIPBOARD_WRITE": "clipboard:write-text",
         "APP_RELAUNCH": "app:relaunch",
         "APP_LOG_INFO": "app:log-info",
         "APP_LOG_FILES": "app:log-files",
@@ -663,7 +669,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     compatDiagGetReport: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.COMPAT_GET_REPORT, payload),
     compatDiagClear: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.COMPAT_CLEAR, payload),
     identityDiagGetReport: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.IDENTITY_DIAG_GET_REPORT, payload),
-    clipboardWriteText: (text) => clipboard.writeText(String(text || '')),
+    clipboardWriteText: (text) => ipcRenderer.invoke(C.IPC_INVOKE.CLIPBOARD_WRITE, { text: String(text || '') }),
 
     // New Tab Page
     ntpGetTopSites: () => ipcRenderer.invoke(C.IPC_INVOKE.NTP_TOP_SITES),
@@ -676,4 +682,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Platform identifier — used by the renderer to apply platform-specific styles
     platform: process.platform,
+});
+
+contextBridge.exposeInMainWorld('cookieAPI', {
+    getCookieSummary: () => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SUMMARY),
+    deleteCookiesForDomain: (domain) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_DELETE_DOMAIN, { domain: String(domain || '') }),
+    clearAllSiteData: () => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_CLEAR_ALL),
+    getSettings: () => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SETTINGS_GET),
+    updateSettings: (config) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, config),
 });

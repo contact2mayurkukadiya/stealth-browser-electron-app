@@ -7,6 +7,7 @@
 const { getBrowserIdentity } = require('./browserIdentity');
 
 const installedSessions = new WeakSet();
+const sessionPolicyContext = new WeakMap();
 
 /** @type {Map<number, object[]>} webContentsId -> recent header observations */
 const headerObservationsByWebContentsId = new Map();
@@ -16,6 +17,15 @@ const tabNetworkDomains = new Map();
 
 /** @type {Set<string>} domains blocked from setting or sending cookies */
 const cookieBlocklist = new Set();
+
+const COOKIE_GLOBAL_POLICIES = new Set([
+    'allow',
+    'block_third_party_stealth',
+    'block_third_party',
+    'block_all',
+]);
+
+const COOKIE_EXCEPTION_SETTINGS = new Set(['allow', 'block', 'session_only']);
 
 const MAX_HEADER_OBSERVATIONS_PER_WEB_CONTENTS = 40;
 
@@ -45,6 +55,120 @@ function safeOrigin(rawUrl) {
     } catch {
         return null;
     }
+}
+
+function safeHostname(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return '';
+    try {
+        return new URL(rawUrl).hostname.toLowerCase();
+    } catch {
+        return '';
+    }
+}
+
+function normalizeCookieConfig(config) {
+    const input = config && typeof config === 'object' ? config : {};
+    const globalPolicy = COOKIE_GLOBAL_POLICIES.has(input.globalPolicy) ? input.globalPolicy : 'allow';
+    const exceptions = Array.isArray(input.exceptions)
+        ? input.exceptions
+            .map((rule) => ({
+                pattern: String(rule?.pattern || '').trim().toLowerCase(),
+                setting: COOKIE_EXCEPTION_SETTINGS.has(rule?.setting) ? rule.setting : null,
+            }))
+            .filter((rule) => rule.pattern && rule.setting)
+        : [];
+    return { globalPolicy, exceptions };
+}
+
+function getCookieConfigForSession(targetSession) {
+    const ctx = sessionPolicyContext.get(targetSession) || {};
+    if (typeof ctx.getCookieConfig === 'function') {
+        return normalizeCookieConfig(ctx.getCookieConfig(ctx.profileId));
+    }
+    return normalizeCookieConfig(null);
+}
+
+function normalizeHost(host) {
+    return String(host || '').trim().toLowerCase().replace(/^\.+/, '');
+}
+
+function normalizePattern(pattern) {
+    const raw = String(pattern || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (raw.startsWith('[*.]')) return raw.slice(4).replace(/^\.+/, '');
+    if (raw.startsWith('*.')) return raw.slice(2).replace(/^\.+/, '');
+    return raw.replace(/^\.+/, '');
+}
+
+function cookiePatternMatchesHost(pattern, host) {
+    const normalizedHost = normalizeHost(host);
+    const normalizedPattern = normalizePattern(pattern);
+    if (!normalizedHost || !normalizedPattern) return false;
+    const raw = String(pattern || '').trim().toLowerCase();
+    const wildcard = raw.startsWith('[*.]') || raw.startsWith('*.');
+    if (normalizedHost === normalizedPattern) return true;
+    return wildcard && normalizedHost.endsWith(`.${normalizedPattern}`);
+}
+
+function getCookieExceptionForHost(config, host) {
+    const normalized = normalizeCookieConfig(config);
+    return normalized.exceptions.find((rule) => cookiePatternMatchesHost(rule.pattern, host)) || null;
+}
+
+const COMMON_SECOND_LEVEL_TLDS = new Set([
+    'ac', 'co', 'com', 'edu', 'gov', 'net', 'org',
+]);
+
+function getRegisterableDomain(host) {
+    const normalizedHost = normalizeHost(host);
+    if (!normalizedHost) return '';
+    const parts = normalizedHost.split('.').filter(Boolean);
+    if (parts.length <= 2) return normalizedHost;
+    const tld = parts[parts.length - 1];
+    const second = parts[parts.length - 2];
+    if (tld.length === 2 && COMMON_SECOND_LEVEL_TLDS.has(second) && parts.length >= 3) {
+        return parts.slice(-3).join('.');
+    }
+    return parts.slice(-2).join('.');
+}
+
+function isThirdPartyRequest(details) {
+    const targetHost = safeHostname(details?.url);
+    const initiatorHost = safeHostname(details?.initiator);
+    if (!targetHost || !initiatorHost) return false;
+    return getRegisterableDomain(targetHost) !== getRegisterableDomain(initiatorHost);
+}
+
+function shouldBlockCookies(details, targetSession) {
+    const host = safeHostname(details?.url);
+    if (!host) return false;
+
+    const legacyBlocked = cookieBlocklist.has(host);
+    const config = getCookieConfigForSession(targetSession);
+    const exception = getCookieExceptionForHost(config, host);
+    if (exception) {
+        return exception.setting === 'block';
+    }
+    if (legacyBlocked) return true;
+
+    const ctx = sessionPolicyContext.get(targetSession) || {};
+    if (config.globalPolicy === 'block_all') return true;
+    if (config.globalPolicy === 'block_third_party') return isThirdPartyRequest(details);
+    if (config.globalPolicy === 'block_third_party_stealth') {
+        return !!ctx.isStealthSession && isThirdPartyRequest(details);
+    }
+    return false;
+}
+
+function stripHeaderByName(headers, headerName) {
+    let modified = false;
+    for (const key of Object.keys(headers || {})) {
+        if (key.toLowerCase() === headerName) {
+            delete headers[key];
+            modified = true;
+        }
+    }
+    return modified;
 }
 
 function pickIdentityHeaders(requestHeaders) {
@@ -108,7 +232,13 @@ function isSessionPolicyInstalled(targetSession) {
  * }} deps
  */
 function installSessionPolicy(targetSession, deps) {
-    if (!targetSession || installedSessions.has(targetSession)) return;
+    if (!targetSession) return;
+    sessionPolicyContext.set(targetSession, {
+        profileId: deps.profileId || null,
+        isStealthSession: !!deps.isStealthSession,
+        getCookieConfig: deps.getCookieConfig,
+    });
+    if (installedSessions.has(targetSession)) return;
     installedSessions.add(targetSession);
 
     const identity = getBrowserIdentity();
@@ -155,13 +285,8 @@ function installSessionPolicy(targetSession, deps) {
                     domains.add(domain);
                 }
 
-                // Block cookies if domain is in blocklist
-                if (cookieBlocklist.has(domain)) {
-                    for (const key of Object.keys(requestHeaders)) {
-                        if (key.toLowerCase() === 'cookie') {
-                            delete requestHeaders[key];
-                        }
-                    }
+                if (shouldBlockCookies(details, targetSession)) {
+                    stripHeaderByName(requestHeaders, 'cookie');
                 }
             } catch (e) {
                 // Ignore invalid URLs
@@ -222,15 +347,8 @@ function installSessionPolicy(targetSession, deps) {
 
         if (details.webContentsId != null) {
             try {
-                const urlObj = new URL(details.url);
-                const domain = urlObj.hostname;
-                if (cookieBlocklist.has(domain)) {
-                    for (const key of Object.keys(responseHeaders)) {
-                        if (key.toLowerCase() === 'set-cookie') {
-                            delete responseHeaders[key];
-                            modified = true;
-                        }
-                    }
+                if (shouldBlockCookies(details, targetSession)) {
+                    modified = stripHeaderByName(responseHeaders, 'set-cookie') || modified;
                 }
             } catch (e) {
                 // Ignore invalid URLs
@@ -296,4 +414,7 @@ module.exports = {
     getCookieBlocklist,
     addToCookieBlocklist,
     removeFromCookieBlocklist,
+    normalizeCookieConfig,
+    cookiePatternMatchesHost,
+    getCookieExceptionForHost,
 };

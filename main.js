@@ -21,7 +21,11 @@ const {
     applyShellWindowSecurity,
     applyProfilePickerSecurity,
 } = require('./runtime/windowSecurity');
-const { configureSession } = require('./runtime/sessionPolicy');
+const {
+    configureSession,
+    normalizeCookieConfig,
+    cookiePatternMatchesHost,
+} = require('./runtime/sessionPolicy');
 const identityDiagnostics = require('./runtime/identityDiagnostics');
 const { setupWebAuthn } = require('./runtime/webauthn');
 
@@ -160,6 +164,8 @@ let appIsQuitting = false;
 let appQuitAfterHistoryClose = false;
 let appHistoryCloseStarted = false;
 let appHistoryClosed = false;
+let appCookieCleanupStarted = false;
+let appCookieCleanupClosed = false;
 
 const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
 let generatedTabCounter = 0;
@@ -578,7 +584,7 @@ function buildRedirectBlockedPage(targetUrl, reasonText) {
     `;
 }
 
-function getSessionPolicyDeps() {
+function getSessionPolicyDeps({ profileId = null, isStealthSession = false } = {}) {
     return {
         resourceTypeMainFrame: C.RESOURCE_TYPE.MAIN_FRAME,
         maxMainFrameRedirects: MAX_MAINFRAME_REDIRECTS,
@@ -588,11 +594,14 @@ function getSessionPolicyDeps() {
         recordCompatEvent,
         pickResponseHeadersForDiag,
         mainFrameRequestWindowsByWebContents,
+        profileId,
+        isStealthSession,
+        getCookieConfig: (targetProfileId) => loadSettings(targetProfileId).cookieConfig,
     };
 }
 
-function installSessionNetworkGuards(targetSession) {
-    configureSession(targetSession, getSessionPolicyDeps());
+function installSessionNetworkGuards(targetSession, options = {}) {
+    configureSession(targetSession, getSessionPolicyDeps(options));
 }
 
 // Dev-only chokidar watchers tracked so they can be closed before quit.
@@ -668,7 +677,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     const partition = `persist:profile-${resolvedProfileId}`;
     const mappedSession = session.fromPartition(partition);
     registerAppProtocolForSession(mappedSession, partition);
-    installSessionNetworkGuards(mappedSession);
+    installSessionNetworkGuards(mappedSession, { profileId: resolvedProfileId, isStealthSession: false });
 
     /** One shared in-memory session per stealth window (all tabs incognito; discarded with the window). */
     let stealthTabsPartition = null;
@@ -676,7 +685,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         stealthTabsPartition = `in-memory:stealth-win-${crypto.randomUUID()}`;
         const stealthTabSession = session.fromPartition(stealthTabsPartition);
         registerAppProtocolForSession(stealthTabSession, stealthTabsPartition);
-        installSessionNetworkGuards(stealthTabSession);
+        installSessionNetworkGuards(stealthTabSession, { profileId: resolvedProfileId, isStealthSession: true });
     }
 
     const isMac = process.platform === C.PLATFORM.DARWIN;
@@ -893,6 +902,17 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         });
         windowContextsById.delete(window.id);
         windowBootstrapById.delete(context.windowId);
+        const profileStillOpen = Array.from(windowContextsById.values()).some(
+            (ctx) => ctx?.profileId === context.profileId,
+        );
+        if (!profileStillOpen) {
+            cleanupSessionOnlyCookiesForProfile(context.profileId).catch((error) => {
+                appLogger.warn('cookies:session-only-cleanup-failed', {
+                    profileId: context.profileId,
+                    error: appLogger.serializeError(error),
+                });
+            });
+        }
         if (mainWindow === window) {
             mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed()) || null;
         }
@@ -4685,7 +4705,10 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     });
 
     applyIdentityToWebContents(view.webContents);
-    installSessionNetworkGuards(view.webContents.session);
+    installSessionNetworkGuards(view.webContents.session, {
+        profileId: context.profileId,
+        isStealthSession: !!context.stealthWindow,
+    });
     installDevToolsTypographyOnOpen(view.webContents);
 
     // ─── Security guards for tab content (Rules 13, 14) ────
@@ -5143,6 +5166,11 @@ function isInternalPageUrl(url) {
 // ─── SETTINGS STORAGE ────────────────────────────────────────────────────────
 let settingsPath;
 
+const COOKIE_CONFIG_DEFAULTS = {
+    globalPolicy: 'block_third_party_stealth',
+    exceptions: [],
+};
+
 const SETTINGS_DEFAULTS = {
     contentProtection: true,
     startupBehavior: 'continue', // 'fresh' | 'continue' | 'clearHistory'
@@ -5153,6 +5181,8 @@ const SETTINGS_DEFAULTS = {
     /** Preset id from chromeTheme.ACCENT_PRESETS, or 'custom' with accentCustomHex */
     accentTheme: 'default',
     accentCustomHex: null,
+    cookieConfig: COOKIE_CONFIG_DEFAULTS,
+    cookieConfigByProfile: {},
 };
 
 const SEARCH_ENGINES = {
@@ -5181,6 +5211,30 @@ function getSettingsPath() {
 function normalizeColorTheme(value) {
     if (value === 'automatic' || value === 'dark' || value === 'light') return value;
     return 'automatic';
+}
+
+function normalizeProfileId(profileId) {
+    return String(profileId || '').trim().replace(/[^a-zA-Z0-9-_]/g, '_');
+}
+
+function getProfileIdForEventSender(sender) {
+    return getWindowContextByEventSender(sender)?.profileId || defaultProfileId || null;
+}
+
+function normalizeCookieSettingsFields(settings, profileId = null) {
+    const merged = settings && typeof settings === 'object' ? { ...settings } : {};
+    const byProfile = merged.cookieConfigByProfile && typeof merged.cookieConfigByProfile === 'object'
+        ? { ...merged.cookieConfigByProfile }
+        : {};
+    const baseConfig = normalizeCookieConfig(merged.cookieConfig || COOKIE_CONFIG_DEFAULTS);
+    const safeProfileId = normalizeProfileId(profileId);
+    const profileConfig = safeProfileId && byProfile[safeProfileId]
+        ? normalizeCookieConfig(byProfile[safeProfileId])
+        : baseConfig;
+    if (safeProfileId) byProfile[safeProfileId] = profileConfig;
+    merged.cookieConfig = profileConfig;
+    merged.cookieConfigByProfile = byProfile;
+    return merged;
 }
 
 function colorThemeSettingToElectronSource(setting) {
@@ -5318,20 +5372,20 @@ function applyColorThemeFromSettings() {
     broadcastThemeApply();
 }
 
-function loadSettings() {
+function loadSettings(profileId = null) {
     try {
         const p = getSettingsPath();
         if (fs.existsSync(p)) {
             const merged = { ...SETTINGS_DEFAULTS, ...JSON.parse(fs.readFileSync(p, 'utf-8')) };
             merged.colorTheme = normalizeColorTheme(merged.colorTheme);
-            return chromeTheme.normalizeAccentFields(merged);
+            return chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(merged, profileId));
         }
     } catch (e) {
         console.error('Failed to load settings:', e);
     }
     const defaults = { ...SETTINGS_DEFAULTS };
     defaults.colorTheme = normalizeColorTheme(defaults.colorTheme);
-    return chromeTheme.normalizeAccentFields(defaults);
+    return chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(defaults, profileId));
 }
 
 function recordCompatEvent(tabId, entry) {
@@ -5348,14 +5402,128 @@ function saveSettings(data) {
     }
 }
 
+function getProfilePartition(profileId) {
+    const safeProfileId = normalizeProfileId(profileId);
+    if (!safeProfileId) return null;
+    return `persist:profile-${safeProfileId}`;
+}
+
+function getProfileSession(profileId) {
+    const partition = getProfilePartition(profileId);
+    return partition ? session.fromPartition(partition) : null;
+}
+
+function getProfileSessionForSender(sender) {
+    return getProfileSession(getProfileIdForEventSender(sender));
+}
+
+function cookieDomainToHost(domain) {
+    return String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
+}
+
+function cookieMatchesDomain(cookie, domain) {
+    const host = cookieDomainToHost(cookie?.domain);
+    const target = cookieDomainToHost(domain);
+    if (!host || !target) return false;
+    return host === target || host.endsWith(`.${target}`) || target.endsWith(`.${host}`);
+}
+
+function cookieUrlForRemoval(cookie) {
+    const host = cookieDomainToHost(cookie?.domain);
+    const protocol = cookie?.secure ? 'https' : 'http';
+    const pathPart = cookie?.path || '/';
+    return `${protocol}://${host}${pathPart.startsWith('/') ? pathPart : `/${pathPart}`}`;
+}
+
+async function removeCookiesMatching(targetSession, predicate) {
+    if (!targetSession?.cookies) return 0;
+    const cookies = await targetSession.cookies.get({});
+    let removed = 0;
+    for (const cookie of cookies) {
+        if (!predicate(cookie)) continue;
+        try {
+            await targetSession.cookies.remove(cookieUrlForRemoval(cookie), cookie.name);
+            removed += 1;
+        } catch (_) {
+            /* cookie may have been removed already */
+        }
+    }
+    return removed;
+}
+
+async function getCookieSummaryForSession(targetSession) {
+    if (!targetSession?.cookies) return [];
+    const cookies = await targetSession.cookies.get({});
+    const byDomain = new Map();
+    for (const cookie of cookies) {
+        const domain = cookieDomainToHost(cookie.domain);
+        if (!domain) continue;
+        const row = byDomain.get(domain) || {
+            domain,
+            count: 0,
+            storageBytes: 0,
+        };
+        row.count += 1;
+        row.storageBytes += Math.max(JSON.stringify(cookie).length, 512);
+        byDomain.set(domain, row);
+    }
+    return Array.from(byDomain.values()).sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
+async function cleanupSessionOnlyCookiesForProfile(profileId) {
+    const safeProfileId = normalizeProfileId(profileId);
+    const targetSession = getProfileSession(safeProfileId);
+    if (!targetSession) return 0;
+    const config = loadSettings(safeProfileId).cookieConfig;
+    const sessionOnlyRules = (config.exceptions || []).filter((rule) => rule.setting === 'session_only');
+    if (sessionOnlyRules.length === 0) return 0;
+    return removeCookiesMatching(targetSession, (cookie) => {
+        const host = cookieDomainToHost(cookie.domain);
+        return sessionOnlyRules.some((rule) => cookiePatternMatchesHost(rule.pattern, host));
+    });
+}
+
+async function cleanupSessionOnlyCookiesForAllProfiles() {
+    const profileIds = new Set();
+    for (const ctx of windowContextsById.values()) {
+        if (ctx?.profileId) profileIds.add(ctx.profileId);
+    }
+    if (defaultProfileId) profileIds.add(defaultProfileId);
+    for (const profile of profilesById.values()) {
+        if (profile?.profileId) profileIds.add(profile.profileId);
+    }
+    const results = await Promise.all(Array.from(profileIds).map((profileId) => cleanupSessionOnlyCookiesForProfile(profileId)));
+    return results.reduce((sum, count) => sum + count, 0);
+}
+
+function updateCookieConfigForProfile(profileId, patch) {
+    const safeProfileId = normalizeProfileId(profileId);
+    const current = loadSettings(safeProfileId);
+    const nextConfig = normalizeCookieConfig({
+        ...current.cookieConfig,
+        ...(patch && typeof patch === 'object' ? patch : {}),
+    });
+    const next = normalizeCookieSettingsFields({
+        ...current,
+        cookieConfig: nextConfig,
+        cookieConfigByProfile: {
+            ...(current.cookieConfigByProfile || {}),
+            ...(safeProfileId ? { [safeProfileId]: nextConfig } : {}),
+        },
+    }, safeProfileId);
+    saveSettings(chromeTheme.normalizeAccentFields(next));
+    return nextConfig;
+}
+
 ipcMain.handle(C.IPC_INVOKE.SETTINGS_GET, (e) => {
     if (!isSenderTrusted(e)) return SETTINGS_DEFAULTS;
-    return loadSettings();
+    return loadSettings(getProfileIdForEventSender(e.sender));
 });
 
 ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, (e, data) => {
     if (!isSenderTrusted(e)) return false;
-    const current = loadSettings();
+    const profileId = getProfileIdForEventSender(e.sender);
+    const current = loadSettings(profileId);
     const patch = typeof data === 'object' && data ? data : {};
     const next = { ...current, ...patch };
     if (Object.prototype.hasOwnProperty.call(patch, 'colorTheme')) {
@@ -5368,8 +5536,52 @@ ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, (e, data) => {
         const raw = patch.accentCustomHex;
         next.accentCustomHex = raw == null || raw === '' ? null : chromeTheme.normalizeAccentHex(raw);
     }
-    saveSettings(chromeTheme.normalizeAccentFields(next));
+    if (Object.prototype.hasOwnProperty.call(patch, 'cookieConfig')) {
+        const normalizedCookieConfig = normalizeCookieConfig(patch.cookieConfig);
+        const byProfile = next.cookieConfigByProfile && typeof next.cookieConfigByProfile === 'object'
+            ? { ...next.cookieConfigByProfile }
+            : {};
+        const safeProfileId = normalizeProfileId(profileId);
+        if (safeProfileId) byProfile[safeProfileId] = normalizedCookieConfig;
+        next.cookieConfig = normalizedCookieConfig;
+        next.cookieConfigByProfile = byProfile;
+    }
+    saveSettings(chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(next, profileId)));
     applyColorThemeFromSettings();
+    return true;
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_SUMMARY, async (e) => {
+    if (!isSenderTrusted(e)) return [];
+    return getCookieSummaryForSession(getProfileSessionForSender(e.sender));
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_DELETE_DOMAIN, async (e, { domain } = {}) => {
+    if (!isSenderTrusted(e)) return { ok: false, deleted: 0 };
+    const targetSession = getProfileSessionForSender(e.sender);
+    const deleted = await removeCookiesMatching(targetSession, (cookie) => cookieMatchesDomain(cookie, domain));
+    return { ok: true, deleted };
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_CLEAR_ALL, async (e) => {
+    if (!isSenderTrusted(e)) return { ok: false, deleted: 0 };
+    const deleted = await removeCookiesMatching(getProfileSessionForSender(e.sender), () => true);
+    return { ok: true, deleted };
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_SETTINGS_GET, (e) => {
+    if (!isSenderTrusted(e)) return COOKIE_CONFIG_DEFAULTS;
+    return loadSettings(getProfileIdForEventSender(e.sender)).cookieConfig;
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, (e, config) => {
+    if (!isSenderTrusted(e)) return COOKIE_CONFIG_DEFAULTS;
+    return updateCookieConfigForProfile(getProfileIdForEventSender(e.sender), config);
+});
+
+ipcMain.handle(C.IPC_INVOKE.CLIPBOARD_WRITE, (e, { text } = {}) => {
+    if (!isSenderTrusted(e)) return false;
+    clipboard.writeText(String(text || ''));
     return true;
 });
 
@@ -6544,7 +6756,7 @@ app.whenReady().then(async () => {
         isPackaged: app.isPackaged,
     });
     registerAppProtocolForSession(session.defaultSession, 'default');
-    installSessionNetworkGuards(session.defaultSession);
+    installSessionNetworkGuards(session.defaultSession, { profileId: defaultProfileId, isStealthSession: false });
     logStartupIdentity(app, appLogger);
 
     applyColorThemeFromSettings();
@@ -6620,22 +6832,38 @@ app.on('before-quit', (event) => {
         historyClosed: appHistoryClosed,
         historyCloseStarted: appHistoryCloseStarted,
     });
-    if (appHistoryClosed) return;
+    if (appHistoryClosed && appCookieCleanupClosed) return;
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
     if (appHistoryCloseStarted) return;
     appHistoryCloseStarted = true;
-    historyService.closeAll()
+    appCookieCleanupStarted = true;
+    Promise.all([
+        historyService.closeAll()
+            .then(() => {
+                appHistoryClosed = true;
+            }),
+        cleanupSessionOnlyCookiesForAllProfiles()
+            .then((deleted) => {
+                appCookieCleanupClosed = true;
+                if (deleted > 0) {
+                    appLogger.info('cookies:session-only-cleanup', { deleted });
+                }
+            }),
+    ])
         .catch((error) => {
-            appLogger.error('history:close-failed', {
+            appLogger.error('app:shutdown-cleanup-failed', {
                 error: appLogger.serializeError(error),
             });
-            console.error('Failed to close history databases:', error);
+            console.error('Failed to complete shutdown cleanup:', error);
         })
         .finally(() => {
             appHistoryClosed = true;
+            appCookieCleanupClosed = true;
             if (appQuitAfterHistoryClose) return;
             appQuitAfterHistoryClose = true;
-            appLogger.info('app:history-closed-before-quit');
+            appLogger.info('app:cleanup-closed-before-quit', {
+                cookieCleanupStarted: appCookieCleanupStarted,
+            });
             app.quit();
         });
 });
