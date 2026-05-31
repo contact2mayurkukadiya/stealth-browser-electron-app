@@ -122,11 +122,6 @@ const COOKIE_POLICY_OPTIONS = [
     description: 'Sites can use cookies to improve your browsing experience',
   },
   {
-    value: 'block_third_party_stealth',
-    label: 'Block third-party cookies in Stealth',
-    description: 'Sites can use cookies except for third-party cookies in stealth mode.',
-  },
-  {
     value: 'block_third_party',
     label: 'Block third-party cookies',
     description: 'Sites cannot use cookies to see your activity across other sites',
@@ -161,6 +156,16 @@ const COOKIE_EXCEPTION_GROUPS = [
     sample: 'tracker-network.com',
   },
 ];
+
+function validateCookiePattern(pattern) {
+  const value = String(pattern || '').trim();
+  if (!value) return { ok: false, error: 'Enter a site pattern.' };
+  if (value.length > 253) return { ok: false, error: 'Site pattern is too long.' };
+  if (/[\u0000-\u001F\u007F\s]/.test(value)) {
+    return { ok: false, error: 'Site pattern cannot contain spaces or control characters.' };
+  }
+  return { ok: true, value };
+}
 
 const CHECK_ICON = (
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -279,13 +284,18 @@ function ConfirmModal({ title, description, confirmLabel, onConfirm, onClose }) 
 
 function CookieExceptionModal({ setting, onAdd, onClose }) {
   const [pattern, setPattern] = useState('');
+  const [error, setError] = useState('');
   const group = COOKIE_EXCEPTION_GROUPS.find((item) => item.setting === setting);
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    const value = pattern.trim();
-    if (!value) return;
-    onAdd(value);
+    const validation = validateCookiePattern(pattern);
+    if (!validation.ok) {
+      setError(validation.error);
+      return;
+    }
+    setError('');
+    onAdd(validation.value);
   };
 
   return (
@@ -299,10 +309,14 @@ function CookieExceptionModal({ setting, onAdd, onClose }) {
             autoFocus
             type="text"
             value={pattern}
-            onChange={(event) => setPattern(event.target.value)}
+            onChange={(event) => {
+              setPattern(event.target.value);
+              setError('');
+            }}
             placeholder={group?.sample || '[*.]example.com'}
           />
         </label>
+        {error ? <div className="cookie-exception-error" role="alert">{error}</div> : null}
         <div className="cookie-exception-actions">
           <button type="button" className="diag-btn diag-btn--secondary" onClick={onClose}>
             Cancel
@@ -538,13 +552,13 @@ export default function SettingsApp() {
   }, []);
 
   const cookieConfig = useMemo(() => ({
-    globalPolicy: settings?.cookieConfig?.globalPolicy || 'block_third_party_stealth',
+    globalPolicy: settings?.cookieConfig?.globalPolicy || 'allow',
     exceptions: Array.isArray(settings?.cookieConfig?.exceptions) ? settings.cookieConfig.exceptions : [],
   }), [settings?.cookieConfig]);
 
   const persistCookieConfig = useCallback(async (nextConfig) => {
     const normalizedConfig = {
-      globalPolicy: nextConfig?.globalPolicy || 'block_third_party_stealth',
+      globalPolicy: nextConfig?.globalPolicy || 'allow',
       exceptions: Array.isArray(nextConfig?.exceptions) ? nextConfig.exceptions : [],
     };
     setSettings((current) => ({ ...current, cookieConfig: normalizedConfig }));
@@ -1202,14 +1216,24 @@ export default function SettingsApp() {
           label="Search for a site"
           className="cookies-search"
         />
-        <button
-          type="button"
-          className="cookies-remove-all"
-          onClick={() => setCookieDeleteConfirm({ type: 'all' })}
-          disabled={cookieSites.length === 0}
-        >
-          Remove all
-        </button>
+        <div className="cookies-toolbar-actions">
+          <button
+            type="button"
+            className="cookies-toolbar-button"
+            onClick={refreshCookieSites}
+            disabled={cookieLoading}
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            className="cookies-toolbar-button"
+            onClick={() => setCookieDeleteConfirm({ type: 'all' })}
+            disabled={cookieSites.length === 0}
+          >
+            Remove all
+          </button>
+        </div>
       </div>
 
       <div className="cookies-table-card">

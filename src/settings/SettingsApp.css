@@ -2190,6 +2190,12 @@ body.settings-stealth-ui .text-highlight {
   font: inherit;
 }
 
+.cookie-exception-error {
+  margin-top: 8px;
+  color: var(--settings-danger-fg);
+  font-size: 12px;
+}
+
 .cookie-exception-actions {
   margin-top: 20px;
   display: flex;
@@ -2210,7 +2216,13 @@ body.settings-stealth-ui .text-highlight {
   border-color: var(--settings-border);
 }
 
-.cookies-remove-all {
+.cookies-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cookies-toolbar-button {
   min-width: 101px;
   height: 27px;
   padding: 0 14px;
@@ -2223,7 +2235,7 @@ body.settings-stealth-ui .text-highlight {
   font-size: 12px;
 }
 
-.cookies-remove-all:disabled {
+.cookies-toolbar-button:disabled {
   opacity: 0.55;
   cursor: default;
 }
@@ -2359,7 +2371,7 @@ body.settings-stealth-ui .text-highlight {
 .settings-link-row:focus-visible,
 .settings-back-icon-btn:focus-visible,
 .cookies-actions button:focus-visible,
-.cookies-remove-all:focus-visible {
+.cookies-toolbar-button:focus-visible {
   outline: 2px solid var(--settings-active-rail);
   outline-offset: -2px;
 }

@@ -184,9 +184,18 @@ export default function HistoryApp() {
     setSelected(new Set());
   }, [selected]);
 
-  const clearByTimeRange = useCallback(async (rangeMs) => {
+  const clearByTimeRange = useCallback(async (rangeMs, options = {}) => {
     const payload = rangeMs == null ? { since: null } : { since: Date.now() - rangeMs };
-    const ok = await window.electronAPI.historyClear(payload);
+    const tasks = [];
+    if (options.browsingHistory !== false) {
+      tasks.push(window.electronAPI.historyClear(payload));
+    }
+    if (options.cookies && window.cookieAPI?.clearAllSiteData) {
+      tasks.push(window.cookieAPI.clearAllSiteData(null, payload));
+    }
+    if (tasks.length === 0) return;
+    const results = await Promise.all(tasks);
+    const ok = results.every((result) => result === true || result?.ok === true);
     if (!ok) return;
     setShowClearModal(false);
     await fetchHistory({ reset: true, query: searchTerm });

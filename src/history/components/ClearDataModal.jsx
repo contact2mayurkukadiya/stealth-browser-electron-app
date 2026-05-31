@@ -17,8 +17,11 @@ const CHECK_ICON = (
 
 export default function ClearDataModal({ onClear, onClose }) {
   const [selectedRangeMs, setSelectedRangeMs] = useState(null); // null = "All time"
+  const [clearBrowsingHistory, setClearBrowsingHistory] = useState(true);
+  const [clearCookies, setClearCookies] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const firstChipRef = useRef(null);
+  const canDelete = clearBrowsingHistory || clearCookies;
 
   // Trap focus inside modal and auto-focus first chip
   useEffect(() => {
@@ -53,9 +56,13 @@ export default function ClearDataModal({ onClear, onClose }) {
   }, []);
 
   const handleDelete = async () => {
+    if (!canDelete) return;
     setIsDeleting(true);
     try {
-      await onClear(selectedRangeMs);
+      await onClear(selectedRangeMs, {
+        browsingHistory: clearBrowsingHistory,
+        cookies: clearCookies,
+      });
     } finally {
       setIsDeleting(false);
     }
@@ -103,7 +110,8 @@ export default function ClearDataModal({ onClear, onClose }) {
             <input
               type="checkbox"
               id="h-clear-browsing"
-              defaultChecked
+              checked={clearBrowsingHistory}
+              onChange={(event) => setClearBrowsingHistory(event.target.checked)}
               aria-describedby="h-clear-browsing-desc"
             />
             <div className="h-modal-item-body">
@@ -116,20 +124,21 @@ export default function ClearDataModal({ onClear, onClose }) {
             </div>
           </div>
 
-          {/* Cookies — disabled (future feature) */}
-          <div className="h-modal-item disabled">
+          {/* Cookies */}
+          <div className="h-modal-item">
             <input
               type="checkbox"
               id="h-clear-cookies"
-              disabled
+              checked={clearCookies}
+              onChange={(event) => setClearCookies(event.target.checked)}
               aria-describedby="h-clear-cookies-desc"
             />
             <div className="h-modal-item-body">
-              <label htmlFor="h-clear-cookies" className="h-modal-item-label">
+              <label htmlFor="h-clear-cookies" className="h-modal-item-label" style={{ cursor: 'pointer' }}>
                 Cookies and other site data
               </label>
               <p id="h-clear-cookies-desc" className="h-modal-item-desc">
-                Cookie deletion will be available in a future update.
+                Clears cookies saved by websites during the selected time range.
               </p>
             </div>
           </div>
@@ -165,7 +174,7 @@ export default function ClearDataModal({ onClear, onClose }) {
           <button
             type="button"
             className="h-modal-delete"
-            disabled={isDeleting}
+            disabled={isDeleting || !canDelete}
             onClick={handleDelete}
           >
             {isDeleting ? 'Deleting…' : 'Delete data'}

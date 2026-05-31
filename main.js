@@ -24,7 +24,10 @@ const {
 const {
     configureSession,
     normalizeCookieConfig,
+    compileCookieConfig,
     cookiePatternMatchesHost,
+    shouldBlockStoredCookie,
+    clearTabTopLevelRegisterableDomain,
 } = require('./runtime/sessionPolicy');
 const identityDiagnostics = require('./runtime/identityDiagnostics');
 const { setupWebAuthn } = require('./runtime/webauthn');
@@ -596,12 +599,19 @@ function getSessionPolicyDeps({ profileId = null, isStealthSession = false } = {
         mainFrameRequestWindowsByWebContents,
         profileId,
         isStealthSession,
-        getCookieConfig: (targetProfileId) => loadSettings(targetProfileId).cookieConfig,
+        getCookieConfig: getCachedCookieConfig,
+        logPolicyError: (stage, error) => {
+            appLogger.warn('cookies:policy-hook-failed', {
+                stage,
+                error: appLogger.serializeError(error),
+            });
+        },
     };
 }
 
 function installSessionNetworkGuards(targetSession, options = {}) {
     configureSession(targetSession, getSessionPolicyDeps(options));
+    installCookieStoreGuard(targetSession, options);
 }
 
 // Dev-only chokidar watchers tracked so they can be closed before quit.
@@ -905,6 +915,15 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         const profileStillOpen = Array.from(windowContextsById.values()).some(
             (ctx) => ctx?.profileId === context.profileId,
         );
+        if (context.stealthWindow) {
+            cleanupStealthCookiesForContext(context).catch((error) => {
+                appLogger.warn('cookies:stealth-cleanup-failed', {
+                    profileId: context.profileId,
+                    windowId: context.windowId,
+                    error: appLogger.serializeError(error),
+                });
+            });
+        }
         if (!profileStillOpen) {
             cleanupSessionOnlyCookiesForProfile(context.profileId).catch((error) => {
                 appLogger.warn('cookies:session-only-cleanup-failed', {
@@ -4702,6 +4721,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
             webContentsId: webContentsNumericId,
         });
         webContentsIdToTabId.delete(webContentsNumericId);
+        clearTabTopLevelRegisterableDomain(webContentsNumericId);
     });
 
     applyIdentityToWebContents(view.webContents);
@@ -5167,9 +5187,13 @@ function isInternalPageUrl(url) {
 let settingsPath;
 
 const COOKIE_CONFIG_DEFAULTS = {
-    globalPolicy: 'block_third_party_stealth',
+    globalPolicy: 'allow',
     exceptions: [],
 };
+const cookiePolicyCacheByProfileId = new Map();
+const defaultCompiledCookiePolicy = compileCookieConfig(COOKIE_CONFIG_DEFAULTS);
+const cookieStoreGuardedSessions = new WeakSet();
+const cookieModifiedAtBySession = new WeakMap();
 
 const SETTINGS_DEFAULTS = {
     contentProtection: true,
@@ -5221,6 +5245,13 @@ function getProfileIdForEventSender(sender) {
     return getWindowContextByEventSender(sender)?.profileId || defaultProfileId || null;
 }
 
+function resolveAuthorizedProfileIdForSender(sender, requestedProfileId = null) {
+    const actualProfileId = getProfileIdForEventSender(sender);
+    const safeRequested = normalizeProfileId(requestedProfileId);
+    if (safeRequested && safeRequested !== normalizeProfileId(actualProfileId)) return null;
+    return actualProfileId;
+}
+
 function normalizeCookieSettingsFields(settings, profileId = null) {
     const merged = settings && typeof settings === 'object' ? { ...settings } : {};
     const byProfile = merged.cookieConfigByProfile && typeof merged.cookieConfigByProfile === 'object'
@@ -5235,6 +5266,31 @@ function normalizeCookieSettingsFields(settings, profileId = null) {
     merged.cookieConfig = profileConfig;
     merged.cookieConfigByProfile = byProfile;
     return merged;
+}
+
+function setCachedCookieConfig(profileId, config) {
+    const safeProfileId = normalizeProfileId(profileId);
+    if (!safeProfileId) return;
+    cookiePolicyCacheByProfileId.set(safeProfileId, compileCookieConfig(config));
+}
+
+function getCachedCookieConfig(profileId) {
+    const safeProfileId = normalizeProfileId(profileId);
+    if (!safeProfileId) return defaultCompiledCookiePolicy;
+    return cookiePolicyCacheByProfileId.get(safeProfileId) || defaultCompiledCookiePolicy;
+}
+
+function hydrateCookiePolicyCacheFromSettings(settings) {
+    const source = settings && typeof settings === 'object' ? settings : {};
+    const byProfile = source.cookieConfigByProfile && typeof source.cookieConfigByProfile === 'object'
+        ? source.cookieConfigByProfile
+        : {};
+    for (const [profileId, config] of Object.entries(byProfile)) {
+        setCachedCookieConfig(profileId, config);
+    }
+    if (defaultProfileId) {
+        setCachedCookieConfig(defaultProfileId, source.cookieConfig || COOKIE_CONFIG_DEFAULTS);
+    }
 }
 
 function colorThemeSettingToElectronSource(setting) {
@@ -5378,14 +5434,20 @@ function loadSettings(profileId = null) {
         if (fs.existsSync(p)) {
             const merged = { ...SETTINGS_DEFAULTS, ...JSON.parse(fs.readFileSync(p, 'utf-8')) };
             merged.colorTheme = normalizeColorTheme(merged.colorTheme);
-            return chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(merged, profileId));
+            const normalized = chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(merged, profileId));
+            hydrateCookiePolicyCacheFromSettings(normalized);
+            if (profileId) setCachedCookieConfig(profileId, normalized.cookieConfig);
+            return normalized;
         }
     } catch (e) {
         console.error('Failed to load settings:', e);
     }
     const defaults = { ...SETTINGS_DEFAULTS };
     defaults.colorTheme = normalizeColorTheme(defaults.colorTheme);
-    return chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(defaults, profileId));
+    const normalizedDefaults = chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(defaults, profileId));
+    hydrateCookiePolicyCacheFromSettings(normalizedDefaults);
+    if (profileId) setCachedCookieConfig(profileId, normalizedDefaults.cookieConfig);
+    return normalizedDefaults;
 }
 
 function recordCompatEvent(tabId, entry) {
@@ -5397,6 +5459,7 @@ function recordCompatEvent(tabId, entry) {
 function saveSettings(data) {
     try {
         fs.writeFileSync(getSettingsPath(), JSON.stringify(data, null, 2), 'utf-8');
+        hydrateCookiePolicyCacheFromSettings(data);
     } catch (e) {
         console.error('Failed to save settings:', e);
     }
@@ -5413,8 +5476,8 @@ function getProfileSession(profileId) {
     return partition ? session.fromPartition(partition) : null;
 }
 
-function getProfileSessionForSender(sender) {
-    return getProfileSession(getProfileIdForEventSender(sender));
+function getProfileSessionForSender(sender, requestedProfileId = null) {
+    return getProfileSession(resolveAuthorizedProfileIdForSender(sender, requestedProfileId));
 }
 
 function cookieDomainToHost(domain) {
@@ -5435,6 +5498,69 @@ function cookieUrlForRemoval(cookie) {
     return `${protocol}://${host}${pathPart.startsWith('/') ? pathPart : `/${pathPart}`}`;
 }
 
+function cookieStoreKey(cookie) {
+    const host = cookieDomainToHost(cookie?.domain);
+    const pathPart = cookie?.path || '/';
+    return `${host}\n${pathPart}\n${String(cookie?.name || '')}`;
+}
+
+function getCookieModifiedAtMap(targetSession) {
+    if (!targetSession) return null;
+    let map = cookieModifiedAtBySession.get(targetSession);
+    if (!map) {
+        map = new Map();
+        cookieModifiedAtBySession.set(targetSession, map);
+    }
+    return map;
+}
+
+function getCookieModifiedAt(targetSession, cookie) {
+    return getCookieModifiedAtMap(targetSession)?.get(cookieStoreKey(cookie)) || 0;
+}
+
+function forgetCookieModifiedAt(targetSession, cookie) {
+    getCookieModifiedAtMap(targetSession)?.delete(cookieStoreKey(cookie));
+}
+
+function normalizeSinceTimestamp(value) {
+    if (value == null) return null;
+    const timestamp = Number(value);
+    return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+}
+
+function isCookieBlockedByStoredPolicy(cookie, profileId, options = {}) {
+    const host = cookieDomainToHost(cookie?.domain);
+    if (!host) return false;
+    return shouldBlockStoredCookie(host, getCachedCookieConfig(profileId), {
+        isStealthSession: !!options.isStealthSession,
+    });
+}
+
+function installCookieStoreGuard(targetSession, options = {}) {
+    if (!targetSession?.cookies || cookieStoreGuardedSessions.has(targetSession)) return;
+    cookieStoreGuardedSessions.add(targetSession);
+    const profileId = normalizeProfileId(options.profileId);
+    const isStealthSession = !!options.isStealthSession;
+    targetSession.cookies.on('changed', (_event, cookie, cause, removed) => {
+        if (!cookie) return;
+        if (removed || cause === 'expired' || cause === 'evicted') {
+            forgetCookieModifiedAt(targetSession, cookie);
+            return;
+        }
+        getCookieModifiedAtMap(targetSession)?.set(cookieStoreKey(cookie), Date.now());
+        if (!isCookieBlockedByStoredPolicy(cookie, profileId, { isStealthSession })) return;
+        Promise.resolve()
+            .then(() => targetSession.cookies.remove(cookieUrlForRemoval(cookie), cookie.name))
+            .catch((error) => {
+                appLogger.warn('cookies:store-guard-remove-failed', {
+                    domain: cookieDomainToHost(cookie.domain),
+                    name: cookie.name,
+                    error: appLogger.serializeError(error),
+                });
+            });
+    });
+}
+
 async function removeCookiesMatching(targetSession, predicate) {
     if (!targetSession?.cookies) return 0;
     const cookies = await targetSession.cookies.get({});
@@ -5443,12 +5569,44 @@ async function removeCookiesMatching(targetSession, predicate) {
         if (!predicate(cookie)) continue;
         try {
             await targetSession.cookies.remove(cookieUrlForRemoval(cookie), cookie.name);
+            forgetCookieModifiedAt(targetSession, cookie);
             removed += 1;
         } catch (_) {
             /* cookie may have been removed already */
         }
     }
     return removed;
+}
+
+async function removeCookiesModifiedSince(targetSession, since) {
+    const normalizedSince = normalizeSinceTimestamp(since);
+    if (normalizedSince == null) {
+        return removeCookiesMatching(targetSession, () => true);
+    }
+    return removeCookiesMatching(
+        targetSession,
+        (cookie) => getCookieModifiedAt(targetSession, cookie) >= normalizedSince,
+    );
+}
+
+async function cleanupBlockedCookiesForProfile(profileId) {
+    const safeProfileId = normalizeProfileId(profileId);
+    if (!safeProfileId) return 0;
+    return removeCookiesMatching(
+        getProfileSession(safeProfileId),
+        (cookie) => isCookieBlockedByStoredPolicy(cookie, safeProfileId, { isStealthSession: false }),
+    );
+}
+
+async function cleanupStealthCookiesForContext(context) {
+    if (!context?.stealthWindow || !context.stealthTabsPartition) return 0;
+    return removeCookiesMatching(session.fromPartition(context.stealthTabsPartition), () => true);
+}
+
+async function cleanupStealthCookiesForAllContexts() {
+    const stealthContexts = Array.from(windowContextsById.values()).filter((ctx) => ctx?.stealthWindow);
+    const results = await Promise.all(stealthContexts.map((ctx) => cleanupStealthCookiesForContext(ctx)));
+    return results.reduce((sum, count) => sum + count, 0);
 }
 
 async function getCookieSummaryForSession(targetSession) {
@@ -5520,7 +5678,7 @@ ipcMain.handle(C.IPC_INVOKE.SETTINGS_GET, (e) => {
     return loadSettings(getProfileIdForEventSender(e.sender));
 });
 
-ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, (e, data) => {
+ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, async (e, data) => {
     if (!isSenderTrusted(e)) return false;
     const profileId = getProfileIdForEventSender(e.sender);
     const current = loadSettings(profileId);
@@ -5547,36 +5705,53 @@ ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, (e, data) => {
         next.cookieConfigByProfile = byProfile;
     }
     saveSettings(chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(next, profileId)));
+    if (Object.prototype.hasOwnProperty.call(patch, 'cookieConfig')) {
+        await cleanupBlockedCookiesForProfile(profileId);
+    }
     applyColorThemeFromSettings();
     return true;
 });
 
-ipcMain.handle(C.IPC_INVOKE.COOKIE_SUMMARY, async (e) => {
+ipcMain.handle(C.IPC_INVOKE.COOKIE_SUMMARY, async (e, { profileId } = {}) => {
     if (!isSenderTrusted(e)) return [];
-    return getCookieSummaryForSession(getProfileSessionForSender(e.sender));
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return [];
+    return getCookieSummaryForSession(getProfileSession(authorizedProfileId));
 });
 
-ipcMain.handle(C.IPC_INVOKE.COOKIE_DELETE_DOMAIN, async (e, { domain } = {}) => {
+ipcMain.handle(C.IPC_INVOKE.COOKIE_DELETE_DOMAIN, async (e, { profileId, domain } = {}) => {
     if (!isSenderTrusted(e)) return { ok: false, deleted: 0 };
-    const targetSession = getProfileSessionForSender(e.sender);
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return { ok: false, deleted: 0 };
+    const targetSession = getProfileSession(authorizedProfileId);
     const deleted = await removeCookiesMatching(targetSession, (cookie) => cookieMatchesDomain(cookie, domain));
     return { ok: true, deleted };
 });
 
-ipcMain.handle(C.IPC_INVOKE.COOKIE_CLEAR_ALL, async (e) => {
+ipcMain.handle(C.IPC_INVOKE.COOKIE_CLEAR_ALL, async (e, { profileId, since } = {}) => {
     if (!isSenderTrusted(e)) return { ok: false, deleted: 0 };
-    const deleted = await removeCookiesMatching(getProfileSessionForSender(e.sender), () => true);
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return { ok: false, deleted: 0 };
+    const deleted = await removeCookiesModifiedSince(getProfileSession(authorizedProfileId), since);
     return { ok: true, deleted };
 });
 
-ipcMain.handle(C.IPC_INVOKE.COOKIE_SETTINGS_GET, (e) => {
+ipcMain.handle(C.IPC_INVOKE.COOKIE_SETTINGS_GET, (e, { profileId } = {}) => {
     if (!isSenderTrusted(e)) return COOKIE_CONFIG_DEFAULTS;
-    return loadSettings(getProfileIdForEventSender(e.sender)).cookieConfig;
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return COOKIE_CONFIG_DEFAULTS;
+    return loadSettings(authorizedProfileId).cookieConfig;
 });
 
-ipcMain.handle(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, (e, config) => {
+ipcMain.handle(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, async (e, payload) => {
     if (!isSenderTrusted(e)) return COOKIE_CONFIG_DEFAULTS;
-    return updateCookieConfigForProfile(getProfileIdForEventSender(e.sender), config);
+    const profileId = payload?.profileId;
+    const config = payload?.config || payload;
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return COOKIE_CONFIG_DEFAULTS;
+    const savedConfig = updateCookieConfigForProfile(authorizedProfileId, config);
+    await cleanupBlockedCookiesForProfile(authorizedProfileId);
+    return savedConfig;
 });
 
 ipcMain.handle(C.IPC_INVOKE.CLIPBOARD_WRITE, (e, { text } = {}) => {
@@ -6847,6 +7022,12 @@ app.on('before-quit', (event) => {
                 appCookieCleanupClosed = true;
                 if (deleted > 0) {
                     appLogger.info('cookies:session-only-cleanup', { deleted });
+                }
+            }),
+        cleanupStealthCookiesForAllContexts()
+            .then((deleted) => {
+                if (deleted > 0) {
+                    appLogger.info('cookies:stealth-cleanup', { deleted });
                 }
             }),
     ])

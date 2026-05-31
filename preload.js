@@ -685,9 +685,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
 });
 
 contextBridge.exposeInMainWorld('cookieAPI', {
-    getCookieSummary: () => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SUMMARY),
-    deleteCookiesForDomain: (domain) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_DELETE_DOMAIN, { domain: String(domain || '') }),
-    clearAllSiteData: () => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_CLEAR_ALL),
-    getSettings: () => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SETTINGS_GET),
-    updateSettings: (config) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, config),
+    getCookieSummary: (profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SUMMARY, { profileId }),
+    deleteCookiesForDomain: (profileIdOrDomain, maybeDomain) => {
+        const hasProfile = maybeDomain !== undefined;
+        return ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_DELETE_DOMAIN, {
+            profileId: hasProfile ? profileIdOrDomain : null,
+            domain: String(hasProfile ? maybeDomain : profileIdOrDomain || ''),
+        });
+    },
+    clearAllSiteData: (profileId = null, options = {}) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_CLEAR_ALL, {
+        profileId,
+        since: options?.since ?? null,
+    }),
+    getSettings: (profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SETTINGS_GET, { profileId }),
+    updateSettings: (config) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, { config }),
+    updateConfig: (profileId, config) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, { profileId, config }),
 });
