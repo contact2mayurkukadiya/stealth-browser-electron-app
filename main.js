@@ -786,6 +786,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         chromeOverlayOmniboxMode: false,
         chromeOverlayBlurDismissPending: false,
         lastOmniboxOverlayPatch: null,
+        /** True once chromeOmniboxOverlayView HTML/JS has finished loading. */
+        chromeOmniboxOverlayReady: false,
         /** Per-tab Google Lens sessions: each tab keeps its sidebar WebContentsView and sizing. */
         lensSessions: new Map(),
         lensOverlayBounds: null,
@@ -939,6 +941,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
     createChromeOverlayLayer(context);
     createChromeShellMenuOverlayLayer(context);
+    createChromeOmniboxOverlayLayer(context);
     createTooltipOverlay(context);
     ensureChromeOverlayOnTop(context);
     return context;
@@ -1071,13 +1074,16 @@ function createChromeOverlayLayer(context) {
 
 function createChromeOmniboxOverlayLayer(context) {
     if (context.chromeOmniboxOverlayView) return;
+    context.chromeOmniboxOverlayReady = false;
     const overlayView = new WebContentsView({
         webPreferences: buildSecureWebPreferences(),
     });
     applyIdentityToWebContents(overlayView.webContents);
     overlayView.setBackgroundColor('#00000000');
     overlayView.webContents.once('did-finish-load', () => {
+        context.chromeOmniboxOverlayReady = true;
         sendChromeOmniboxOverlayThemePatch(context);
+        replayOmniboxOverlayPatchIfNeeded(context);
     });
     overlayView.webContents.on('blur', () => {
         dismissOmniboxChromeOverlayOnBlur(context);
@@ -1834,6 +1840,18 @@ function computeMenuOverlayBounds(context, patch) {
         return menuOverlayBoundsFromPanel(context, { left, top, width: panelWidth, height });
     }
 
+    if (kind === 'cookieControls' || kind === 'downloadPanel') {
+        const ar = patch.anchorRect || {};
+        const panelWidth = kind === 'cookieControls' ? 340 : 300;
+        const left0 = Math.round(Number(ar.left) || 0);
+        const top0 = Math.round(Number(ar.top) || 0);
+        const h0 = Math.max(1, Math.round(Number(ar.height) || 32));
+        const left = clampNumber(left0, pad, windowW - panelWidth - pad);
+        const top = clampNumber(top0 + h0 + 6, pad, windowH - 220 - pad);
+        const height = Math.max(160, Math.min(windowH * 0.45, windowH - top - pad));
+        return menuOverlayBoundsFromPanel(context, { left, top, width: panelWidth, height });
+    }
+
     if (kind === 'appMenu') {
         const r = patch.menuRect || {};
         const width = Math.round(Number(r.width) || 320);
@@ -1913,6 +1931,75 @@ function layoutOmniboxOverlayBounds(context, patch) {
         console.error('layoutOmniboxOverlayBounds', err?.message || err);
         return null;
     }
+}
+
+/** Notify shell that omnibox overlay B received a patch (including replay after load). */
+function notifyOmniboxOverlayDelivered(context) {
+    if (!context?.window?.webContents || context.window.webContents.isDestroyed()) return;
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
+    try {
+        context.window.webContents.send(C.IPC_EVENT.OMNIBOX_OVERLAY_DELIVERED);
+    } catch (err) {
+        console.error('omnibox-overlay:delivered send', err?.message || err);
+    }
+}
+
+/** Re-send the last omnibox patch after overlay HTML/JS is ready (IPC listener registered). */
+function replayOmniboxOverlayPatchIfNeeded(context) {
+    if (!context?.chromeOmniboxOverlayReady) return;
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
+    const patch = context.lastOmniboxOverlayPatch;
+    if (!patch || patch.kind !== 'omniboxSuggestions') return;
+    if (!context.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) return;
+    try {
+        const replayPatch = { ...patch };
+        const overlayBounds = layoutOmniboxOverlayBounds(context, replayPatch);
+        if (overlayBounds) replayPatch.overlayBounds = overlayBounds;
+        ensureChromeOverlayOnTop(context);
+        context.chromeOmniboxOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, replayPatch);
+        if (replayPatch.focusInput !== false) {
+            setImmediate(() => {
+                if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
+                focusChromeOmniboxOverlayWebContents(context);
+            });
+        }
+        notifyOmniboxOverlayDelivered(context);
+    } catch (err) {
+        console.error('replayOmniboxOverlayPatchIfNeeded', err?.message || err);
+    }
+}
+
+/**
+ * Store and deliver an omnibox suggestions patch. When overlay HTML is not ready yet,
+ * the patch is queued in lastOmniboxOverlayPatch and replayed on did-finish-load.
+ */
+function deliverOmniboxOverlayPatch(context, patch) {
+    if (!context?.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
+        return { ok: false };
+    }
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return { ok: false };
+    try {
+        context.chromeOverlayOmniboxMode = true;
+        context.lastOmniboxOverlayPatch = patch;
+        const deliverPatch = { ...patch };
+        const overlayBounds = layoutOmniboxOverlayBounds(context, deliverPatch);
+        if (overlayBounds) deliverPatch.overlayBounds = overlayBounds;
+        ensureChromeOverlayOnTop(context);
+        if (context.chromeOmniboxOverlayReady) {
+            context.chromeOmniboxOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, deliverPatch);
+            if (deliverPatch.focusInput !== false) {
+                setImmediate(() => {
+                    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
+                    focusChromeOmniboxOverlayWebContents(context);
+                });
+            }
+            notifyOmniboxOverlayDelivered(context);
+        }
+    } catch (err) {
+        console.error('deliverOmniboxOverlayPatch', err?.message || err);
+        return { ok: false };
+    }
+    return { ok: true, delivered: !!context.chromeOmniboxOverlayReady };
 }
 
 /** Move native keyboard focus to the omnibox popup overlay. */
@@ -4338,6 +4425,8 @@ const SHELL_MENU_OVERLAY_KINDS = new Set([
     'bookmarkFolderMenu',
     'bookmarkEditor',
     'siteInfo',
+    'cookieControls',
+    'downloadPanel',
 ]);
 
 function isShellMenuOverlayKind(kind) {
@@ -4420,9 +4509,7 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, (e) => {
 ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
-    if (!context?.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
-        return { ok: false };
-    }
+    if (!context) return { ok: false };
     if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return { ok: false };
     try {
         const json = JSON.stringify(payload ?? {});
@@ -4432,24 +4519,11 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
     }
     const patch = payload ?? {};
     if (patch.kind !== 'omniboxSuggestions') return { ok: false };
-    try {
-        context.chromeOverlayOmniboxMode = true;
-        context.lastOmniboxOverlayPatch = patch;
-        const overlayBounds = layoutOmniboxOverlayBounds(context, patch);
-        if (overlayBounds) patch.overlayBounds = overlayBounds;
-        ensureChromeOverlayOnTop(context);
-        context.chromeOmniboxOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
-    } catch (err) {
-        console.error(C.IPC_INVOKE.CHROME_OVERLAY_POST, err?.message || err);
+    ensureChromeOmniboxOverlayLayer(context);
+    if (!context.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
         return { ok: false };
     }
-    if (patch.focusInput !== false) {
-        setImmediate(() => {
-            if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
-            focusChromeOmniboxOverlayWebContents(context);
-        });
-    }
-    return { ok: true };
+    return deliverOmniboxOverlayPatch(context, patch);
 });
 
 ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_RESET, (e) => {

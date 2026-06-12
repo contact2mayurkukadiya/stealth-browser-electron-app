@@ -381,6 +381,7 @@ export const IPC_EVENT = freeze({
   CHROME_OVERLAY_SUPERSEDED: 'chrome-overlay:v1:superseded',
   CHROME_SHELL_MENU_OVERLAY_SUPERSEDED: 'chrome-shell-menu-overlay:v1:superseded',
   CHROME_OVERLAY_PATCH: 'chrome-overlay:v1:patch',
+  OMNIBOX_OVERLAY_DELIVERED: 'omnibox-overlay:delivered',
   THEME_APPLY: 'theme:apply',
   TAB_AWOKEN: 'tab:awoken',
   TOOLTIP_UPDATE: 'tooltip:update',

@@ -19,6 +19,71 @@
   z-index: 3;
 }
 
+/* ── Three-zone omnibox bar (prefix | input | suffix) ─────────────────────── */
+.omnibox-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  padding: 0 4px;
+  min-width: 0;
+}
+
+.omnibox-bar:focus-within {
+  border-color: var(--chrome-omnibox-focus-border, #FFB430);
+}
+
+.omnibox-prefix,
+.omnibox-suffix {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  z-index: 4;
+}
+
+.omnibox-input-zone {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.omnibox-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  border-radius: 12px;
+  cursor: pointer;
+  height: 24px;
+  min-width: 28px;
+  -webkit-app-region: no-drag;
+}
+
+.omnibox-action-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.omnibox-action-btn--active {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  .omnibox-action-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .omnibox-action-btn--active {
+    background: rgba(255, 255, 255, 0.14);
+  }
+}
+
+/* Legacy site-info-btn (unused after refactor; kept for NTP compat) */
 .site-info-btn {
   position: absolute;
   left: 6px;
@@ -46,7 +111,21 @@
   }
 }
 
-/* When overlay B is open, neutralize A's well so it cannot show beneath B. */
+/* When overlay B is open, hide only the input zone shell text (prefix/suffix stay visible). */
+.omnibox-input-zone.omnibox-overlay-active {
+  background: transparent;
+}
+
+.omnibox-input-zone.omnibox-overlay-active #url-input {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.omnibox-input-zone.omnibox-overlay-active .omnibox-ghost {
+  display: none;
+}
+
+/* Legacy full-bar rule — deprecated */
 .url-container.omnibox-overlay-active {
   background: var(--chrome-nav-bg, transparent);
   box-shadow: none;
@@ -66,7 +145,20 @@
   display: none;
 }
 
-/* When the omnibox is focused, shift the input text to make room for the icon */
+/* When the input zone is focused, shift text for inline search icon */
+.omnibox-input-zone:focus-within #url-input {
+  padding-left: 38px;
+}
+
+.omnibox-input-zone:focus-within .omnibox-ghost {
+  padding-left: 38px;
+}
+
+.omnibox-input-zone:focus-within .url-display {
+  padding-left: 38px;
+}
+
+/* Legacy */
 .url-container:focus-within #url-input {
   padding-left: 38px;
 }
