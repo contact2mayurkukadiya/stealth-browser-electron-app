@@ -970,8 +970,16 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
   const isSecure = (overlayRequested ? draftValue : barDisplayValue).startsWith(URL_C.SCHEME_HTTPS);
   const displayParts = buildDisplayParts(barDisplayValue);
   const actions = useMemo(
-    () => getOmniboxActions({ tab, displayParts, isSecure }),
-    [tab, displayParts, isSecure],
+    () => getOmniboxActions({
+      tab,
+      displayParts,
+      isSecure,
+      searchEngine,
+      isFocused,
+      hasUncommittedDraft,
+      barDisplayValue
+    }),
+    [tab, displayParts, isSecure, searchEngine, isFocused, hasUncommittedDraft, barDisplayValue],
   );
 
   const handleActionClick = useCallback((action, event) => {

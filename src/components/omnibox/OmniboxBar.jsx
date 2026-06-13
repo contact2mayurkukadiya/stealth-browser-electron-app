@@ -15,6 +15,7 @@ export default function OmniboxBar({
   draftValue,
   ghostSuffix,
   displayParts,
+  hasUncommittedDraft,
   handleFocus,
   handleBlur,
   handleChange,

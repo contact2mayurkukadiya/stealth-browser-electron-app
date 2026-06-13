@@ -746,6 +746,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
     // Global Shortcut Interception (for Ctrl+Tab, which is not easy in menu)
     window.webContents.on('before-input-event', handleShortcuts);
+    // window.webContents.openDevTools({ mode: 'detach' });
 
     // Resize the visible tab view in the main shell (only one tab view is attached at a time).
     if (!mainWindow || mainWindow.isDestroyed()) mainWindow = window;
@@ -4613,7 +4614,7 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, (e, payload) => {
         }
         ensureChromeOverlayOnTop(context);
         context.chromeShellMenuOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
-        
+
         if (patch.focusInput !== false) {
             setImmediate(() => {
                 focusChromeShellMenuOverlayWebContents(context);
@@ -6309,17 +6310,17 @@ ipcMain.handle('webauthn:getCookieUsage', async (event) => {
     if (!isSenderTrusted(event)) return { main: null, embedded: [] };
     const context = getWindowContextByEventSender(event.sender);
     if (!context || !context.activeTabId) return { main: null, embedded: [] };
-    
+
     const tabView = context.tabs[context.activeTabId];
     if (!tabView) return { main: null, embedded: [] };
 
     const { getTabNetworkDomains } = require('./runtime/sessionPolicy');
     const domains = getTabNetworkDomains(tabView.webContents.id);
-    
+
     let mainDomain = '';
     try {
         mainDomain = new URL(tabView.webContents.getURL()).hostname;
-    } catch (e) {}
+    } catch (e) { }
 
     const session = tabView.webContents.session;
     const result = { main: null, embedded: [] };
@@ -6343,7 +6344,7 @@ ipcMain.handle('webauthn:getCookieUsage', async (event) => {
             // ignore
         }
     }
-    
+
     if (!result.main && mainDomain) {
         result.main = { domain: mainDomain, count: 0 };
     }
@@ -6355,7 +6356,7 @@ ipcMain.handle('webauthn:deleteCookies', async (event, domain) => {
     if (!isSenderTrusted(event) || !domain) return false;
     const context = getWindowContextByEventSender(event.sender);
     if (!context || !context.activeTabId) return false;
-    
+
     const tabView = context.tabs[context.activeTabId];
     if (!tabView) return false;
 
@@ -6376,7 +6377,7 @@ ipcMain.handle('webauthn:blockCookies', async (event, domain) => {
     if (!isSenderTrusted(event) || !domain) return false;
     const { addToCookieBlocklist } = require('./runtime/sessionPolicy');
     addToCookieBlocklist(domain);
-    
+
     // Also delete existing cookies
     const context = getWindowContextByEventSender(event.sender);
     if (context && context.activeTabId) {
@@ -6389,7 +6390,7 @@ ipcMain.handle('webauthn:blockCookies', async (event, domain) => {
                     let url = 'http' + (cookie.secure ? 's' : '') + '://' + cookie.domain + cookie.path;
                     await session.cookies.remove(url, cookie.name);
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
     }
     return true;

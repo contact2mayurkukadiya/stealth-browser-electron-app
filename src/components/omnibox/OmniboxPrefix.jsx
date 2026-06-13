@@ -2,21 +2,11 @@ import React from 'react';
 import { menuFindSvg } from '../../constants/appAssetUrls.js';
 
 function ActionIcon({ action }) {
-  if (action.iconSrc) {
-    return (
-      <img
-        src={action.iconSrc}
-        className="omnibox-icon"
-        width={16}
-        height={16}
-        alt=""
-      />
-    );
-  }
-  return (
-    <img src={menuFindSvg} className="omnibox-icon" width={16} height={16} alt="" />
-  );
+  return action.iconSrc ? (
+    <img src={action.iconSrc} className="omnibox-icon" width={16} height={16} alt="" />
+  ) : null;
 }
+
 
 export default function OmniboxPrefix({ actions, popup, onActionClick }) {
   const prefixActions = actions.filter((a) => a.slot === 'prefix');
@@ -24,8 +14,21 @@ export default function OmniboxPrefix({ actions, popup, onActionClick }) {
 
   return (
     <div className="omnibox-prefix" aria-hidden={false}>
-      {prefixActions.map((action) => (
-        <button
+      {prefixActions.map((action) => {
+        
+        if (action.nonClickable) {
+          return (
+            <div
+              key={action.id}
+              className={`omnibox-static-prefix omnibox-search-chip`}
+            >
+              <ActionIcon action={action} />
+              {action.chipText && <span className="omnibox-chip-text">{action.chipText}</span>}
+            </div>
+          );
+        }
+        
+        return (<button
           key={action.id}
           type="button"
           className={`omnibox-action-btn omnibox-action-btn--prefix${popup === action.opensPopup ? ' omnibox-action-btn--active' : ''}`}
@@ -39,8 +42,8 @@ export default function OmniboxPrefix({ actions, popup, onActionClick }) {
           onClick={(e) => onActionClick(action, e)}
         >
           <ActionIcon action={action} />
-        </button>
-      ))}
+        </button>)
+      })}
     </div>
   );
 }

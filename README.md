@@ -253,6 +253,9 @@ When validating Google login or site compatibility, use an InviSurf-owned clean 
 - Session/history data are encrypted before writing.
 - Tab metadata in Redux is separate from actual `WebContentsView` lifecycle in main process.
 
+## Icons Used from : 
+https://www.flaticon.com/search?word=folder&weight=regular&type=uicon
+
 ## Upcomming Features
 
 - Profiles/History/Settings/Bookmarks Export and import

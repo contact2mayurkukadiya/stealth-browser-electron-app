@@ -32,11 +32,6 @@ export default function OmniboxInputZone({
       ref={inputZoneRef}
       className={`omnibox-input-zone${overlayDelivered ? ' omnibox-overlay-active' : ''}`}
     >
-      {showShellInput && (
-        <div className="omnibox-icon-wrapper omnibox-icon-wrapper--inline">
-          <SearchIcon />
-        </div>
-      )}
 
       {showShellInput && ghostSuffix && (
         <div className="omnibox-ghost" aria-hidden="true">

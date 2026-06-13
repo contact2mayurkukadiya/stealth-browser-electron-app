@@ -103,6 +103,7 @@
       justify-content: space-between;
       padding: 12px 16px;
     }
+
     .co-site-info-domain {
       font-size: 14px;
       font-weight: 500;
@@ -110,6 +111,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
     .co-site-info-close-btn {
       background: transparent;
       border: none;
@@ -123,15 +125,18 @@
       align-items: center;
       justify-content: center;
     }
+
     .co-site-info-close-btn:hover {
       opacity: 1;
       background: var(--chrome-tab-hover-bg, rgba(0, 0, 0, 0.05));
     }
+
     .co-site-info-content {
       display: flex;
       flex-direction: column;
       padding-bottom: 8px;
     }
+
     .co-site-info-row {
       display: flex;
       align-items: center;
@@ -144,12 +149,15 @@
       cursor: pointer;
       gap: 12px;
     }
+
     .co-site-info-row:hover {
       background: var(--chrome-tab-hover-bg, rgba(0, 0, 0, 0.04));
     }
+
     .co-site-info-row-tall {
       padding: 12px 16px;
     }
+
     .co-site-info-icon {
       display: flex;
       align-items: center;
@@ -157,12 +165,14 @@
       opacity: 0.7;
       flex-shrink: 0;
     }
+
     .co-site-info-text-group {
       display: flex;
       flex-direction: column;
       flex: 1;
       overflow: hidden;
     }
+
     .co-site-info-text {
       font-size: 13px;
       flex: 1;
@@ -170,6 +180,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
     .co-site-info-subtext {
       font-size: 12px;
       opacity: 0.6;
@@ -178,6 +189,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
     .co-site-info-action {
       display: flex;
       align-items: center;
@@ -191,6 +203,7 @@
       gap: 12px;
       padding: 10px 16px;
     }
+
     .co-site-info-icon-btn {
       background: transparent;
       border: none;
@@ -204,20 +217,24 @@
       align-items: center;
       justify-content: center;
     }
+
     .co-site-info-icon-btn:hover {
       opacity: 1;
       background: var(--chrome-tab-hover-bg, rgba(0, 0, 0, 0.05));
     }
+
     .co-site-info-title-group {
       display: flex;
       flex-direction: column;
       flex: 1;
       overflow: hidden;
     }
+
     .co-site-info-title {
       font-size: 15px;
       font-weight: 500;
     }
+
     .co-site-info-subtitle {
       font-size: 12px;
       opacity: 0.6;
@@ -225,38 +242,46 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
     .co-site-info-security-body {
       display: flex;
       padding: 16px;
       gap: 16px;
       align-items: flex-start;
     }
+
     .co-site-info-security-text {
       display: flex;
       flex-direction: column;
     }
+
     .co-site-info-security-heading {
       font-size: 14px;
       font-weight: 500;
       margin-bottom: 4px;
     }
+
     .co-site-info-security-desc {
       font-size: 13px;
       opacity: 0.8;
       line-height: 1.4;
     }
+
     .co-site-info-link {
       color: #1a73e8;
       text-decoration: none;
     }
+
     .co-site-info-link:hover {
       text-decoration: underline;
     }
+
     @media (prefers-color-scheme: dark) {
       .co-site-info-link {
         color: #8ab4f8;
       }
     }
+
     .co-row {
       width: 100%;
       padding: 10px 14px;
@@ -565,30 +590,11 @@
       max-height: min(420px, 72vh);
       background: var(--chrome-nav-bg, #394d55);
       color: var(--chrome-fg, rgba(255, 255, 255, 0.95));
-      border: none;
+      border: 1px solid var(--co-omnibox-border-shade);
       border-radius: 20px;
       box-shadow: var(--co-ntp-shadow-soft);
       display: flex;
       flex-direction: column;
-    }
-
-    #panel.co-panel--omnibox::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      padding: 1px;
-      pointer-events: none;
-      background: linear-gradient(to bottom, transparent 0%, var(--co-omnibox-border-shade) 64%, var(--co-omnibox-border-shade) 100%);
-      -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-      mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor;
-      mask-composite: exclude;
-      z-index: 3;
     }
 
     .co-ob-input-wrap {
@@ -2947,19 +2953,19 @@
 
         function showMainView() {
           panel.innerHTML = '';
-          
+
           const header = document.createElement('div');
           header.className = 'co-site-info-header';
-          
+
           const title = document.createElement('span');
           title.className = 'co-site-info-domain';
           title.textContent = domain;
-          
+
           const closeBtn = document.createElement('button');
           closeBtn.className = 'co-site-info-close-btn';
           closeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M12.5 4.6L11.4 3.5 8 6.9 4.6 3.5 3.5 4.6 6.9 8l-3.4 3.4 1.1 1.1 3.4-3.4 3.4 3.4 1.1-1.1L9.1 8l3.4-3.4z"/></svg>';
-          closeBtn.onclick = function() { hideAll({ hideLens: false }); };
-          
+          closeBtn.onclick = function () { hideAll({ hideLens: false }); };
+
           header.appendChild(title);
           header.appendChild(closeBtn);
           panel.appendChild(header);
@@ -2967,13 +2973,13 @@
           const content = document.createElement('div');
           content.className = 'co-site-info-content';
 
-          const createRow = function(iconSvg, text, actionSvg, isTall, subtext, onClick) {
+          const createRow = function (iconSvg, text, actionSvg, isTall, subtext, onClick) {
             const btn = document.createElement('button');
             btn.className = 'co-site-info-row' + (isTall ? ' co-site-info-row-tall' : '');
             if (onClick) {
               btn.onclick = onClick;
             }
-            
+
             const iconDiv = document.createElement('div');
             iconDiv.className = 'co-site-info-icon';
             iconDiv.innerHTML = iconSvg;
@@ -3008,16 +3014,16 @@
 
           const chevronSvg = '<img src="app://localhost/assets/images/angle-right.svg" width="16" height="16" alt="" />';
           const externalSvg = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M12 8v4H4V4h4V3H3v10h10V8h-1zm-1-5v1h1.8L7.5 9.3l.7.7L13.5 4.7V6.5h1V3h-3.5z"/></svg>';
-          
+
           const lockIconHtml = `<img src="app://localhost/assets/images/${isSecure ? 'lock.svg' : 'unlock.svg'}" width="16" height="16" alt="" />`;
           const cookieIconHtml = '<img src="app://localhost/assets/images/cookie.svg" width="16" height="16" alt="" />';
           const settingsIconHtml = '<img src="app://localhost/assets/images/settings.svg" width="16" height="16" alt="" />';
           const commentInfoIconHtml = '<img src="app://localhost/assets/images/comment-info.svg" width="16" height="16" alt="" />';
 
-          content.appendChild(createRow(lockIconHtml, isSecure ? 'Connection is secure' : 'Connection is not secure', chevronSvg, false, null, function() {
+          content.appendChild(createRow(lockIconHtml, isSecure ? 'Connection is secure' : 'Connection is not secure', chevronSvg, false, null, function () {
             showSecurityView();
           }));
-          content.appendChild(createRow(cookieIconHtml, 'Cookies and site data', chevronSvg, false, null, function() {
+          content.appendChild(createRow(cookieIconHtml, 'Cookies and site data', chevronSvg, false, null, function () {
             showCookiesView();
           }));
           content.appendChild(createRow(settingsIconHtml, 'Site settings', externalSvg, false));
@@ -3033,10 +3039,10 @@
 
         function showSecurityView() {
           panel.innerHTML = '';
-          
+
           const header = document.createElement('div');
           header.className = 'co-site-info-header co-site-info-header--sub';
-          
+
           const backBtn = document.createElement('button');
           backBtn.className = 'co-site-info-icon-btn';
           backBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M14 7H4.4l3.3-3.3L6.3 2.3 1 7.6l5.3 5.3 1.4-1.4L4.4 8.2H14v-1.2z"/></svg>';
@@ -3056,7 +3062,7 @@
           const closeBtn = document.createElement('button');
           closeBtn.className = 'co-site-info-icon-btn';
           closeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M12.5 4.6L11.4 3.5 8 6.9 4.6 3.5 3.5 4.6 6.9 8l-3.4 3.4 1.1 1.1 3.4-3.4 3.4 3.4 1.1-1.1L9.1 8l3.4-3.4z"/></svg>';
-          closeBtn.onclick = function() { hideAll({ hideLens: false }); };
+          closeBtn.onclick = function () { hideAll({ hideLens: false }); };
 
           header.appendChild(backBtn);
           header.appendChild(titleGroup);
@@ -3069,27 +3075,27 @@
 
           const body = document.createElement('div');
           body.className = 'co-site-info-security-body';
-          
+
           const iconDiv = document.createElement('div');
           iconDiv.className = 'co-site-info-icon';
           iconDiv.innerHTML = `<img src="app://localhost/assets/images/${isSecure ? 'lock.svg' : 'unlock.svg'}" width="16" height="16" alt="" />`;
 
           const textDiv = document.createElement('div');
           textDiv.className = 'co-site-info-security-text';
-          
+
           const heading = document.createElement('div');
           heading.className = 'co-site-info-security-heading';
           heading.textContent = isSecure ? 'Connection is secure' : 'Connection is not secure';
-          
+
           const desc = document.createElement('div');
           desc.className = 'co-site-info-security-desc';
-          desc.innerHTML = isSecure 
+          desc.innerHTML = isSecure
             ? 'Your information (for example, passwords or credit card numbers) is private when it is sent to this site. <a href="#" class="co-site-info-link">Learn more</a>'
             : 'You should not enter any sensitive information on this site (for example, passwords or credit cards), because it could be stolen by attackers. <a href="#" class="co-site-info-link">Learn more</a>';
-          
+
           textDiv.appendChild(heading);
           textDiv.appendChild(desc);
-          
+
           body.appendChild(iconDiv);
           body.appendChild(textDiv);
           panel.appendChild(body);
@@ -3100,37 +3106,37 @@
 
           const certRow = document.createElement('button');
           certRow.className = 'co-site-info-row';
-          
+
           const certIcon = document.createElement('div');
           certIcon.className = 'co-site-info-icon';
           certIcon.innerHTML = '<img src="app://localhost/assets/images/diploma.svg" width="16" height="16" alt="" />';
-          
+
           const certText = document.createElement('div');
           certText.className = 'co-site-info-text';
           certText.textContent = 'Certificate is valid';
-          
+
           const certAction = document.createElement('div');
           certAction.className = 'co-site-info-action';
           certAction.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M12 8v4H4V4h4V3H3v10h10V8h-1zm-1-5v1h1.8L7.5 9.3l.7.7L13.5 4.7V6.5h1V3h-3.5z"/></svg>';
-          
+
           certRow.appendChild(certIcon);
           certRow.appendChild(certText);
           certRow.appendChild(certAction);
-          
+
           panel.appendChild(certRow);
         }
 
         async function showCookiesView() {
           panel.innerHTML = '';
-          
+
           const header = document.createElement('div');
           header.className = 'co-site-info-header co-site-info-header--sub';
-          
+
           const backBtn = document.createElement('button');
           backBtn.className = 'co-site-info-icon-btn';
           backBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M14 7H4.4l3.3-3.3L6.3 2.3 1 7.6l5.3 5.3 1.4-1.4L4.4 8.2H14v-1.2z"/></svg>';
           backBtn.onclick = showMainView;
-          
+
           const titleGroup = document.createElement('div');
           titleGroup.className = 'co-site-info-title-group';
           const title = document.createElement('span');
@@ -3141,12 +3147,12 @@
           subtitle.textContent = domain;
           titleGroup.appendChild(title);
           titleGroup.appendChild(subtitle);
-          
+
           const closeBtn = document.createElement('button');
           closeBtn.className = 'co-site-info-close-btn';
           closeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M12.5 4.6L11.4 3.5 8 6.9 4.6 3.5 3.5 4.6 6.9 8l-3.4 3.4 1.1 1.1 3.4-3.4 3.4 3.4 1.1-1.1L9.1 8l3.4-3.4z"/></svg>';
-          closeBtn.onclick = function() { hideAll({ hideLens: false }); };
-          
+          closeBtn.onclick = function () { hideAll({ hideLens: false }); };
+
           header.appendChild(backBtn);
           header.appendChild(titleGroup);
           header.appendChild(closeBtn);
@@ -3158,25 +3164,25 @@
 
           const body = document.createElement('div');
           body.className = 'co-site-info-security-body';
-          
+
           const iconDiv = document.createElement('div');
           iconDiv.className = 'co-site-info-icon';
           iconDiv.innerHTML = '<img src="app://localhost/assets/images/cookie.svg" width="16" height="16" alt="" />';
 
           const textDiv = document.createElement('div');
           textDiv.className = 'co-site-info-security-text';
-          
+
           const heading = document.createElement('div');
           heading.className = 'co-site-info-security-heading';
           heading.textContent = 'On-device site data';
-          
+
           const desc = document.createElement('div');
           desc.className = 'co-site-info-security-desc';
           desc.innerHTML = 'Data saved on your device can be used to keep you signed in, to remember your preferences, or for other purposes. <a href="#" class="co-site-info-link">Learn more</a>';
-          
+
           textDiv.appendChild(heading);
           textDiv.appendChild(desc);
-          
+
           body.appendChild(iconDiv);
           body.appendChild(textDiv);
           panel.appendChild(body);
@@ -3188,19 +3194,19 @@
           const manageRow = document.createElement('button');
           manageRow.className = 'co-site-info-row';
           manageRow.onclick = showManageDataView;
-          
+
           const manageIcon = document.createElement('div');
           manageIcon.className = 'co-site-info-icon';
           manageIcon.innerHTML = '<img src="app://localhost/assets/images/database-management.svg" width="16" height="16" alt="" />';
-          
+
           const manageText = document.createElement('div');
           manageText.className = 'co-site-info-text';
           manageText.textContent = 'Manage on-device site data';
-          
+
           const manageAction = document.createElement('div');
           manageAction.className = 'co-site-info-action';
           manageAction.innerHTML = '<img src="app://localhost/assets/images/angle-right.svg" width="16" height="16" alt="" />';
-          
+
           manageRow.appendChild(manageIcon);
           manageRow.appendChild(manageText);
           manageRow.appendChild(manageAction);
@@ -3216,20 +3222,20 @@
           const header = document.createElement('div');
           header.style.padding = '16px 16px 8px';
           header.style.flexShrink = '0';
-          
+
           const title = document.createElement('div');
           title.style.fontSize = '15px';
           title.style.fontWeight = '500';
           title.style.color = '#202124';
           title.style.marginBottom = '8px';
           title.textContent = 'On-device site data';
-          
+
           const subtitle = document.createElement('div');
           subtitle.style.fontSize = '13px';
           subtitle.style.color = '#5f6368';
           subtitle.style.lineHeight = '1.4';
           subtitle.innerHTML = 'To improve your visit, sites often save your activity \u2013 often to your device. <a href="#" class="co-site-info-link">Manage site data</a>';
-          
+
           header.appendChild(title);
           header.appendChild(subtitle);
           panel.appendChild(header);
@@ -3286,29 +3292,29 @@
               row.style.alignItems = 'center';
               row.style.padding = '8px 16px';
               row.style.fontSize = '13px';
-              
+
               const icon = document.createElement('div');
               icon.style.marginRight = '12px';
               icon.style.display = 'flex';
               icon.style.alignItems = 'center';
               icon.style.color = '#5f6368';
-              
+
               if (isMain && payload.favicon) {
                 icon.innerHTML = `<img src="${payload.favicon}" width="16" height="16" alt="" style="border-radius: 2px;" />`;
               } else {
                 icon.innerHTML = '<img src="app://localhost/assets/images/earth-americas.svg" width="16" height="16" alt="" />';
               }
-              
+
               const name = document.createElement('div');
               name.style.flex = '1';
               name.style.color = '#202124';
               name.textContent = domainData.domain;
-              
+
               const actions = document.createElement('div');
               actions.style.display = 'flex';
               actions.style.alignItems = 'center';
               actions.style.gap = '16px'; // Increased spacing
-              
+
               const deleteBtn = document.createElement('button');
               deleteBtn.className = 'co-site-info-icon-btn';
               deleteBtn.innerHTML = '<img src="app://localhost/assets/images/trash.svg" width="16" height="16" alt="" />';
@@ -3316,7 +3322,7 @@
                 await window.electronAPI.webauthnDeleteCookies(domainData.domain);
                 showManageDataView(); // refresh
               };
-              
+
               const menuBtn = document.createElement('button');
               menuBtn.className = 'co-site-info-icon-btn';
               menuBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm0 3c-.6 0-1 .4-1 1s.4 1 1 1 1-.4 1-1-.4-1-1-1zm0 5c-.6 0-1 .4-1 1s.4 1 1 1 1-.4 1-1-.4-1-1-1z"/></svg>';
@@ -3329,7 +3335,7 @@
                 menu.style.borderRadius = '4px';
                 menu.style.padding = '4px 0';
                 menu.style.zIndex = '1000';
-                
+
                 const blockItem = document.createElement('div');
                 blockItem.style.padding = '8px 16px';
                 blockItem.style.fontSize = '13px';
@@ -3341,26 +3347,26 @@
                   await window.electronAPI.webauthnBlockCookies(domainData.domain);
                   showManageDataView(); // refresh
                 };
-                
+
                 menu.appendChild(blockItem);
-                
+
                 const closeMenu = () => {
                   if (menu.parentNode) menu.parentNode.removeChild(menu);
                   document.removeEventListener('click', closeMenu);
                 };
-                
+
                 setTimeout(() => document.addEventListener('click', closeMenu), 0);
-                
+
                 row.appendChild(menu);
               };
-              
+
               actions.appendChild(deleteBtn);
               actions.appendChild(menuBtn);
-              
+
               row.appendChild(icon);
               row.appendChild(name);
               row.appendChild(actions);
-              
+
               return row;
             };
 
@@ -3371,7 +3377,7 @@
               mainHeader.style.color = '#202124';
               mainHeader.textContent = 'Data from the site you\'re visiting';
               scrollArea.appendChild(mainHeader);
-              
+
               const mainDesc = document.createElement('div');
               mainDesc.style.padding = '0 16px 8px';
               mainDesc.style.fontSize = '13px';
@@ -3390,7 +3396,7 @@
               embeddedHeader.style.color = '#202124';
               embeddedHeader.textContent = 'Data from embedded sites';
               scrollArea.appendChild(embeddedHeader);
-              
+
               const embeddedDesc = document.createElement('div');
               embeddedDesc.style.padding = '0 16px 8px';
               embeddedDesc.style.fontSize = '13px';
@@ -3398,7 +3404,7 @@
               embeddedDesc.style.lineHeight = '1.4';
               embeddedDesc.textContent = 'A site can also embed content from other sites, for example images, ads, and text. These other sites can also save data.';
               scrollArea.appendChild(embeddedDesc);
-              
+
               usage.embedded.forEach(d => {
                 scrollArea.appendChild(createDomainRow(d, false));
               });

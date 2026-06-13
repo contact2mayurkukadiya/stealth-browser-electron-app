@@ -51,3 +51,7 @@ export const trashSvg = `${BASE}/trash.svg`;
 export const earthAmericasSvg = `${BASE}/earth-americas.svg`;
 export const diplomaSvg = `${BASE}/diploma.svg`;
 export const angleRightSvg = `${BASE}/angle-right.svg`;
+export const googleSvg = `${BASE}/google.svg`;
+export const bingSvg = `${BASE}/bing.svg`;
+export const duckduckgoSvg = `${BASE}/duckduckgo.svg`;
+export const braveSvg = `${BASE}/brave.svg`;
