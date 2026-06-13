@@ -30,15 +30,6 @@ export function getOmniboxActions(ctx) {
       iconSrc: isSecure ? adjustSvg : menuFindSvg,
     },
     {
-      id: 'cookies',
-      slot: 'prefix',
-      title: 'Cookies and site data',
-      visible: showPageActions,
-      opensPopup: OMNIBOX_POPUP.COOKIES,
-      iconType: 'cookie',
-      iconSrc: cookieSvg,
-    },
-    {
       id: 'download',
       slot: 'suffix',
       title: 'Downloads',

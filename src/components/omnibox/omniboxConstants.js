@@ -9,6 +9,5 @@ export const OMNIBOX_MODE = {
 export const OMNIBOX_POPUP = {
   NONE: null,
   SITE_INFO: 'siteInfo',
-  COOKIES: 'cookieControls',
   DOWNLOAD: 'downloadPanel',
 };

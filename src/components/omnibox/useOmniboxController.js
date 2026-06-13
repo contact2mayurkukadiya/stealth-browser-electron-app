@@ -989,11 +989,6 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
         isSecure,
         favicon: tab?.favicon || null,
       };
-    } else if (action.opensPopup === OMNIBOX_POPUP.COOKIES) {
-      payload = {
-        domain: displayParts?.domain || '',
-        url: tab?.url || '',
-      };
     } else if (action.opensPopup === OMNIBOX_POPUP.DOWNLOAD) {
       payload = { domain: displayParts?.domain || '' };
     }
