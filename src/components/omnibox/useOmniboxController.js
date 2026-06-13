@@ -367,7 +367,7 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
   }, [commitNavigation, closeOverlay, searchEngine]);
 
   useEffect(() => {
-    if (!overlayRequested || !inputZoneRef.current) {
+    if (!overlayRequested || !barRef.current) {
       if (chromeOverlayHeldRef.current) {
         void closeOmniboxChrome();
       }
@@ -375,7 +375,7 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
     }
 
     const runId = ++overlayRunIdRef.current;
-    const dropdownRect = inputZoneRef.current.getBoundingClientRect();
+    const dropdownRect = barRef.current.getBoundingClientRect();
     const items = serializeSuggestionsForOverlay(suggestions);
     const sel = isNavigatingRef.current ? selectedIndex : -1;
     const { start, end } = selectionRef.current;
@@ -482,10 +482,11 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
       });
     };
     window.addEventListener('resize', refreshAnchor);
-    const observer = typeof ResizeObserver !== 'undefined' && inputZoneRef.current
+    const anchorNode = barRef.current;
+    const observer = typeof ResizeObserver !== 'undefined' && anchorNode
       ? new ResizeObserver(refreshAnchor)
       : null;
-    if (observer && inputZoneRef.current) observer.observe(inputZoneRef.current);
+    if (observer && anchorNode) observer.observe(anchorNode);
     refreshAnchor();
     return () => {
       window.removeEventListener('resize', refreshAnchor);
