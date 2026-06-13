@@ -95,6 +95,7 @@
   height: 24px;
   min-width: 28px;
   -webkit-app-region: no-drag;
+  background-color: var(--neutral-hover, rgba(0, 0, 0, 0.05));
 }
 
 .omnibox-action-btn:hover {

@@ -52,6 +52,16 @@ function isInternalDisplayUrl(value) {
     || url.startsWith(URL_C.SCHEME_STEALTH);
 }
 
+function normalizeUrlForCompare(url) {
+  if (!url) return '';
+  return url
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\/(www\.)?/, '')
+    .replace(/\/$/, '');
+}
+
+
 export function mapRecentHistoryItems(items) {
   return (Array.isArray(items) ? items : [])
     .filter((entry) => entry && entry.url)
@@ -500,7 +510,7 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
       if (data?.type === OVERLAY.DISMISS) {
         const base = overlaySessionBaseRef.current;
         const current = draftValueRef.current;
-        const edited = overlayEditedRef.current || current !== base;
+        const edited = overlayEditedRef.current || (normalizeUrlForCompare(current) !== normalizeUrlForCompare(base));
         const preserveDraft = (
           data.reason === 'outside'
           || data.reason === 'blur'
