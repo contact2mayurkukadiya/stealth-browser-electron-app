@@ -298,14 +298,14 @@ try {
             } catch (_) {}
         `);
     }
-    
+
     // Also apply userAgentData to the isolated world just in case
     Object.defineProperty(navigator, 'userAgentData', {
         get: () => compliantUserAgentData,
         configurable: true,
         enumerable: true
     });
-} catch (_) {}
+} catch (_) { }
 
 // Keep preload self-contained: it runs with sandbox: true, where requiring
 // arbitrary local project files can fail before electronAPI is exposed.
@@ -345,6 +345,7 @@ const C = Object.freeze({
         "CHROME_SHELL_MENU_OVERLAY_POST": "chrome-shell-menu-overlay:v1:post",
         "SETTINGS_GET": "settings:get",
         "SETTINGS_SAVE": "settings:save",
+        "SETTINGS_UPDATE": "settings:update",
         "COOKIE_SUMMARY": "cookies:summary",
         "COOKIE_DELETE_DOMAIN": "cookies:delete-domain",
         "COOKIE_CLEAR_ALL": "cookies:clear-all",
@@ -663,6 +664,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Settings
     settingsGet: () => ipcRenderer.invoke(C.IPC_INVOKE.SETTINGS_GET),
     settingsSave: (data) => ipcRenderer.invoke(C.IPC_INVOKE.SETTINGS_SAVE, data),
+    settingsUpdated: (callback) => ipcRenderer.on(C.IPC_INVOKE.SETTINGS_UPDATE, (event, data) => callback(data)),
     appRelaunch: () => ipcRenderer.invoke(C.IPC_INVOKE.APP_RELAUNCH),
 
     /** Subscribe to accent/theme updates broadcast from main (all windows). */

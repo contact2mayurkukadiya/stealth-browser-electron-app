@@ -197,6 +197,36 @@ const webContentsIdToTabId = new Map();
 /** @type {Map<string, import('electron').BaseWindow>} */
 const detachedTabWindows = new Map();
 
+
+function broadcastSettingsUpdate(settings) {
+    const payload = { settings };
+    // Send to all browser windows
+    for (const win of BrowserWindow.getAllWindows()) {
+        if (!win || win.isDestroyed?.()) continue;
+        try {
+            win.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload);
+        } catch (_) { }
+    }
+    // Send to all tabs and overlays
+    for (const ctx of windowContextsById.values()) {
+        for (const view of Object.values(ctx.tabs || {})) {
+            if (!view || view.webContents.isDestroyed()) continue;
+            try {
+                view.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload);
+            } catch (_) { }
+        }
+        if (isViewWebContentsAlive(ctx.chromeOverlayView)) {
+            try { ctx.chromeOverlayView.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload); } catch (_) { }
+        }
+        if (isViewWebContentsAlive(ctx.chromeOmniboxOverlayView)) {
+            try { ctx.chromeOmniboxOverlayView.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload); } catch (_) { }
+        }
+        if (isViewWebContentsAlive(ctx.chromeShellMenuOverlayView)) {
+            try { ctx.chromeShellMenuOverlayView.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload); } catch (_) { }
+        }
+    }
+}
+
 function closeDevFileWatchers() {
     for (const watcher of devFileWatchers) {
         try { watcher.close(); } catch (_) { }
@@ -5784,6 +5814,7 @@ ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, async (e, data) => {
         await cleanupBlockedCookiesForProfile(profileId);
     }
     applyColorThemeFromSettings();
+    broadcastSettingsUpdate(next);
     return true;
 });
 

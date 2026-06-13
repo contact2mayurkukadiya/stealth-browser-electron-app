@@ -519,6 +519,7 @@ export default function SettingsApp() {
   }, [settings, persist]);
 
   const handleSearchEngineChange = useCallback(async (value) => {
+    console.log('handleSearchEngineChange', value);
     await persist({ ...settings, searchEngine: value });
   }, [settings, persist]);
 

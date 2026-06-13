@@ -184,6 +184,15 @@ export default function NtpSearchBox() {
     window.electronAPI.settingsGet?.().then((s) => {
       if (s?.searchEngine) setSearchEngine(s.searchEngine);
     }).catch(() => {});
+
+    if (window.electronAPI.settingsUpdated) {
+      const unsubscribe = window.electronAPI.settingsUpdated((data) => {
+        if (data?.settings?.searchEngine) {
+          setSearchEngine(data.settings.searchEngine);
+        }
+      });
+      return typeof unsubscribe === 'function' ? unsubscribe : undefined;
+    }
   }, []);
 
   const loadRecentHistoryFallback = useCallback(async (applyToDropdown = false) => {

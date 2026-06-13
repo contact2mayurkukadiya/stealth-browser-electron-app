@@ -32,18 +32,15 @@ function applyPinnedLeadingOrder(state) {
 const browserSlice = createSlice({
   name: 'browser',
   initialState: {
-    /**
-     * { [tabId]: { url, title, favicon, isNewTab, isStealth, isLoading, isSleeping,
-     *   isPinned, isAudioMuted, lastActiveAt } }
-     * isSleeping=true means the tab exists visually but its WebContentsView has not
-     * been created yet (lazy session restore). Content loads on first activation.
-     */
     tabs: {},
-    /** Ordered array of tab IDs (reflects visual left→right order) */
     tabOrder: [],
     currentTabId: null,
+    searchEngine: 'google'
   },
   reducers: {
+    setSearchEngine(state, action) {
+      state.searchEngine = action.payload;
+    },
     addTab(state, action) {
       const { id, isStealth = false, initialUrl = null } = action.payload;
       const url = initialUrl || NTP_URL;
@@ -225,6 +222,7 @@ export const {
   updateTabUrl,
   setTabNewTab,
   reorderTabs,
+  setSearchEngine
 } = browserSlice.actions;
 
 export default browserSlice.reducer;

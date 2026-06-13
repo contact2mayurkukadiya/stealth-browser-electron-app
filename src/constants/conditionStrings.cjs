@@ -296,6 +296,7 @@ const IPC_INVOKE = freeze({
   CHROME_SHELL_MENU_OVERLAY_POST: 'chrome-shell-menu-overlay:v1:post',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SAVE: 'settings:save',
+  SETTINGS_UPDATE: 'settings:update',
   COOKIE_SUMMARY: 'cookies:summary',
   COOKIE_DELETE_DOMAIN: 'cookies:delete-domain',
   COOKIE_CLEAR_ALL: 'cookies:clear-all',
