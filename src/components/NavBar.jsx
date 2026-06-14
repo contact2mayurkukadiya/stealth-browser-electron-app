@@ -42,7 +42,7 @@ const BACK_ICON = <img className="chrome-toolbar-icon-img" src={navBackSvg} widt
 const FORWARD_ICON = <img className="chrome-toolbar-icon-img" src={navForwardSvg} width={25} height={25} alt="" />;
 const RELOAD_ICON = <img className="chrome-toolbar-icon-img" src={navReloadSvg} width={15} height={15} alt="" />;
 const STAR_EMPTY = <AssetMaskIcon icon={bookmarkStarSvg} size={18} />;
-const STAR_FILLED = <AssetMaskIcon icon={bookmarkStarFilledSvg} size={10} />;
+const STAR_FILLED = <AssetMaskIcon icon={bookmarkStarFilledSvg} size={18} />;
 const MORE_ICON = <AssetMaskIcon icon={menuDotsVerticalSvg} size={14} />;
 
 /** Search bar → root, folder → folder id, not found → 'root' (fallback). */
