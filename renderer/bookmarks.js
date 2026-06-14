@@ -1,8 +1,4 @@
 const { BOOKMARK, KEYBOARD } = require('../src/constants/conditionStrings.cjs');
-/**
- * Bookmark Manager for InviSurf
- * Handles: star toggle, bookmark bar render, overlay folder navigation, drag-to-reorder
- */
 
 let bookmarksData = { bar: [] };
 let dragSrcId = null;

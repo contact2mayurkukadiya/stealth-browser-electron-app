@@ -5,157 +5,9 @@ import { useChromeTheme } from '../hooks/useChromeTheme';
 import { useInvsurfDocumentFavicon } from '../hooks/useInvsurfLogoFavicon';
 import { SETTINGS } from '../constants/conditionStrings.js';
 import { HighlightedText, textMatchesQuery } from '../utils/textHighlighter.jsx';
-
-const SETTINGS_ICON_BASE = 'app://localhost/assets/images';
-const SETTINGS_NAV_ICONS = {
-  privacy: `${SETTINGS_ICON_BASE}/shield.svg`,
-  appearance: `${SETTINGS_ICON_BASE}/palette.svg`,
-  search_engine: `${SETTINGS_ICON_BASE}/globe.svg`,
-  on_startup: `${SETTINGS_ICON_BASE}/power.svg`,
-  reports: `${SETTINGS_ICON_BASE}/bug-report.svg`,
-  angle_left: `${SETTINGS_ICON_BASE}/angle-left.svg`,
-  angle_right: `${SETTINGS_ICON_BASE}/angle-right.svg`,
-  cookie: `${SETTINGS_ICON_BASE}/cookie.svg`,
-  earth: `${SETTINGS_ICON_BASE}/earth-americas.svg`,
-  trash: `${SETTINGS_ICON_BASE}/trash.svg`,
-  search: `${SETTINGS_ICON_BASE}/search.svg`,
-  cross: `${SETTINGS_ICON_BASE}/cross-small.svg`,
-};
-
-const SETTINGS_NAV_ITEMS = [
-  {
-    id: 'privacy/main',
-    section: 'privacy',
-    label: 'Privacy and security',
-    icon: SETTINGS_NAV_ICONS.privacy,
-  },
-  {
-    id: 'appearance',
-    section: 'appearance',
-    label: 'Appearance',
-    icon: SETTINGS_NAV_ICONS.appearance,
-  },
-  {
-    id: 'search_engine',
-    section: 'search_engine',
-    label: 'Search engine',
-    icon: SETTINGS_NAV_ICONS.search_engine,
-  },
-  {
-    id: 'default_browser',
-    section: 'default_browser',
-    label: 'Default browser',
-    icon: null,
-  },
-  {
-    id: 'on_startup',
-    section: 'on_startup',
-    label: 'On startup',
-    icon: SETTINGS_NAV_ICONS.on_startup,
-  },
-];
-
-const REPORT_NAV_ITEMS = [
-  { id: 'browser_identity', section: 'browser_identity', label: 'Browser identity verification' },
-  { id: 'compatibility', section: 'compatibility', label: 'Compatibility diagnostics' },
-  { id: 'crash_reports', section: 'crash_reports', label: 'Crash reports' },
-];
-
-const STARTUP_OPTIONS = [
-  {
-    value: 'fresh',
-    label: 'Fresh start',
-    description: 'Start with a single new tab. Tabs from the previous session are not restored.',
-  },
-  {
-    value: 'continue',
-    label: 'Continue where you left off',
-    description: 'Restore all open tabs from your last session on next launch.',
-  },
-  {
-    value: 'clearHistory',
-    label: 'Clear everything on startup',
-    description: 'Clear browsing history and start with a single new tab on next launch.',
-  },
-];
-
-const SEARCH_ENGINE_OPTIONS = [
-  {
-    value: 'google',
-    label: 'Google',
-    description: 'Search with Google (google.com).',
-  },
-  {
-    value: 'bing',
-    label: 'Bing',
-    description: 'Search with Microsoft Bing (bing.com).',
-  },
-  {
-    value: 'brave',
-    label: 'Brave Search',
-    description: 'Search with Brave Search — independent index, no tracking (search.brave.com).',
-  },
-  {
-    value: 'duckDuckGo',
-    label: 'DuckDuckGo',
-    description: 'Search with DuckDuckGo — privacy-first search (duckduckgo.com).',
-  },
-];
-
-const APPEARANCE_MODE_SEGMENTS = [
-  { value: 'light', label: 'Light', title: 'Always use light appearance' },
-  { value: 'dark', label: 'Dark', title: 'Always use dark appearance' },
-  { value: 'automatic', label: 'Device', title: 'Match your system light or dark mode' },
-];
-
-const LOG_CLEAR_RANGES = [
-  { label: 'Last 30 min', ms: 30 * 60 * 1000 },
-  { label: 'Last hour', ms: 60 * 60 * 1000 },
-  { label: 'Last 24 hours', ms: 24 * 60 * 60 * 1000 },
-  { label: 'All time', ms: null },
-];
-
-const COOKIE_POLICY_OPTIONS = [
-  {
-    value: 'allow',
-    label: 'Allow all cookies',
-    description: 'Sites can use cookies to improve your browsing experience',
-  },
-  {
-    value: 'block_third_party',
-    label: 'Block third-party cookies',
-    description: 'Sites cannot use cookies to see your activity across other sites',
-  },
-  {
-    value: 'block_all',
-    label: 'Block all cookies (Not recommended)',
-    description: 'Prevents sites from using cookies. Many features like signing in might break.',
-  },
-];
-
-const COOKIE_EXCEPTION_GROUPS = [
-  {
-    setting: 'allow',
-    title: 'Sites that can always use cookies',
-    empty: 'No sites added',
-    status: 'Allowed',
-    sample: '[*.]example.com',
-  },
-  {
-    setting: 'session_only',
-    title: 'Always clear cookies when windows are closed',
-    empty: 'No sites added',
-    status: 'Clear on exit',
-    sample: '[*.]example.com',
-  },
-  {
-    setting: 'block',
-    title: 'Sites that can never use cookies',
-    empty: 'No sites added',
-    status: 'Blocked',
-    sample: 'tracker-network.com',
-  },
-];
+import AssetMaskIcon from '../components/AssetMaskIcon.jsx';
+import { angleLeftSvg, angleRightSvg, bugReportSvg, cookieSvg, earthAmericasSvg, menuFindSvg, menuMonitorSvg , tabCloseSvg, trashSvg } from '../constants/appAssetUrls.js';
+import { SETTINGS_NAV_ITEMS, REPORT_NAV_ITEMS, STARTUP_OPTIONS, SEARCH_ENGINE_OPTIONS, APPEARANCE_MODE_SEGMENTS, LOG_CLEAR_RANGES, COOKIE_EXCEPTION_GROUPS, COOKIE_POLICY_OPTIONS } from '../constants/settings.js';
 
 function validateCookiePattern(pattern) {
   const value = String(pattern || '').trim();
@@ -180,47 +32,17 @@ function getActiveSection(activeView) {
 
 function SidebarIcon({ icon, fallback }) {
   if (icon) {
-    return (
-      <span
-        className="settings-sidebar-icon settings-sidebar-icon--asset"
-        style={{ '--settings-sidebar-icon-url': `url("${icon}")` }}
-        aria-hidden="true"
-      />
-    );
+    return  <AssetMaskIcon icon={icon} size={16} />
   }
 
-  return (
-    <span className="settings-sidebar-icon" aria-hidden="true">
-      {fallback}
-    </span>
-  );
-}
-
-function AssetMaskIcon({ icon, className = '', label = null }) {
-  return (
-    <span
-      className={`settings-asset-icon ${className}`.trim()}
-      style={{ '--settings-asset-icon-url': `url("${icon}")` }}
-      aria-hidden={label ? undefined : 'true'}
-      aria-label={label || undefined}
-    />
-  );
+  return <AppMaskIcon icon={fallback} size={16} />;
 }
 
 function BackIconButton({ onClick, label = 'Back' }) {
   return (
     <button type="button" className="settings-back-icon-btn" onClick={onClick} aria-label={label}>
-      <AssetMaskIcon icon={SETTINGS_NAV_ICONS.angle_left} />
+      <AssetMaskIcon icon={angleLeftSvg} size={25} />
     </button>
-  );
-}
-
-function DefaultBrowserIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v9A2.5 2.5 0 0 1 17.5 17h-11A2.5 2.5 0 0 1 4 14.5v-9Z" />
-      <path d="M8 21h8M12 17v4M4 7h16" />
-    </svg>
   );
 }
 
@@ -233,7 +55,7 @@ function SettingsSearchField({
 }) {
   return (
     <label className={`settings-search-field ${className}`.trim()}>
-      <AssetMaskIcon icon={SETTINGS_NAV_ICONS.search} className="settings-search-field__icon" />
+      <AssetMaskIcon icon={menuFindSvg} size={15} className="settings-search-field__icon" />
       <input
         type="text"
         value={value}
@@ -248,7 +70,7 @@ function SettingsSearchField({
           onClick={() => onChange('')}
           aria-label={`Clear ${label}`}
         >
-          <AssetMaskIcon icon={SETTINGS_NAV_ICONS.cross} />
+          <AssetMaskIcon icon={tabCloseSvg} size={15} />
         </button>
       ) : null}
     </label>
@@ -1076,7 +898,7 @@ export default function SettingsApp() {
             <span className="setting-row__label">Cookies and other site data</span>
             <span className="setting-row__desc">View and manage cookies from sites visited in the active session.</span>
           </span>
-          <AssetMaskIcon icon={SETTINGS_NAV_ICONS.angle_right} className="settings-link-row__chevron" />
+          <AssetMaskIcon icon={angleRightSvg} size={15} className="settings-link-row__chevron" />
         </button>
       </div>
     </section>
@@ -1138,12 +960,12 @@ export default function SettingsApp() {
           onClick={() => setActiveView('privacy/cookies/all')}
         >
           <span>
-            <AssetMaskIcon icon={SETTINGS_NAV_ICONS.cookie} className="cookie-link-icon" />
+            <AssetMaskIcon icon={cookieSvg} size={18} className="cookie-link-icon" />
             <span className="setting-row__label">
               <HighlightedText text="See all site data and permissions" query={cookiePageSearch} />
             </span>
           </span>
-          <AssetMaskIcon icon={SETTINGS_NAV_ICONS.angle_right} className="settings-link-row__chevron" />
+          <AssetMaskIcon icon={angleRightSvg} size={15} className="settings-link-row__chevron" />
         </button>
         </div>
       )}
@@ -1173,7 +995,7 @@ export default function SettingsApp() {
                 <div className="cookie-exception-list">
                   {rules.map((rule) => (
                     <div className="cookie-exception-row" key={`${rule.setting}:${rule.pattern}`}>
-                      <AssetMaskIcon icon={SETTINGS_NAV_ICONS.earth} className="cookie-exception-site-icon" />
+                      <AssetMaskIcon icon={earthAmericasSvg} size={16} className="cookie-exception-site-icon" />
                       <span className="cookie-exception-pattern">
                         <HighlightedText text={rule.pattern} query={cookiePageSearch} />
                       </span>
@@ -1181,7 +1003,7 @@ export default function SettingsApp() {
                         <HighlightedText text={group.status} query={cookiePageSearch} />
                       </span>
                       <button type="button" onClick={() => removeCookieException(rule)} aria-label={`Remove ${rule.pattern}`}>
-                        <AssetMaskIcon icon={SETTINGS_NAV_ICONS.trash} />
+                        <AssetMaskIcon icon={trashSvg} size={16} />
                       </button>
                     </div>
                   ))}
@@ -1268,7 +1090,7 @@ export default function SettingsApp() {
                     onClick={() => setCookieDeleteConfirm({ type: 'domain', domain: site.domain })}
                     aria-label={`Remove cookies for ${site.domain}`}
                   >
-                    <AssetMaskIcon icon={SETTINGS_NAV_ICONS.trash} />
+                    <AssetMaskIcon icon={trashSvg} size={16} />
                   </button>
                 </span>
               </div>
@@ -1491,7 +1313,7 @@ export default function SettingsApp() {
                   </span>
                 ))}
               </span>
-              <AssetMaskIcon icon={SETTINGS_NAV_ICONS.angle_right} className="settings-search-result__chevron" />
+              <AssetMaskIcon icon={angleRightSvg} size={15} className="settings-search-result__chevron" />
             </button>
           ))}
         </div>
@@ -1564,7 +1386,7 @@ export default function SettingsApp() {
                   aria-current={active ? 'page' : undefined}
                   onClick={() => setActiveView(item.id)}
                 >
-                  <SidebarIcon icon={item.icon} fallback={<DefaultBrowserIcon />} />
+                  <SidebarIcon icon={item.icon} fallback={menuMonitorSvg} />
                   <span>{item.label}</span>
                 </button>
               );
@@ -1572,7 +1394,7 @@ export default function SettingsApp() {
 
             <div className={`settings-sidebar-group${REPORT_NAV_ITEMS.some((item) => activeSection === item.section) ? ' settings-sidebar-group--active' : ''}`}>
               <div className="settings-sidebar-group__label">
-                <SidebarIcon icon={SETTINGS_NAV_ICONS.reports} />
+                <SidebarIcon icon={bugReportSvg} />
                 <span>Reports</span>
               </div>
               {REPORT_NAV_ITEMS.map((item) => {

@@ -8,6 +8,8 @@ import ByGroupView from './components/ByGroupView';
 import ContextMenu from './components/ContextMenu';
 import ClearDataModal from './components/ClearDataModal';
 import { KEYBOARD } from '../constants/conditionStrings.js';
+import { menuBurgerSvg, menuFindSvg, rectangleVerticalHistorySvg } from '../constants/appAssetUrls.js';
+import AssetMaskIcon from '../components/AssetMaskIcon.jsx';
 
 export const VIEW_BY_DATE = 'byDate';
 export const VIEW_BY_GROUP = 'byGroup';
@@ -216,9 +218,7 @@ export default function HistoryApp() {
       <main className="h-main">
         <div className="h-search-wrap">
           <label className="h-search" htmlFor="h-search-input">
-            <svg className="h-search-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.71.71l.27.28v.79L19 20.49 20.49 19zM10 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10z" />
-            </svg>
+            <AssetMaskIcon icon={menuFindSvg} size={18} className="h-search-icon" />
             <input
               id="h-search-input"
               type="text"
@@ -237,14 +237,7 @@ export default function HistoryApp() {
             className={`h-view-tab${viewMode === VIEW_BY_DATE ? ' active' : ''}`}
             onClick={() => setViewMode(VIEW_BY_DATE)}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="8" y1="6" x2="21" y2="6" />
-              <line x1="8" y1="12" x2="21" y2="12" />
-              <line x1="8" y1="18" x2="21" y2="18" />
-              <line x1="3" y1="6" x2="3.01" y2="6" />
-              <line x1="3" y1="12" x2="3.01" y2="12" />
-              <line x1="3" y1="18" x2="3.01" y2="18" />
-            </svg>
+            <AssetMaskIcon icon={menuBurgerSvg} size={15} />
             By date
           </button>
           <button
@@ -253,12 +246,7 @@ export default function HistoryApp() {
             className={`h-view-tab${viewMode === VIEW_BY_GROUP ? ' active' : ''}`}
             onClick={() => setViewMode(VIEW_BY_GROUP)}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="17 1 21 5 17 9" />
-              <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-              <polyline points="7 23 3 19 7 15" />
-              <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-            </svg>
+            <AssetMaskIcon icon={rectangleVerticalHistorySvg} size={15} />
             By group
           </button>
         </div>
