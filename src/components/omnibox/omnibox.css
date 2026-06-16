@@ -253,8 +253,8 @@
   z-index: 9999;
   overflow: hidden;
   padding: 4px 0;
-  /* animation: omnibox-enter 0.12s ease; */
-  animation: omnibox-enter 2s ease;
+  animation: omnibox-enter 0.12s ease;
+
 }
 
 @keyframes omnibox-enter {
