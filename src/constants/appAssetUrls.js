@@ -33,6 +33,7 @@ export const historyGoogleLogoSvg = `${BASE}/history-google-logo.svg`;
 export const lockSvg = `${BASE}/lock.svg`;
 export const menuAddProfileSvg = `${BASE}/user-add.svg`;
 export const menuBookmarksSvg = `${BASE}/bookmark.svg`;
+export const angleDoubleSmallRightSvg = `${BASE}/angle-double-small-right.svg`;
 export const menuCloseProfileSvg = `${BASE}/delete-user.svg`;
 export const menuCopySvg = `${BASE}/copy.svg`;
 export const menuCutSvg = `${BASE}/scissors.svg`;

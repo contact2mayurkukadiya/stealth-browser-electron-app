@@ -626,16 +626,50 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     gap: 2px;
     background: var(--chrome-bookmark-bar);
     height: 32px;
-    overflow-x: auto;
-    overflow-y: hidden;
+    /* Adjusted from overflow-x: auto */
+    overflow: hidden;
     white-space: nowrap;
     -webkit-app-region: no-drag;
     flex-shrink: 0;
 }
 
-/* Hide scrollbar for bookmark bar but allow scrolling */
+/* Hide scrollbar for bookmark bar but allow scrolling - Keep for legacy fallback */
 .bookmark-bar::-webkit-scrollbar {
     display: none;
+}
+
+/* ── Container for flexibly measuring overflowed items ──────────────────── */
+.bk-items-container {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1 1 auto;
+    overflow: hidden;
+    position: relative;
+    height: 100%;
+}
+
+/* ── Overflow Menu Chevron ──────────────────────────────────────────────── */
+.bk-overflow-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    color: var(--chrome-toolbar-icon-muted);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+    padding: 0;
+    margin-left: 2px;
+}
+
+.bk-overflow-btn:hover {
+    background: var(--chrome-tab-hover-bg);
+    color: var(--chrome-toolbar-icon);
 }
 
 .bk-item-wrap {
