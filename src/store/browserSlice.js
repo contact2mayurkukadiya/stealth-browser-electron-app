@@ -35,9 +35,13 @@ const browserSlice = createSlice({
     tabs: {},
     tabOrder: [],
     currentTabId: null,
-    searchEngine: 'google'
+    searchEngine: 'google',
+    showBookmarkBar: true
   },
   reducers: {
+    setShowBookmarkBar(state, action) {
+      state.showBookmarkBar = action.payload;
+    },
     setSearchEngine(state, action) {
       state.searchEngine = action.payload;
     },
@@ -222,7 +226,8 @@ export const {
   updateTabUrl,
   setTabNewTab,
   reorderTabs,
-  setSearchEngine
+  setSearchEngine,
+  setShowBookmarkBar
 } = browserSlice.actions;
 
 export default browserSlice.reducer;

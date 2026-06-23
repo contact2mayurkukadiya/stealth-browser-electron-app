@@ -7,6 +7,7 @@ import {
   insertTabAfter,
   setTabPinned,
   setTabAudioMuted,
+  setShowBookmarkBar,
 } from './store/browserSlice';
 import { setBookmarks } from './store/bookmarksSlice';
 import { useElectronIPC } from './hooks/useElectronIPC';
@@ -41,6 +42,7 @@ function AppShell() {
   const tabs = useSelector(s => s.browser.tabs);
   const tabOrder = useSelector(s => s.browser.tabOrder);
   const currentTabId = useSelector(s => s.browser.currentTabId);
+  const showBookmarkBar = useSelector(s => s.browser.showBookmarkBar !== false);
   /** True for dedicated stealth (incognito) windows — all tabs are private; chrome is fixed dark InvSurf. */
   const stealthWindowRef = useRef(!!(typeof window !== 'undefined' && window.__INVISURF_STEALTH_WINDOW__));
   const isStealthShell = stealthWindowRef.current;

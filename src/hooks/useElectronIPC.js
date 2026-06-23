@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { DOM_EVENT } from '../constants/conditionStrings.js';
 import { useDispatch } from 'react-redux';
-import { updateTab, updateTabUrl, setSearchEngine } from '../store/browserSlice';
+import { updateTab, updateTabUrl, setSearchEngine, setShowBookmarkBar } from '../store/browserSlice';
 
 export function useElectronIPC({
   onNewTab,
@@ -88,6 +88,9 @@ export function useElectronIPC({
         if (settings?.searchEngine) {
           dispatch(setSearchEngine(settings.searchEngine));
         }
+        if (settings?.showBookmarkBar !== undefined) {
+          dispatch(setShowBookmarkBar(settings.showBookmarkBar));
+        }
       }).catch(() => { });
 
       // Listen for live setting changes
@@ -95,6 +98,9 @@ export function useElectronIPC({
         api.settingsUpdated((data) => {
           if (data?.settings?.searchEngine) {
             dispatch(setSearchEngine(data.settings.searchEngine));
+          }
+          if (data?.settings?.showBookmarkBar !== undefined) {
+            dispatch(setShowBookmarkBar(data.settings.showBookmarkBar));
           }
         });
       }
