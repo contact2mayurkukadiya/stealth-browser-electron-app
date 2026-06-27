@@ -1808,11 +1808,10 @@ function computeMenuOverlayBounds(context, patch) {
 
     if (kind === 'bookmarkContextMenu') {
         const menuWidth = 220;
-        const rawItems = Array.isArray(patch.items) ? patch.items.slice(0, 20) : [];
+        const fixedHeight = 290;
         const left = clampNumber(Math.round(Number(patch.clientX) || 0), pad, windowW - menuWidth - pad);
-        const top = clampNumber(Math.round(Number(patch.clientY) || 0), pad, windowH - 48 - pad);
-        const height = Math.min(windowH - top - pad, estimateMenuRowsHeight(rawItems));
-        return menuOverlayBoundsFromPanel(context, { left, top, width: menuWidth, height });
+        const top = clampNumber(Math.round(Number(patch.clientY) || 0), pad, windowH - fixedHeight - pad);
+        return menuOverlayBoundsFromPanel(context, { left, top, width: menuWidth, height: fixedHeight });
     }
 
     if (kind === 'bookmarkFolderMenu') {

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { setBookmarks } from '../store/bookmarksSlice';
+import { setShowBookmarkBar } from '../store/browserSlice';
 import { useChromeShellMenuOverlay } from '../context/ChromeOverlayContext';
 import BookmarkItem from './BookmarkItem';
 import { addFolderSvg, angleDoubleSmallRightSvg } from '../constants/appAssetUrls';
@@ -8,15 +9,16 @@ import { BOOKMARK, OVERLAY, KEYBOARD } from '../constants/conditionStrings.js';
 import AssetMaskIcon from './AssetMaskIcon';
 
 const ADD_FOLDER_ICON = <AssetMaskIcon icon={addFolderSvg} size={16} />;
+const OVERFLOW_ICON = <AssetMaskIcon icon={angleDoubleSmallRightSvg} size={16} />;
 
-/** Resolve a folder node anywhere in the bookmark tree (bar root or nested). */
-function findFolderInBookmarkTree(nodes, folderId) {
-  if (!Array.isArray(nodes) || !folderId) return null;
+/** Resolve a node anywhere in the bookmark tree (bar root or nested). */
+function findItemInBookmarkTree(nodes, itemId) {
+  if (!Array.isArray(nodes) || !itemId) return null;
   for (const node of nodes) {
     if (!node) continue;
-    if (node.type === BOOKMARK.TYPE_FOLDER && node.id === folderId) return node;
-    if (node.type === BOOKMARK.TYPE_FOLDER && node.children?.length) {
-      const sub = findFolderInBookmarkTree(node.children, folderId);
+    if (node.id === itemId) return node;
+    if (node.children?.length) {
+      const sub = findItemInBookmarkTree(node.children, itemId);
       if (sub) return sub;
     }
   }
@@ -107,28 +109,66 @@ export default function BookmarkBar({ currentTabId }) {
     }
   }, [dismissFolderOverlay]);
 
+  // 1. Process Actions returning from the HTML Overlay
   const applyBookmarkMenuAction = useCallback(
-    (bookmarkItemId, id) => {
-      const target = bookmarksData.bar.find((b) => b.id === bookmarkItemId);
-      if (!target) return;
-      if (id === BOOKMARK.MENU_OPEN && target.type !== BOOKMARK.TYPE_FOLDER) {
-        handleNavigate(target.url);
-        return;
-      }
-      if (id === BOOKMARK.MENU_REMOVE) {
-        void (async () => {
-          try {
-            const next = await window.electronAPI.bookmarksRemove(bookmarkItemId);
-            dispatch(setBookmarks(next));
-          } catch (err) {
-            console.error('bookmark remove from context menu', err);
+    (bookmarkItemId, actionId) => {
+      const item = findItemInBookmarkTree(bookmarksData.bar, bookmarkItemId);
+      if (!item) return;
+      const isFolder = item.type === BOOKMARK.TYPE_FOLDER;
+
+      void (async () => {
+        try {
+          switch (actionId) {
+            case 'openNewTab':
+              if (!isFolder && item.url) {
+                // Ensure arguments match your API (id, isStealth, url, options)
+                const id = 'tab-' + Date.now();
+                window.electronAPI.newTab(id, false, item.url, { source: 'bookmark' });
+                window.electronAPI.switchTab(id);
+              }
+              break;
+            case 'openNewWindow':
+              if (!isFolder && item.url) {
+                // Adjust if your custom implementation differs
+                if (window.electronAPI.openUrlInNewWindow) {
+                  window.electronAPI.openUrlInNewWindow(item.url);
+                } else if (window.electronAPI.createWindow) {
+                  window.electronAPI.createWindow?.({ url: item.url });
+                }
+              }
+              break;
+            case 'openStealth':
+              if (!isFolder && item.url) {
+                // Ensure arguments match your API (id, isStealth, url, options)
+                window.electronAPI.newTab(currentTabId, true, item.url, { source: 'bookmark' });
+              }
+              break;
+            case 'delete':
+              const updatedBookmarks = await window.electronAPI.bookmarksRemove(item.id);
+              dispatch(setBookmarks(updatedBookmarks));
+              break;
+            case 'openManager':
+              if (currentTabId) {
+                window.electronAPI.navigate(currentTabId, 'invisurf://bookmarks', { source: 'bookmark' });
+              } else {
+                window.electronAPI.newTab(null, false, 'invisurf://bookmarks', { source: 'bookmark' });
+              }
+              break;
+            case 'toggleBar':
+              dispatch(setShowBookmarkBar(false));
+              break;
+            default:
+              break;
           }
-        })();
-      }
+        } catch (err) {
+          console.error('Bookmark context menu error:', err);
+        }
+      })();
     },
-    [bookmarksData.bar, handleNavigate, dispatch],
+    [bookmarksData.bar, currentTabId, dispatch]
   );
 
+  // 2. Overlay Events interceptor
   useEffect(() => {
     const unsub = window.electronAPI?.onChromeOverlayV1HostEvent?.((data) => {
       const t = data?.type;
@@ -137,6 +177,8 @@ export default function BookmarkBar({ currentTabId }) {
         if (folderMenuActiveRef.current) void dismissFolderOverlay();
         return;
       }
+
+      // Folder Overlay
       if (t === OVERLAY.BOOKMARK_FOLDER_PICK) {
         if (!folderMenuActiveRef.current) return;
         const folderId = data?.folderId;
@@ -148,10 +190,9 @@ export default function BookmarkBar({ currentTabId }) {
 
         let child = null;
         if (folderId === 'overflow-menu') {
-          // It's the overflow menu root level pick
           child = bookmarksBarRef.current.find((c) => c.id === itemId);
         } else {
-          const folder = findFolderInBookmarkTree(bookmarksBarRef.current, folderId);
+          const folder = findItemInBookmarkTree(bookmarksBarRef.current, folderId);
           child = folder && Array.isArray(folder.children)
             ? folder.children.find((c) => c.id === itemId)
             : null;
@@ -163,6 +204,8 @@ export default function BookmarkBar({ currentTabId }) {
         void dismissFolderOverlay();
         return;
       }
+
+      // Right-Click Overlay Action
       if (t === OVERLAY.BOOKMARK_MENU) {
         if (!bookmarkMenuActiveRef.current) return;
         const { bookmarkItemId, id } = data || {};
@@ -189,34 +232,47 @@ export default function BookmarkBar({ currentTabId }) {
     return typeof unsub === 'function' ? unsub : undefined;
   }, []);
 
+  // 3. Spawning the Overlay (Synchronous Extraction to prevent Electron positioning at 0,0)
   const openBookmarkContextMenu = useCallback(
     async (e, item, isFolder) => {
+      e.preventDefault();
+      e.stopPropagation();
+
       const api = window.electronAPI;
       if (!api?.chromeShellMenuOverlayV1Reset) return;
-      const menuItems = [];
-      if (!isFolder) menuItems.push({ type: 'item', id: 'openBookmark', label: 'Open', enabled: true });
-      menuItems.push({
-        type: 'item',
-        id: 'removeBookmark',
-        label: isFolder ? 'Delete folder' : 'Remove bookmark',
-        enabled: true,
-      });
+
+      // Extract properties immediately so React's async pooling doesn't wipe them!
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+
+      const menuItems = [
+        { type: 'item', id: 'openNewTab', label: 'Open in new tab', enabled: !isFolder },
+        { type: 'item', id: 'openNewWindow', label: 'Open in new window', enabled: !isFolder },
+        { type: 'item', id: 'openStealth', label: 'Open in stealth tab', enabled: !isFolder },
+        { type: 'separator', id: 'sep1' },
+        { type: 'item', id: 'delete', label: 'Delete', danger: true, enabled: true },
+        { type: 'separator', id: 'sep2' },
+        { type: 'item', id: 'openManager', label: 'Open bookmarks manager', enabled: true },
+        { type: 'item', id: 'toggleBar', label: 'Hide bookmark bar', enabled: true },
+      ];
+
       pendingOwnBookmarkResetRef.current = true;
       try {
         await reset();
         await acquire();
         bookmarkMenuActiveRef.current = true;
+
         await post({
-          kind: 'bookmarkContextMenu',
+          kind: 'bookmarkContextMenu', // Sends payload to chrome-overlay.html
           bookmarkItemId: item.id,
-          clientX: e.clientX,
-          clientY: e.clientY,
+          clientX: clientX,
+          clientY: clientY,
           items: menuItems,
         });
       } catch (err) {
-        console.error('bookmark chrome overlay menu', err);
+        console.error('bookmark chrome overlay menu error:', err);
         bookmarkMenuActiveRef.current = false;
-        try { await release(); } catch (releaseErr) {}
+        try { await release(); } catch (releaseErr) { }
       } finally {
         pendingOwnBookmarkResetRef.current = false;
       }
@@ -230,7 +286,7 @@ export default function BookmarkBar({ currentTabId }) {
       const api = window.electronAPI;
       if (!api?.chromeShellMenuOverlayV1Reset) return;
 
-      const folder = findFolderInBookmarkTree(bookmarksBarRef.current, folderItem.id) || folderItem;
+      const folder = findItemInBookmarkTree(bookmarksBarRef.current, folderItem.id) || folderItem;
       if (folderMenuActiveRef.current && folderMenuSessionFolderIdRef.current === folder.id) {
         void dismissFolderOverlay();
         return;
@@ -260,10 +316,9 @@ export default function BookmarkBar({ currentTabId }) {
           items,
         });
       } catch (err) {
-        console.error('bookmark folder chrome overlay', err);
         folderMenuActiveRef.current = false;
         folderMenuSessionFolderIdRef.current = null;
-        try { await release(); } catch (releaseErr) {}
+        try { await release(); } catch (releaseErr) { }
       } finally {
         pendingOwnFolderResetRef.current = false;
       }
@@ -306,10 +361,9 @@ export default function BookmarkBar({ currentTabId }) {
           items,
         });
       } catch (err) {
-        console.error('bookmark overflow menu error', err);
         folderMenuActiveRef.current = false;
         folderMenuSessionFolderIdRef.current = null;
-        try { await release(); } catch (releaseErr) {}
+        try { await release(); } catch (releaseErr) { }
       } finally {
         pendingOwnFolderResetRef.current = false;
       }
@@ -339,14 +393,14 @@ export default function BookmarkBar({ currentTabId }) {
 
   return (
     <div className="bookmark-bar">
-      
+
       <div className="bk-items-container" ref={itemsContainerRef}>
         {bookmarksData.bar.map((item, index) => (
           <div
             key={item.id}
             style={{
               display: 'flex',
-              flexShrink: 0, // prevents item from resizing visually while computing
+              flexShrink: 0,
               visibility: index >= visibleCount ? 'hidden' : 'visible',
               pointerEvents: index >= visibleCount ? 'none' : 'auto'
             }}
@@ -370,7 +424,7 @@ export default function BookmarkBar({ currentTabId }) {
           title="Hidden bookmarks"
           onClick={openOverflowMenu}
         >
-          <AssetMaskIcon icon={angleDoubleSmallRightSvg} size={16} />
+          {OVERFLOW_ICON}
         </button>
       )}
 

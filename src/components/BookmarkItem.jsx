@@ -136,9 +136,9 @@ export default function BookmarkItem({
         )}
       </button>
 
-      <button className="bk-del-btn" title={isFolder ? 'Delete folder' : 'Remove bookmark'} onClick={handleDelete}>
+      {/* <button className="bk-del-btn" title={isFolder ? 'Delete folder' : 'Remove bookmark'} onClick={handleDelete}>
         {DELETE_ICON}
-      </button>
+      </button> */}
     </div>
   );
 }

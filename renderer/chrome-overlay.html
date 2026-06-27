@@ -1901,7 +1901,16 @@
         return row;
       }
 
-      const BOOKMARK_MENU_ACTION_IDS = { openBookmark: 1, removeBookmark: 1 };
+      const BOOKMARK_MENU_ACTION_IDS = {
+        openBookmark: 1,
+        removeBookmark: 1,
+        openNewTab: 1,
+        openNewWindow: 1,
+        openStealth: 1,
+        delete: 1,
+        openManager: 1,
+        toggleBar: 1
+      };
 
       // Helper to create a mask-based SVG icon from a file path
       function AssetMaskIcon(iconUrl, size = 16, className = '') {
@@ -2461,15 +2470,25 @@
         const menuWidth = 220;
         const pad = 8;
         const metrics = getCompactMenuMetrics(payload);
+
+        const fixedHeight = 290; // Matches main.js fixed overlay window bounds
+
         let left = x;
         let top = y;
         left = Math.max(pad, Math.min(left, metrics.viewportWidth - menuWidth - pad));
-        top = Math.max(pad, Math.min(top, metrics.viewportHeight - 48 - pad));
+        top = Math.max(pad, Math.min(top, metrics.viewportHeight - fixedHeight - pad));
+
         const panelPoint = toCompactMenuPoint(payload, left, top);
         panel.style.left = panelPoint.left + 'px';
         panel.style.top = panelPoint.top + 'px';
         panel.style.width = menuWidth + 'px';
         panel.style.minWidth = menuWidth + 'px';
+
+        // --- ADDED: Remove CSS scrolling limits ---
+        panel.style.maxHeight = 'none';
+        panel.style.height = 'auto';
+        panel.style.overflow = 'hidden';
+        // ------------------------------------------
 
         let rowCount = 0;
         for (let i = 0; i < rawItems.length && rowCount < 20; i++) {
@@ -2491,6 +2510,7 @@
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'co-row';
+          if (it.danger) btn.style.color = '#ff6b6b'; // Red color for delete
           btn.setAttribute('role', 'menuitem');
           btn.textContent = label;
           btn.disabled = !enabled;
