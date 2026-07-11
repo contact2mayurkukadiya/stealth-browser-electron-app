@@ -38,9 +38,9 @@ import {
 } from '../constants/appAssetUrls';
 import AssetMaskIcon from './AssetMaskIcon.jsx';
 
-const BACK_ICON = <img className="chrome-toolbar-icon-img" src={navBackSvg} width={25} height={25} alt="" />;
-const FORWARD_ICON = <img className="chrome-toolbar-icon-img" src={navForwardSvg} width={25} height={25} alt="" />;
-const RELOAD_ICON = <img className="chrome-toolbar-icon-img" src={navReloadSvg} width={15} height={15} alt="" />;
+const BACK_ICON = <AssetMaskIcon icon={navBackSvg} size={25} />;
+const FORWARD_ICON = <AssetMaskIcon icon={navForwardSvg} size={25} />;
+const RELOAD_ICON = <AssetMaskIcon icon={navReloadSvg} size={15} />;
 const STAR_EMPTY = <AssetMaskIcon icon={bookmarkStarSvg} size={18} />;
 const STAR_FILLED = <AssetMaskIcon icon={bookmarkStarFilledSvg} size={18} />;
 const MORE_ICON = <AssetMaskIcon icon={menuDotsVerticalSvg} size={14} />;
