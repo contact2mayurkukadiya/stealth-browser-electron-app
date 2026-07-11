@@ -2228,8 +2228,10 @@
         var inputWrap = panel.querySelector('.co-ob-input-wrap');
         var input = omniboxOverlayInput;
         if (inputWrap) inputWrap.style.height = geom.inputHeight + 'px';
+
         var iconEl = inputWrap && inputWrap.querySelector('.co-ob-input-icon');
         if (iconEl) {
+          iconEl.innerHTML = ''; // Clear previously appended icon elements to prevent overlapping
           iconEl.appendChild(isSecure ? AssetMaskIcon('assets/images/lock.svg', 16) : AssetMaskIcon('assets/images/unlock.svg', 16));
         }
         if (inputWrap) updateOmniboxGhost(inputWrap, query, ghostSuffix);

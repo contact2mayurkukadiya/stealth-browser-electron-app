@@ -41,6 +41,7 @@ export function getOmniboxActions(ctx) {
       slot: 'prefix',
       visible: true,
       nonClickable: true,
+      isColorIcon: true,
       iconSrc: activeEngine.icon,
       chipText: isInternal && activeEngine.name,
     });
@@ -50,8 +51,9 @@ export function getOmniboxActions(ctx) {
       slot: 'prefix',
       visible: true,
       nonClickable: true,
+      isColorIcon: true,
       iconSrc: activeEngine.icon,
-      chipText: activeEngine.name, // Will spawn a stylized un-actionable browser visual label like Chrome.
+      chipText: activeEngine.name,
     });
   } else if (isNtp) {
     actions.push({
@@ -59,6 +61,7 @@ export function getOmniboxActions(ctx) {
       slot: 'prefix',
       visible: true,
       nonClickable: true,
+      isColorIcon: true,
       iconSrc: activeEngine.icon,
     });
   } else {
@@ -70,6 +73,7 @@ export function getOmniboxActions(ctx) {
       title: 'View site information',
       visible: !!displayParts,
       nonClickable: false,
+      isColorIcon: false,
       opensPopup: OMNIBOX_POPUP.SITE_INFO,
       iconSrc: adjustSvg,
     });
@@ -81,6 +85,7 @@ export function getOmniboxActions(ctx) {
     slot: 'suffix',
     title: 'Downloads',
     visible: false,
+    isColorIcon: false,
     opensPopup: OMNIBOX_POPUP.DOWNLOAD,
     iconSrc: menuDownloadsSvg,
   });

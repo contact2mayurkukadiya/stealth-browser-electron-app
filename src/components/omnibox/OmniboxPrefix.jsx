@@ -1,9 +1,10 @@
 import React from 'react';
-import { menuFindSvg } from '../../constants/appAssetUrls.js';
+import AssetMaskIcon from '../AssetMaskIcon.jsx';
 
 function ActionIcon({ action }) {
   return action.iconSrc ? (
-    <img src={action.iconSrc} className="omnibox-icon" width={16} height={16} alt="" />
+    action.isColorIcon ? <img src={action.iconSrc} className="omnibox-icon" width={16} height={16} alt="" /> :
+    <AssetMaskIcon icon={action.iconSrc} className='omnibox-icon' size={16} />
   ) : null;
 }
 
