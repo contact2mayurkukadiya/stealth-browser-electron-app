@@ -6,7 +6,7 @@ import { useInvsurfDocumentFavicon } from '../hooks/useInvsurfLogoFavicon';
 import { SETTINGS } from '../constants/conditionStrings.js';
 import { HighlightedText, textMatchesQuery } from '../utils/textHighlighter.jsx';
 import AssetMaskIcon from '../components/AssetMaskIcon.jsx';
-import { angleLeftSvg, angleRightSvg, bugReportSvg, cookieSvg, earthAmericasSvg, menuFindSvg, menuMonitorSvg , tabCloseSvg, trashSvg } from '../constants/appAssetUrls.js';
+import { angleLeftSvg, angleRightSvg, bugReportSvg, checkSvg, cookieSvg, earthAmericasSvg, menuCopySvg, menuFindSvg, menuMonitorSvg , tabCloseSvg, trashSvg } from '../constants/appAssetUrls.js';
 import { SETTINGS_NAV_ITEMS, REPORT_NAV_ITEMS, STARTUP_OPTIONS, SEARCH_ENGINE_OPTIONS, APPEARANCE_MODE_SEGMENTS, LOG_CLEAR_RANGES, COOKIE_EXCEPTION_GROUPS, COOKIE_POLICY_OPTIONS } from '../constants/settings.js';
 
 function validateCookiePattern(pattern) {
@@ -18,12 +18,6 @@ function validateCookiePattern(pattern) {
   }
   return { ok: true, value };
 }
-
-const CHECK_ICON = (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-  </svg>
-);
 
 function getActiveSection(activeView) {
   if (activeView.startsWith('privacy/')) return 'privacy';
@@ -240,7 +234,7 @@ function ClearLogsModal({ onClear, onClose }) {
                 aria-pressed={selected}
                 onClick={() => setSelectedRangeMs(range.ms)}
               >
-                {selected && CHECK_ICON}
+                {selected && <AssetMaskIcon icon={checkSvg} size={16} />}
                 {range.label}
               </button>
             );
@@ -1186,10 +1180,7 @@ export default function SettingsApp() {
               aria-label="Copy identity diagnostics JSON"
               title="Copy JSON"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="9" y="9" width="10" height="10" rx="2" ry="2" />
-                <rect x="5" y="5" width="10" height="10" rx="2" ry="2" />
-              </svg>
+              <AssetMaskIcon icon={menuCopySvg} size={16} />
             </button>
             <pre className="diag-panel__pre" role="region" aria-label="Identity diagnostics JSON report">
               {identityReportText || 'Click “Refresh identity report” to inspect the active tab and session.'}
@@ -1241,10 +1232,7 @@ export default function SettingsApp() {
                 aria-label="Copy diagnostics JSON"
                 title="Copy JSON"
               >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="10" height="10" rx="2" ry="2" />
-                  <rect x="5" y="5" width="10" height="10" rx="2" ry="2" />
-                </svg>
+                <AssetMaskIcon icon={menuCopySvg} size={16} />
               </button>
               <pre className="diag-panel__pre" role="region" aria-label="Diagnostics JSON report">
                 {diagReportText || 'Click “Refresh report” to load the in-memory log.'}
@@ -1550,10 +1538,7 @@ export default function SettingsApp() {
                           aria-label="Copy log preview"
                           title="Copy content"
                         >
-                          <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <rect x="9" y="9" width="10" height="10" rx="2" ry="2" />
-                            <rect x="5" y="5" width="10" height="10" rx="2" ry="2" />
-                          </svg>
+                            <AssetMaskIcon icon={menuCopySvg} size={16} />
                         </button>
                       </div>
                     </div>

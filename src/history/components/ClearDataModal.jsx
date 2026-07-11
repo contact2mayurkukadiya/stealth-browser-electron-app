@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { KEYBOARD } from '../../constants/conditionStrings.js';
+import { checkSvg } from '../../constants/appAssetUrls.js';
+import AssetMaskIcon from '../../components/AssetMaskIcon.jsx';
 
 // Time range options; null means "All time".
 const TIME_RANGES = [
@@ -8,12 +10,6 @@ const TIME_RANGES = [
   { label: 'Last 24 hours', ms: 24 * 60 * 60 * 1000 },
   { label: 'All time',      ms: null },
 ];
-
-const CHECK_ICON = (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-  </svg>
-);
 
 export default function ClearDataModal({ onClear, onClose }) {
   const [selectedRangeMs, setSelectedRangeMs] = useState(null); // null = "All time"
@@ -96,7 +92,7 @@ export default function ClearDataModal({ onClear, onClose }) {
                 aria-pressed={isSelected}
                 onClick={() => setSelectedRangeMs(range.ms)}
               >
-                {isSelected && CHECK_ICON}
+                {isSelected && <AssetMaskIcon icon={checkSvg} size={16} />}
                 {range.label}
               </button>
             );
