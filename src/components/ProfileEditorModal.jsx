@@ -3,22 +3,9 @@ import ProfileAvatar from './ProfileAvatar';
 import { loadProfilePresetAvatars } from '../utils/profilePresetAvatars';
 import './ProfileEditorModal.css';
 import { PROFILE } from '../constants/conditionStrings.js';
+import AssetMaskIcon from './AssetMaskIcon.jsx';
+import { cameraSvg, checkSvg } from '../constants/appAssetUrls.js';
 
-const CAMERA_ICON = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-    <circle cx="12" cy="13" r="4" />
-  </svg>
-);
-
-const PRESET_CHECK = (
-  <svg className="profile-editor-preset-check-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden>
-    <path
-      fill="currentColor"
-      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"
-    />
-  </svg>
-);
 
 export default function ProfileEditorModal({
   open,
@@ -304,7 +291,9 @@ export default function ProfileEditorModal({
               title="Change profile picture"
             >
               <ProfileAvatar profile={previewProfile} size="lg" imageOverride={avatarImageOverride} />
-              <span className="profile-editor-camera">{CAMERA_ICON}</span>
+              <span className="profile-editor-camera" aria-hidden>
+                <AssetMaskIcon icon={cameraSvg} size={16} />
+              </span>
             </button>
             <input
               ref={fileRef}
@@ -365,7 +354,7 @@ export default function ProfileEditorModal({
                     </span>
                     {isSelected && (
                       <span className="profile-editor-preset-check" aria-hidden>
-                        {PRESET_CHECK}
+                        <AssetMaskIcon icon={checkSvg} size={12} className="profile-editor-preset-check-icon" aria-hidden />
                       </span>
                     )}
                   </button>

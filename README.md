@@ -180,11 +180,33 @@ npm run start
 
 ## 10) 🌐 Redirect & Network Protections
 
-1. Main sets browser-like User-Agent and `Accept-Language`.
-2. Main installs per-session webRequest handlers.
-3. Main detects suspicious redirect loops and known tracking redirect patterns.
-4. Suspicious requests are canceled.
-5. Main logs optional compatibility diagnostic events for troubleshooting.
+1. Main configures a stable Chromium-based User-Agent and `Accept-Language` at boot via `runtime/browserIdentity.js`.
+2. All app data is isolated under an InviSurf-owned directory tree via `runtime/appPaths.js` (not Google Chrome paths).
+3. Main installs per-session webRequest handlers via `runtime/sessionPolicy.js` (header sanitization + redirect guards).
+4. Main detects suspicious redirect loops and known tracking redirect patterns.
+5. Suspicious requests are canceled.
+6. Main logs optional compatibility diagnostic events for troubleshooting.
+
+---
+
+## 10b) 🔐 Identity & Renderer Security
+
+1. One uniform browser identity is used for the full process lifetime (no per-domain UA flipping).
+2. `runtime/webPreferences.js` supplies secure defaults for every `BrowserWindow` and `WebContentsView`.
+3. `runtime/windowSecurity.js` applies content protection, permission policy, and production debug guards.
+4. Client Hints (`navigator.userAgentData`) are not patched via injected page scripts.
+5. `runtime/identityDiagnostics.js` provides read-only Browser Identity Verification reports from Settings.
+
+---
+
+## 10c) 🧪 Clean Test Profile Workflow
+
+When validating Google login or site compatibility, use an InviSurf-owned clean profile only:
+
+1. Open Settings → **Browser identity verification** → **Refresh identity report** and confirm paths point to `InviSurf/User Data`.
+2. Create a fresh InviSurf profile or use a dedicated stealth window for isolated testing.
+3. Avoid deleting real Google Chrome directories; only clear InviSurf profile/session data when needed.
+4. After changing identity settings, relaunch InviSurf and refresh the identity report before retesting login flows.
 
 ---
 
@@ -211,6 +233,12 @@ npm run start
 ## 📁 Key Files
 
 - `main.js` -> main process, windows/tabs/security/protocol/network/history/session/bookmarks/settings
+- `runtime/appPaths.js` -> InviSurf-isolated Electron storage paths
+- `runtime/browserIdentity.js` -> stable Chromium UA and session identity
+- `runtime/sessionPolicy.js` -> per-session network policy and redirect guards
+- `runtime/webPreferences.js` -> secure webPreferences defaults
+- `runtime/windowSecurity.js` -> content protection and window hardening
+- `runtime/identityDiagnostics.js` -> read-only browser identity verification reports
 - `preload.js` -> secure API bridge for renderer
 - `src/App.jsx` -> root UI orchestration + session restore + tab actions
 - `src/store/browserSlice.js` -> tab strip state model/reducers
@@ -224,6 +252,9 @@ npm run start
 - Internal pages use `invisurf://...` display URLs (legacy sessions may still carry `stealth://...`; main treats them as aliases).
 - Session/history data are encrypted before writing.
 - Tab metadata in Redux is separate from actual `WebContentsView` lifecycle in main process.
+
+## Icons Used from : 
+https://www.flaticon.com/search?word=folder&weight=regular&type=uicon
 
 ## Upcomming Features
 

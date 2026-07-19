@@ -1,13 +1,8 @@
 import { useEffect } from 'react';
 import { DOM_EVENT } from '../constants/conditionStrings.js';
 import { useDispatch } from 'react-redux';
-import { updateTab, updateTabUrl } from '../store/browserSlice';
+import { updateTab, updateTabUrl, setSearchEngine, setShowBookmarkBar } from '../store/browserSlice';
 
-/**
- * Registers all Electron IPC listeners for the lifetime of the app.
- * Replaces all the window.electronAPI.onXxx() calls that were scattered
- * through ui.js and bookmarks.js.
- */
 export function useElectronIPC({
   onNewTab,
   onTabCreated,
@@ -86,6 +81,30 @@ export function useElectronIPC({
       api.onOmniboxFocus((data) => {
         window.dispatchEvent(new CustomEvent(DOM_EVENT.OMNIBOX_REQUEST_FOCUS, { detail: data }));
       });
+    }
+    if (api) {
+      // Load initial settings state
+      api.settingsGet?.().then((settings) => {
+        if (settings?.searchEngine) {
+          dispatch(setSearchEngine(settings.searchEngine));
+        }
+        if (settings?.showBookmarkBar !== undefined) {
+          dispatch(setShowBookmarkBar(settings.showBookmarkBar));
+        }
+      }).catch(() => { });
+
+      // Listen for live setting changes
+      if (api.settingsUpdated) {
+        api.settingsUpdated((data) => {
+          if (data?.settings?.searchEngine) {
+            dispatch(setSearchEngine(data.settings.searchEngine));
+          }
+          if (data?.settings?.showBookmarkBar !== undefined) {
+            dispatch(setShowBookmarkBar(data.settings.showBookmarkBar));
+          }
+        });
+      }
+
     }
 
     // Listeners registered once; no cleanup needed (Electron IPC listeners

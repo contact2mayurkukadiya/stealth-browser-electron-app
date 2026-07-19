@@ -14,10 +14,12 @@ import ProfileEditorModal from './ProfileEditorModal';
 import { BOOKMARK, OVERLAY, PROFILE, URL as URL_C } from '../constants/conditionStrings.js';
 import {
   bookmarkStarFilledSvg,
+  bookmarkStarSvg,
   menuBookmarksSvg,
   menuCopySvg,
   menuCutSvg,
   menuDeleteDataSvg,
+  menuDotsVerticalSvg,
   menuDownloadsSvg,
   menuFindSvg,
   menuHistorySvg,
@@ -34,23 +36,14 @@ import {
   navForwardSvg,
   navReloadSvg,
 } from '../constants/appAssetUrls';
+import AssetMaskIcon from './AssetMaskIcon.jsx';
 
-const BACK_ICON = <img className="chrome-toolbar-icon-img" src={navBackSvg} width={25} height={25} alt="" />;
-const FORWARD_ICON = <img className="chrome-toolbar-icon-img" src={navForwardSvg} width={25} height={25} alt="" />;
-const RELOAD_ICON = <img className="chrome-toolbar-icon-img" src={navReloadSvg} width={15} height={15} alt="" />;
-const STAR_EMPTY = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-  </svg>
-);
-const STAR_FILLED = <img className="chrome-toolbar-icon-img" src={bookmarkStarFilledSvg} width={18} height={18} alt="" />;
-const MORE_ICON = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="12" cy="5" r="1.5" />
-    <circle cx="12" cy="12" r="1.5" />
-    <circle cx="12" cy="19" r="1.5" />
-  </svg>
-);
+const BACK_ICON = <AssetMaskIcon icon={navBackSvg} size={25} />;
+const FORWARD_ICON = <AssetMaskIcon icon={navForwardSvg} size={25} />;
+const RELOAD_ICON = <AssetMaskIcon icon={navReloadSvg} size={15} />;
+const STAR_EMPTY = <AssetMaskIcon icon={bookmarkStarSvg} size={18} />;
+const STAR_FILLED = <AssetMaskIcon icon={bookmarkStarFilledSvg} size={18} />;
+const MORE_ICON = <AssetMaskIcon icon={menuDotsVerticalSvg} size={14} />;
 
 /** Search bar → root, folder → folder id, not found → 'root' (fallback). */
 function findFolderIdForBookmark(bookmarkId, list) {
@@ -82,6 +75,23 @@ function findBookmarkByUrl(url, list) {
 function isValidFolderId(folderId, bar) {
   if (folderId === BOOKMARK.ROOT_ID) return true;
   return collectFolderOptions(bar).some((f) => f.id === folderId);
+}
+
+/**
+ * Strips base64 data: URLs from avatar.src in menu row objects before IPC posting.
+ * The overlay renderer falls back to initials + background when src is null.
+ * This prevents the IPC payload from exceeding CHROME_OVERLAY_POST_MAX_BYTES.
+ */
+function stripAvatarSrc(rows) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((row) => {
+    if (!row || !row.avatar || !row.avatar.src) return row;
+    // Only strip data: URLs — external app:// URLs are tiny and safe to keep
+    if (String(row.avatar.src).startsWith('data:')) {
+      return { ...row, avatar: { ...row.avatar, src: null } };
+    }
+    return row;
+  });
 }
 
 function flattenBookmarkMenuItems(items, depth = 0, out = []) {
@@ -472,7 +482,7 @@ export default function NavBar({
         { iconSrc: menuNewWindowSvg, label: 'New Window', shortcut: shortcut('⌘N', 'Ctrl+N'), commandId: 'newWindow' },
         { iconSrc: menuStealthWindowSvg, label: 'New Incognito Window', shortcut: shortcut('⇧⌘N', 'Ctrl+Shift+N'), commandId: 'newStealthWindow' },
         { type: 'separator' },
-        { label: activeProfileLabel, avatar: activeProfileAvatar, submenuKey: 'profile', highlight: true },
+        { label: activeProfileLabel, avatar: activeProfileAvatar ? { ...activeProfileAvatar, src: null } : null, submenuKey: 'profile', highlight: true },
         { iconSrc: menuHistorySvg, label: 'History', submenuKey: 'history' },
         { iconSrc: menuDownloadsSvg, label: 'Downloads', shortcut: shortcut('⌥⌘L', 'Ctrl+J'), commandId: 'openDownloads' },
         { iconSrc: menuBookmarksSvg, label: 'Bookmarks and Lists', submenuKey: 'bookmarks' },
@@ -490,7 +500,9 @@ export default function NavBar({
         { iconSrc: menuSettingsSvg, label: 'Settings', shortcut: shortcut('⌘,', 'Ctrl+,'), commandId: 'openSettings' },
       ],
       submenus: {
-        profile: profileRows,
+        // stripAvatarSrc removes base64 data: URLs from avatar.src before IPC posting.
+        // The overlay renderer falls back to initials + background color when src is null.
+        profile: stripAvatarSrc(profileRows),
         history: historyRows,
         bookmarks: bookmarkRowsForMenu,
         find: findRows,

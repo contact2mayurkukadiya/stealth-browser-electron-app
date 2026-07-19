@@ -7,6 +7,35 @@ const electronMain = (() => {
     }
 })();
 const app = electron.app || electronMain.app;
+
+const { configureAppPaths } = require('./runtime/appPaths');
+const {
+    configureBrowserIdentity,
+    applyIdentityToWebContents,
+    logStartupIdentity,
+} = require('./runtime/browserIdentity');
+const { buildSecureWebPreferences } = require('./runtime/webPreferences');
+const {
+    configureProductionGuards,
+    applyContentProtection,
+    applyShellWindowSecurity,
+    applyProfilePickerSecurity,
+} = require('./runtime/windowSecurity');
+const {
+    configureSession,
+    normalizeCookieConfig,
+    compileCookieConfig,
+    cookiePatternMatchesHost,
+    shouldBlockStoredCookie,
+    clearTabTopLevelRegisterableDomain,
+} = require('./runtime/sessionPolicy');
+const identityDiagnostics = require('./runtime/identityDiagnostics');
+const { setupWebAuthn } = require('./runtime/webauthn');
+
+/** Must run before app.ready and before any getPath('userData') consumers. */
+configureAppPaths(app);
+configureBrowserIdentity(app);
+
 const BrowserWindow = electron.BrowserWindow;
 const WebContentsView = electron.WebContentsView;
 const View = electron.View || electronMain.View;
@@ -29,11 +58,11 @@ const crypto = require('crypto');
 const encryption = require('./encryption');
 const { createAppLogger } = require('./appLogger');
 const compatDiagnostics = require('./compatibilityDiagnostics');
-const authPolicy = require('./authPolicy'); // <--- ADD THIS
 const { HistoryService } = require('./historyService');
 const chromeTheme = require(path.join(__dirname, 'src', 'theme', 'chromeTheme.cjs'));
 const C = require(path.join(__dirname, 'src', 'constants', 'conditionStrings.cjs'));
 const appLogger = createAppLogger({ app, encryptionModule: encryption });
+configureProductionGuards(app, appLogger);
 
 process.on('uncaughtException', (error) => {
     const message = error?.stack || error?.message || String(error);
@@ -138,6 +167,8 @@ let appIsQuitting = false;
 let appQuitAfterHistoryClose = false;
 let appHistoryCloseStarted = false;
 let appHistoryClosed = false;
+let appCookieCleanupStarted = false;
+let appCookieCleanupClosed = false;
 
 const UI_HEIGHT = 122; // Height of our tabs + nav bar + bookmark bar
 let generatedTabCounter = 0;
@@ -165,6 +196,36 @@ const webContentsIdToTabId = new Map();
 // Tabs moved out of the main shell into their own window (WebContentsView reparented).
 /** @type {Map<string, import('electron').BaseWindow>} */
 const detachedTabWindows = new Map();
+
+
+function broadcastSettingsUpdate(settings) {
+    const payload = { settings };
+    // Send to all browser windows
+    for (const win of BrowserWindow.getAllWindows()) {
+        if (!win || win.isDestroyed?.()) continue;
+        try {
+            win.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload);
+        } catch (_) { }
+    }
+    // Send to all tabs and overlays
+    for (const ctx of windowContextsById.values()) {
+        for (const view of Object.values(ctx.tabs || {})) {
+            if (!view || view.webContents.isDestroyed()) continue;
+            try {
+                view.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload);
+            } catch (_) { }
+        }
+        if (isViewWebContentsAlive(ctx.chromeOverlayView)) {
+            try { ctx.chromeOverlayView.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload); } catch (_) { }
+        }
+        if (isViewWebContentsAlive(ctx.chromeOmniboxOverlayView)) {
+            try { ctx.chromeOmniboxOverlayView.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload); } catch (_) { }
+        }
+        if (isViewWebContentsAlive(ctx.chromeShellMenuOverlayView)) {
+            try { ctx.chromeShellMenuOverlayView.webContents.send(C.IPC_INVOKE.SETTINGS_UPDATE, payload); } catch (_) { }
+        }
+    }
+}
 
 function closeDevFileWatchers() {
     for (const watcher of devFileWatchers) {
@@ -435,40 +496,6 @@ function getProfileAvatarDataUrl(profileId) {
     return `data:${mime};base64,${buf.toString('base64')}`;
 }
 
-// app.name = 'Google Chrome'; // Mimics OS execution signature matching processes exactly.
-app.name = 'Google Chrome'; // Mimics OS execution signature matching processes exactly.
-
-
-function getBrowserLikeUserAgent() {
-    // const chromeVersion = process.versions.chrome || '120.0.0.0';
-    const chromeMajor = process.versions.chrome.split('.')[0] || '120';
-    const reducedVersion = `${chromeMajor}.0.0.0`;
-
-
-    const platform = process.platform;
-    if (platform === C.PLATFORM.DARWIN) {
-        return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
-    }
-    if (platform === C.PLATFORM.WIN32) {
-        return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
-    }
-    return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${reducedVersion} Safari/537.36`;
-}
-
-
-// Reduce obvious automation fingerprints and align with Chromium browser signals.
-if (app?.commandLine) {
-    app.commandLine.removeSwitch('enable-automation');
-
-    app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
-    // app.commandLine.appendSwitch('disable-features', 'UserAgentClientHint');
-
-    app.commandLine.appendSwitch('disable-site-isolation-trials');
-    app.commandLine.appendSwitch('lang', 'en-US,en');
-}
-
-app.userAgentFallback = getBrowserLikeUserAgent();
-
 function classifyNavigationError(errorCode, errorDescription) {
     const code = Number(errorCode);
     const normalized = (errorDescription || '').toUpperCase();
@@ -522,7 +549,6 @@ const TRACKING_REDIRECT_HOST_MARKERS = [
     'smilewanted.com',
     'adsrvr.org',
 ];
-const sessionNetworkGuardsInstalled = new WeakSet();
 const mainFrameRequestWindowsByWebContents = new Map();
 
 function getHostnameSafe(rawUrl) {
@@ -591,94 +617,31 @@ function buildRedirectBlockedPage(targetUrl, reasonText) {
     `;
 }
 
-function installSessionNetworkGuards(session) {
-    if (!session || sessionNetworkGuardsInstalled.has(session)) return;
-    sessionNetworkGuardsInstalled.add(session);
+function getSessionPolicyDeps({ profileId = null, isStealthSession = false } = {}) {
+    return {
+        resourceTypeMainFrame: C.RESOURCE_TYPE.MAIN_FRAME,
+        maxMainFrameRedirects: MAX_MAINFRAME_REDIRECTS,
+        redirectWindowMs: REDIRECT_WINDOW_MS,
+        isLikelyTrackingRedirectUrl,
+        webContentsIdToTabId,
+        recordCompatEvent,
+        pickResponseHeadersForDiag,
+        mainFrameRequestWindowsByWebContents,
+        profileId,
+        isStealthSession,
+        getCookieConfig: getCachedCookieConfig,
+        logPolicyError: (stage, error) => {
+            appLogger.warn('cookies:policy-hook-failed', {
+                stage,
+                error: appLogger.serializeError(error),
+            });
+        },
+    };
+}
 
-    // Keep request headers consistently browser-like across all resources.
-    const chromeVer = process.versions.chrome.split('.')[0];
-    const nativeCHUA = `"Google Chrome";v="${chromeVer}", "Chromium";v="${chromeVer}", "Not_A Brand";v="99"`;
-
-
-    // session.webRequest.onBeforeSendHeaders((details, callback) => {
-    //     const { requestHeaders } = details;
-    //     let finalHeaders = {};
-
-    //     // Loop seamlessly to keep structural header parity for HTTP2
-    //     for (const [key, value] of Object.entries(requestHeaders)) {
-    //         const loweredKey = key.toLowerCase();
-
-    //         // Rewrite the internal network user-agent to the unified version.
-    //         if (loweredKey === 'user-agent') {
-    //             finalHeaders[key] = getBrowserLikeUserAgent();
-    //         }
-    //         // Aggressively map 'Electron' completely out of Client Hints
-    //         else if (loweredKey === 'sec-ch-ua') {
-    //             finalHeaders[key] = nativeCHUA;
-    //         }
-    //         else if (loweredKey === 'sec-ch-ua-mobile') {
-    //             finalHeaders[key] = '?0';
-    //         }
-    //         else {
-    //             finalHeaders[key] = value;
-    //         }
-    //     }
-
-    //     callback({ requestHeaders: finalHeaders });
-    // });
-
-    // Network-layer redirect/loop guard (more robust than will-redirect alone).
-
-    session.webRequest.onBeforeRequest((details, callback) => {
-        if (details.resourceType !== C.RESOURCE_TYPE.MAIN_FRAME) {
-            callback({});
-            return;
-        }
-
-        const webContentsId = details.webContentsId;
-        const now = Date.now();
-        const currentWindow = mainFrameRequestWindowsByWebContents.get(webContentsId);
-        let state = currentWindow;
-        if (!state || now - state.startedAt > REDIRECT_WINDOW_MS) {
-            state = { startedAt: now, count: 0 };
-            mainFrameRequestWindowsByWebContents.set(webContentsId, state);
-        }
-        state.count += 1;
-
-        const trackingRedirect = isLikelyTrackingRedirectUrl(details.url);
-        const redirectLoop = state.count > MAX_MAINFRAME_REDIRECTS;
-        if (!trackingRedirect && !redirectLoop) {
-            callback({});
-            return;
-        }
-
-        const reasonText = redirectLoop
-            ? `Blocked because this tab requested more than ${MAX_MAINFRAME_REDIRECTS} top-level pages within ${Math.round(REDIRECT_WINDOW_MS / 1000)} seconds.`
-            : 'Blocked because the request matched known tracking/csync redirect patterns.';
-        console.warn(`[RedirectGuard][webRequest] Blocked ${details.url}. Reason: ${reasonText}`);
-        const tabIdForRequest = webContentsIdToTabId.get(webContentsId);
-        recordCompatEvent(tabIdForRequest, {
-            type: 'main-frame-request-blocked',
-            url: details.url,
-            reason: reasonText,
-        });
-        callback({ cancel: true });
-    });
-
-    session.webRequest.onHeadersReceived((details, callback) => {
-        if (details.resourceType !== C.RESOURCE_TYPE.MAIN_FRAME) {
-            callback({});
-            return;
-        }
-        const tabIdForHeaders = webContentsIdToTabId.get(details.webContentsId);
-        recordCompatEvent(tabIdForHeaders, {
-            type: 'main-frame-response',
-            url: details.url,
-            statusCode: details.statusCode,
-            headers: pickResponseHeadersForDiag(details.responseHeaders),
-        });
-        callback({});
-    });
+function installSessionNetworkGuards(targetSession, options = {}) {
+    configureSession(targetSession, getSessionPolicyDeps(options));
+    installCookieStoreGuard(targetSession, options);
 }
 
 // Dev-only chokidar watchers tracked so they can be closed before quit.
@@ -707,7 +670,7 @@ if (!app.isPackaged) {
                     if (preloadRelaunchScheduled) return;
                     preloadRelaunchScheduled = true;
                     app.relaunch();
-                    app.exit(0);
+                    app.quit();
                 })
         );
 
@@ -753,9 +716,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     ensureProfile(resolvedProfileId);
     const partition = `persist:profile-${resolvedProfileId}`;
     const mappedSession = session.fromPartition(partition);
-    // mappedSession.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
     registerAppProtocolForSession(mappedSession, partition);
-    authPolicy.applyGoogleAuthPolicy(mappedSession); // Force auth checks for the profile session
+    installSessionNetworkGuards(mappedSession, { profileId: resolvedProfileId, isStealthSession: false });
 
     /** One shared in-memory session per stealth window (all tabs incognito; discarded with the window). */
     let stealthTabsPartition = null;
@@ -763,7 +725,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         stealthTabsPartition = `in-memory:stealth-win-${crypto.randomUUID()}`;
         const stealthTabSession = session.fromPartition(stealthTabsPartition);
         registerAppProtocolForSession(stealthTabSession, stealthTabsPartition);
-        authPolicy.applyGoogleAuthPolicy(stealthTabSession);
+        installSessionNetworkGuards(stealthTabSession, { profileId: resolvedProfileId, isStealthSession: true });
     }
 
     const isMac = process.platform === C.PLATFORM.DARWIN;
@@ -794,44 +756,14 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
                 titleBarOverlay: stealthWindow ? stealthTitleBarOverlay : getTitleBarOverlayOptionsForNativeTheme(),
             }
         ),
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            partition,
-        }
+        webPreferences: buildSecureWebPreferences({ partition }),
     });
 
-    // Keep main renderer UA/browser identity close to Chrome.
-    window.webContents.setUserAgent(getBrowserLikeUserAgent());
+    applyIdentityToWebContents(window.webContents);
 
-    // Security constraints for main window
-    window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
-        if (permission === C.PERMISSION.FULLSCREEN) return callback(true);
-        callback(false); // Deny all other permissions safely
-    });
+    applyShellWindowSecurity(window, { permissionFullscreen: C.PERMISSION.FULLSCREEN });
 
-    window.webContents.setWindowOpenHandler(() => {
-        return { action: 'deny' }; // Block popups
-    });
-
-    window.webContents.on('will-navigate', (event, url) => {
-        // Only allow staying on the app:// UI page
-        if (!url.startsWith('app://')) {
-            event.preventDefault();
-        }
-    });
-
-    window.webContents.on('will-attach-webview', (event) => {
-        event.preventDefault(); // Prevent unexpected webview attachments
-    });
-
-    // mainWindow.webContents.openDevTools();
-
-
-    // --- STEALTH MODE: apply persisted setting (defaults to true) ---
-    window.setContentProtection(loadSettings().contentProtection);
+    applyContentProtection(window, loadSettings().contentProtection);
 
     // Load renderer through app:// so IPC sender validation stays consistent.
     const shellEntryUrl = 'app://dist/index.html';
@@ -844,6 +776,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
     // Global Shortcut Interception (for Ctrl+Tab, which is not easy in menu)
     window.webContents.on('before-input-event', handleShortcuts);
+    // window.webContents.openDevTools({ mode: 'detach' });
 
     // Resize the visible tab view in the main shell (only one tab view is attached at a time).
     if (!mainWindow || mainWindow.isDestroyed()) mainWindow = window;
@@ -884,6 +817,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         chromeOverlayOmniboxMode: false,
         chromeOverlayBlurDismissPending: false,
         lastOmniboxOverlayPatch: null,
+        /** True once chromeOmniboxOverlayView HTML/JS has finished loading. */
+        chromeOmniboxOverlayReady: false,
         /** Per-tab Google Lens sessions: each tab keeps its sidebar WebContentsView and sizing. */
         lensSessions: new Map(),
         lensOverlayBounds: null,
@@ -1010,6 +945,26 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         });
         windowContextsById.delete(window.id);
         windowBootstrapById.delete(context.windowId);
+        const profileStillOpen = Array.from(windowContextsById.values()).some(
+            (ctx) => ctx?.profileId === context.profileId,
+        );
+        if (context.stealthWindow) {
+            cleanupStealthCookiesForContext(context).catch((error) => {
+                appLogger.warn('cookies:stealth-cleanup-failed', {
+                    profileId: context.profileId,
+                    windowId: context.windowId,
+                    error: appLogger.serializeError(error),
+                });
+            });
+        }
+        if (!profileStillOpen) {
+            cleanupSessionOnlyCookiesForProfile(context.profileId).catch((error) => {
+                appLogger.warn('cookies:session-only-cleanup-failed', {
+                    profileId: context.profileId,
+                    error: appLogger.serializeError(error),
+                });
+            });
+        }
         if (mainWindow === window) {
             mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed()) || null;
         }
@@ -1017,6 +972,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
     createChromeOverlayLayer(context);
     createChromeShellMenuOverlayLayer(context);
+    createChromeOmniboxOverlayLayer(context);
     createTooltipOverlay(context);
     ensureChromeOverlayOnTop(context);
     return context;
@@ -1039,13 +995,10 @@ function createProfilePickerWindow() {
         title: 'Choose profile',
         titleBarStyle: 'default',
         fullscreen: false,
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
+        webPreferences: buildSecureWebPreferences(),
     });
+    applyProfilePickerSecurity(picker, loadSettings().contentProtection);
+    applyIdentityToWebContents(picker.webContents);
     picker.loadURL('app://dist/profile-picker.html').catch((error) => {
         console.error('Failed to load profile picker:', error);
     });
@@ -1135,13 +1088,9 @@ function removeTabContentChildView(context, view) {
 function createChromeOverlayLayer(context) {
     if (context.chromeOverlayView) return;
     const overlayView = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
+        webPreferences: buildSecureWebPreferences(),
     });
+    applyIdentityToWebContents(overlayView.webContents);
     overlayView.setBackgroundColor('#00000000');
     overlayView.webContents.once('did-finish-load', () => {
         sendChromeOverlayThemePatch(context);
@@ -1156,17 +1105,16 @@ function createChromeOverlayLayer(context) {
 
 function createChromeOmniboxOverlayLayer(context) {
     if (context.chromeOmniboxOverlayView) return;
+    context.chromeOmniboxOverlayReady = false;
     const overlayView = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
+        webPreferences: buildSecureWebPreferences(),
     });
+    applyIdentityToWebContents(overlayView.webContents);
     overlayView.setBackgroundColor('#00000000');
     overlayView.webContents.once('did-finish-load', () => {
+        context.chromeOmniboxOverlayReady = true;
         sendChromeOmniboxOverlayThemePatch(context);
+        replayOmniboxOverlayPatchIfNeeded(context);
     });
     overlayView.webContents.on('blur', () => {
         dismissOmniboxChromeOverlayOnBlur(context);
@@ -1182,13 +1130,9 @@ function createChromeOmniboxOverlayLayer(context) {
 function createChromeShellMenuOverlayLayer(context) {
     if (context.chromeShellMenuOverlayView) return;
     const overlayView = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
+        webPreferences: buildSecureWebPreferences(),
     });
+    applyIdentityToWebContents(overlayView.webContents);
     overlayView.setBackgroundColor('#00000000');
     overlayView.webContents.once('did-finish-load', () => {
         sendChromeShellMenuOverlayThemePatch(context);
@@ -1864,11 +1808,10 @@ function computeMenuOverlayBounds(context, patch) {
 
     if (kind === 'bookmarkContextMenu') {
         const menuWidth = 220;
-        const rawItems = Array.isArray(patch.items) ? patch.items.slice(0, 20) : [];
+        const fixedHeight = 290;
         const left = clampNumber(Math.round(Number(patch.clientX) || 0), pad, windowW - menuWidth - pad);
-        const top = clampNumber(Math.round(Number(patch.clientY) || 0), pad, windowH - 48 - pad);
-        const height = Math.min(windowH - top - pad, estimateMenuRowsHeight(rawItems));
-        return menuOverlayBoundsFromPanel(context, { left, top, width: menuWidth, height });
+        const top = clampNumber(Math.round(Number(patch.clientY) || 0), pad, windowH - fixedHeight - pad);
+        return menuOverlayBoundsFromPanel(context, { left, top, width: menuWidth, height: fixedHeight });
     }
 
     if (kind === 'bookmarkFolderMenu') {
@@ -1913,6 +1856,30 @@ function computeMenuOverlayBounds(context, patch) {
         const separators = 1 + (patch.showEdit ? 1 : 0);
         const height = Math.min(windowH - top - pad, rows * 42 + separators * 13 + 16);
         return menuOverlayBoundsFromPanel(context, { left, top, width, height });
+    }
+
+    if (kind === 'siteInfo') {
+        const ar = patch.anchorRect || {};
+        const panelWidth = 340;
+        const left0 = Math.round(Number(ar.left) || 0);
+        const top0 = Math.round(Number(ar.top) || 0);
+        const h0 = Math.max(1, Math.round(Number(ar.height) || 32));
+        const left = clampNumber(left0, pad, windowW - panelWidth - pad);
+        const top = clampNumber(top0 + h0 + 6, pad, windowH - 280 - pad);
+        const height = Math.max(240, Math.min(windowH * 0.6, windowH - top - pad));
+        return menuOverlayBoundsFromPanel(context, { left, top, width: panelWidth, height });
+    }
+
+    if (kind === 'cookieControls' || kind === 'downloadPanel') {
+        const ar = patch.anchorRect || {};
+        const panelWidth = kind === 'cookieControls' ? 340 : 300;
+        const left0 = Math.round(Number(ar.left) || 0);
+        const top0 = Math.round(Number(ar.top) || 0);
+        const h0 = Math.max(1, Math.round(Number(ar.height) || 32));
+        const left = clampNumber(left0, pad, windowW - panelWidth - pad);
+        const top = clampNumber(top0 + h0 + 6, pad, windowH - 220 - pad);
+        const height = Math.max(160, Math.min(windowH * 0.45, windowH - top - pad));
+        return menuOverlayBoundsFromPanel(context, { left, top, width: panelWidth, height });
     }
 
     if (kind === 'appMenu') {
@@ -1994,6 +1961,75 @@ function layoutOmniboxOverlayBounds(context, patch) {
         console.error('layoutOmniboxOverlayBounds', err?.message || err);
         return null;
     }
+}
+
+/** Notify shell that omnibox overlay B received a patch (including replay after load). */
+function notifyOmniboxOverlayDelivered(context) {
+    if (!context?.window?.webContents || context.window.webContents.isDestroyed()) return;
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
+    try {
+        context.window.webContents.send(C.IPC_EVENT.OMNIBOX_OVERLAY_DELIVERED);
+    } catch (err) {
+        console.error('omnibox-overlay:delivered send', err?.message || err);
+    }
+}
+
+/** Re-send the last omnibox patch after overlay HTML/JS is ready (IPC listener registered). */
+function replayOmniboxOverlayPatchIfNeeded(context) {
+    if (!context?.chromeOmniboxOverlayReady) return;
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
+    const patch = context.lastOmniboxOverlayPatch;
+    if (!patch || patch.kind !== 'omniboxSuggestions') return;
+    if (!context.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) return;
+    try {
+        const replayPatch = { ...patch };
+        const overlayBounds = layoutOmniboxOverlayBounds(context, replayPatch);
+        if (overlayBounds) replayPatch.overlayBounds = overlayBounds;
+        ensureChromeOverlayOnTop(context);
+        context.chromeOmniboxOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, replayPatch);
+        if (replayPatch.focusInput !== false) {
+            setImmediate(() => {
+                if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
+                focusChromeOmniboxOverlayWebContents(context);
+            });
+        }
+        notifyOmniboxOverlayDelivered(context);
+    } catch (err) {
+        console.error('replayOmniboxOverlayPatchIfNeeded', err?.message || err);
+    }
+}
+
+/**
+ * Store and deliver an omnibox suggestions patch. When overlay HTML is not ready yet,
+ * the patch is queued in lastOmniboxOverlayPatch and replayed on did-finish-load.
+ */
+function deliverOmniboxOverlayPatch(context, patch) {
+    if (!context?.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
+        return { ok: false };
+    }
+    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return { ok: false };
+    try {
+        context.chromeOverlayOmniboxMode = true;
+        context.lastOmniboxOverlayPatch = patch;
+        const deliverPatch = { ...patch };
+        const overlayBounds = layoutOmniboxOverlayBounds(context, deliverPatch);
+        if (overlayBounds) deliverPatch.overlayBounds = overlayBounds;
+        ensureChromeOverlayOnTop(context);
+        if (context.chromeOmniboxOverlayReady) {
+            context.chromeOmniboxOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, deliverPatch);
+            if (deliverPatch.focusInput !== false) {
+                setImmediate(() => {
+                    if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
+                    focusChromeOmniboxOverlayWebContents(context);
+                });
+            }
+            notifyOmniboxOverlayDelivered(context);
+        }
+    } catch (err) {
+        console.error('deliverOmniboxOverlayPatch', err?.message || err);
+        return { ok: false };
+    }
+    return { ok: true, delivered: !!context.chromeOmniboxOverlayReady };
 }
 
 /** Move native keyboard focus to the omnibox popup overlay. */
@@ -2102,14 +2138,10 @@ function getWindowContextByChromeOverlaySender(sender) {
 
 function createTooltipOverlay(context) {
     const tooltipView = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        }
+        webPreferences: buildSecureWebPreferences(),
     });
 
+    applyIdentityToWebContents(tooltipView.webContents);
     tooltipView.setBackgroundColor('#00000000'); // Transparent background
     tooltipView.webContents.loadURL('app://localhost/tooltip.html');
 
@@ -2820,12 +2852,7 @@ function createLensSidebar(context, tabId = context?.activeTabId) {
     }
 
     const sidebar = new WebContentsView({
-        webPreferences: {
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            partition: context.partition,
-        },
+        webPreferences: buildSecureWebPreferences({ partition: context.partition }),
     });
     try { sidebar.webContents.setBackgroundColor(getChromeShellBackgroundColor(context)); } catch (_) { }
     let sidebarHostView = createLensSidebarHostView(context);
@@ -2836,6 +2863,7 @@ function createLensSidebar(context, tabId = context?.activeTabId) {
             sidebarHostView = null;
         }
     }
+    // Lens mobile layout requires a mobile Safari UA; scoped to Lens sidebar only.
     sidebar.webContents.setUserAgent(LENS_MOBILE_USER_AGENT);
     sidebar.webContents.setWindowOpenHandler(({ url, disposition }) => {
         const lensUrl = isGoogleLensSidebarUrl(url);
@@ -4426,6 +4454,9 @@ const SHELL_MENU_OVERLAY_KINDS = new Set([
     'bookmarkContextMenu',
     'bookmarkFolderMenu',
     'bookmarkEditor',
+    'siteInfo',
+    'cookieControls',
+    'downloadPanel',
 ]);
 
 function isShellMenuOverlayKind(kind) {
@@ -4508,9 +4539,7 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE, (e) => {
 ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
     if (!isSenderTrusted(e)) return { ok: false };
     const context = getWindowContextByEventSender(e.sender);
-    if (!context?.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
-        return { ok: false };
-    }
+    if (!context) return { ok: false };
     if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return { ok: false };
     try {
         const json = JSON.stringify(payload ?? {});
@@ -4520,24 +4549,11 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_OVERLAY_POST, (e, payload) => {
     }
     const patch = payload ?? {};
     if (patch.kind !== 'omniboxSuggestions') return { ok: false };
-    try {
-        context.chromeOverlayOmniboxMode = true;
-        context.lastOmniboxOverlayPatch = patch;
-        const overlayBounds = layoutOmniboxOverlayBounds(context, patch);
-        if (overlayBounds) patch.overlayBounds = overlayBounds;
-        ensureChromeOverlayOnTop(context);
-        context.chromeOmniboxOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
-    } catch (err) {
-        console.error(C.IPC_INVOKE.CHROME_OVERLAY_POST, err?.message || err);
+    ensureChromeOmniboxOverlayLayer(context);
+    if (!context.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) {
         return { ok: false };
     }
-    if (patch.focusInput !== false) {
-        setImmediate(() => {
-            if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
-            focusChromeOmniboxOverlayWebContents(context);
-        });
-    }
-    return { ok: true };
+    return deliverOmniboxOverlayPatch(context, patch);
 });
 
 ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_RESET, (e) => {
@@ -4606,7 +4622,10 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, (e, payload) => {
     if (!isShellMenuOverlayKind(patch.kind)) return { ok: false };
     try {
         const json = JSON.stringify(patch);
-        if (json.length > CHROME_OVERLAY_POST_MAX_BYTES) return { ok: false };
+        if (json.length > CHROME_OVERLAY_POST_MAX_BYTES) {
+            console.error('CHROME_OVERLAY_POST_MAX_BYTES exceeded! Size:', json.length, 'Kind:', patch.kind);
+            return { ok: false };
+        }
     } catch {
         return { ok: false };
     }
@@ -4627,9 +4646,12 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, (e, payload) => {
         }
         ensureChromeOverlayOnTop(context);
         context.chromeShellMenuOverlayView.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
-        setImmediate(() => {
-            focusChromeShellMenuOverlayWebContents(context);
-        });
+
+        if (patch.focusInput !== false) {
+            setImmediate(() => {
+                focusChromeShellMenuOverlayWebContents(context);
+            });
+        }
     } catch (err) {
         console.error(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, err?.message || err);
         return { ok: false };
@@ -4774,13 +4796,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     const effectiveStealth = !!context.stealthWindow;
     const tabPartition = context.stealthWindow ? context.stealthTabsPartition : context.partition;
     const view = new WebContentsView({
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            partition: tabPartition,
-        }
+        webPreferences: buildSecureWebPreferences({ partition: tabPartition }),
     });
 
     context.tabs[id] = view;
@@ -4812,14 +4828,14 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
             webContentsId: webContentsNumericId,
         });
         webContentsIdToTabId.delete(webContentsNumericId);
+        clearTabTopLevelRegisterableDomain(webContentsNumericId);
     });
 
-    // Make tab requests look like a regular Chrome browser, not Electron.
-    view.webContents.setUserAgent(getBrowserLikeUserAgent());
-    // view.webContents.session.setUserAgent(getBrowserLikeUserAgent(), 'en-US,en;q=0.9');
-    authPolicy.setupTabForGoogleAuth(view.webContents, getBrowserLikeUserAgent);
-
-    installSessionNetworkGuards(view.webContents.session);
+    applyIdentityToWebContents(view.webContents);
+    installSessionNetworkGuards(view.webContents.session, {
+        profileId: context.profileId,
+        isStealthSession: !!context.stealthWindow,
+    });
     installDevToolsTypographyOnOpen(view.webContents);
 
     // ─── Security guards for tab content (Rules 13, 14) ────
@@ -5032,19 +5048,6 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
 
     view.webContents.on('before-input-event', handleShortcuts);
 
-    // A subset of anti-automation checks look at navigator.webdriver.
-    // This mirrors mainstream browser behavior for regular tabs.
-    // view.webContents.on('dom-ready', () => {
-    //     view.webContents.executeJavaScript(`
-    //         try {
-    //             Object.defineProperty(navigator, 'webdriver', {
-    //                 get: () => undefined,
-    //                 configurable: true
-    //             });
-    //         } catch (_) {}
-    //     `).catch(() => { });
-    // });
-
     const getDisplayUrl = toDisplayUrl;
 
     view.webContents.on('page-title-updated', (e, title) => {
@@ -5199,7 +5202,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
             <!DOCTYPE html>
             <html style="background: #253035; color: white; font-family: sans-serif; height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0;">
                 <div style="text-align: center; max-width: 500px; padding: 20px;">
-                    <img src="app://localhost/assets/images/error-page-alert.svg" width="64" height="64" alt="" style="margin-bottom: 20px;" />
+                    <img src="app://localhost/assets/images/exclamation.svg" width="64" height="64" alt="" style="margin-bottom: 20px;" />
                     <h1 style="margin: 0 0 10px 0; font-size: 24px;">${errorMeta.title}</h1>
                     <p style="color: #aaa; margin: 0 0 10px 0;">${errorMeta.details}</p>
                     <p style="color: #9fc6d8; margin: 0 0 20px 0;">${errorMeta.suggestion}</p>
@@ -5290,6 +5293,15 @@ function isInternalPageUrl(url) {
 // ─── SETTINGS STORAGE ────────────────────────────────────────────────────────
 let settingsPath;
 
+const COOKIE_CONFIG_DEFAULTS = {
+    globalPolicy: 'allow',
+    exceptions: [],
+};
+const cookiePolicyCacheByProfileId = new Map();
+const defaultCompiledCookiePolicy = compileCookieConfig(COOKIE_CONFIG_DEFAULTS);
+const cookieStoreGuardedSessions = new WeakSet();
+const cookieModifiedAtBySession = new WeakMap();
+
 const SETTINGS_DEFAULTS = {
     contentProtection: true,
     startupBehavior: 'continue', // 'fresh' | 'continue' | 'clearHistory'
@@ -5300,6 +5312,8 @@ const SETTINGS_DEFAULTS = {
     /** Preset id from chromeTheme.ACCENT_PRESETS, or 'custom' with accentCustomHex */
     accentTheme: 'default',
     accentCustomHex: null,
+    cookieConfig: COOKIE_CONFIG_DEFAULTS,
+    cookieConfigByProfile: {},
 };
 
 const SEARCH_ENGINES = {
@@ -5328,6 +5342,62 @@ function getSettingsPath() {
 function normalizeColorTheme(value) {
     if (value === 'automatic' || value === 'dark' || value === 'light') return value;
     return 'automatic';
+}
+
+function normalizeProfileId(profileId) {
+    return String(profileId || '').trim().replace(/[^a-zA-Z0-9-_]/g, '_');
+}
+
+function getProfileIdForEventSender(sender) {
+    return getWindowContextByEventSender(sender)?.profileId || defaultProfileId || null;
+}
+
+function resolveAuthorizedProfileIdForSender(sender, requestedProfileId = null) {
+    const actualProfileId = getProfileIdForEventSender(sender);
+    const safeRequested = normalizeProfileId(requestedProfileId);
+    if (safeRequested && safeRequested !== normalizeProfileId(actualProfileId)) return null;
+    return actualProfileId;
+}
+
+function normalizeCookieSettingsFields(settings, profileId = null) {
+    const merged = settings && typeof settings === 'object' ? { ...settings } : {};
+    const byProfile = merged.cookieConfigByProfile && typeof merged.cookieConfigByProfile === 'object'
+        ? { ...merged.cookieConfigByProfile }
+        : {};
+    const baseConfig = normalizeCookieConfig(merged.cookieConfig || COOKIE_CONFIG_DEFAULTS);
+    const safeProfileId = normalizeProfileId(profileId);
+    const profileConfig = safeProfileId && byProfile[safeProfileId]
+        ? normalizeCookieConfig(byProfile[safeProfileId])
+        : baseConfig;
+    if (safeProfileId) byProfile[safeProfileId] = profileConfig;
+    merged.cookieConfig = profileConfig;
+    merged.cookieConfigByProfile = byProfile;
+    return merged;
+}
+
+function setCachedCookieConfig(profileId, config) {
+    const safeProfileId = normalizeProfileId(profileId);
+    if (!safeProfileId) return;
+    cookiePolicyCacheByProfileId.set(safeProfileId, compileCookieConfig(config));
+}
+
+function getCachedCookieConfig(profileId) {
+    const safeProfileId = normalizeProfileId(profileId);
+    if (!safeProfileId) return defaultCompiledCookiePolicy;
+    return cookiePolicyCacheByProfileId.get(safeProfileId) || defaultCompiledCookiePolicy;
+}
+
+function hydrateCookiePolicyCacheFromSettings(settings) {
+    const source = settings && typeof settings === 'object' ? settings : {};
+    const byProfile = source.cookieConfigByProfile && typeof source.cookieConfigByProfile === 'object'
+        ? source.cookieConfigByProfile
+        : {};
+    for (const [profileId, config] of Object.entries(byProfile)) {
+        setCachedCookieConfig(profileId, config);
+    }
+    if (defaultProfileId) {
+        setCachedCookieConfig(defaultProfileId, source.cookieConfig || COOKIE_CONFIG_DEFAULTS);
+    }
 }
 
 function colorThemeSettingToElectronSource(setting) {
@@ -5465,20 +5535,26 @@ function applyColorThemeFromSettings() {
     broadcastThemeApply();
 }
 
-function loadSettings() {
+function loadSettings(profileId = null) {
     try {
         const p = getSettingsPath();
         if (fs.existsSync(p)) {
             const merged = { ...SETTINGS_DEFAULTS, ...JSON.parse(fs.readFileSync(p, 'utf-8')) };
             merged.colorTheme = normalizeColorTheme(merged.colorTheme);
-            return chromeTheme.normalizeAccentFields(merged);
+            const normalized = chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(merged, profileId));
+            hydrateCookiePolicyCacheFromSettings(normalized);
+            if (profileId) setCachedCookieConfig(profileId, normalized.cookieConfig);
+            return normalized;
         }
     } catch (e) {
         console.error('Failed to load settings:', e);
     }
     const defaults = { ...SETTINGS_DEFAULTS };
     defaults.colorTheme = normalizeColorTheme(defaults.colorTheme);
-    return chromeTheme.normalizeAccentFields(defaults);
+    const normalizedDefaults = chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(defaults, profileId));
+    hydrateCookiePolicyCacheFromSettings(normalizedDefaults);
+    if (profileId) setCachedCookieConfig(profileId, normalizedDefaults.cookieConfig);
+    return normalizedDefaults;
 }
 
 function recordCompatEvent(tabId, entry) {
@@ -5490,19 +5566,229 @@ function recordCompatEvent(tabId, entry) {
 function saveSettings(data) {
     try {
         fs.writeFileSync(getSettingsPath(), JSON.stringify(data, null, 2), 'utf-8');
+        hydrateCookiePolicyCacheFromSettings(data);
     } catch (e) {
         console.error('Failed to save settings:', e);
     }
 }
 
+function getProfilePartition(profileId) {
+    const safeProfileId = normalizeProfileId(profileId);
+    if (!safeProfileId) return null;
+    return `persist:profile-${safeProfileId}`;
+}
+
+function getProfileSession(profileId) {
+    const partition = getProfilePartition(profileId);
+    return partition ? session.fromPartition(partition) : null;
+}
+
+function getProfileSessionForSender(sender, requestedProfileId = null) {
+    return getProfileSession(resolveAuthorizedProfileIdForSender(sender, requestedProfileId));
+}
+
+function cookieDomainToHost(domain) {
+    return String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
+}
+
+function cookieMatchesDomain(cookie, domain) {
+    const host = cookieDomainToHost(cookie?.domain);
+    const target = cookieDomainToHost(domain);
+    if (!host || !target) return false;
+    return host === target || host.endsWith(`.${target}`) || target.endsWith(`.${host}`);
+}
+
+function cookieUrlForRemoval(cookie) {
+    const host = cookieDomainToHost(cookie?.domain);
+    const protocol = cookie?.secure ? 'https' : 'http';
+    const pathPart = cookie?.path || '/';
+    return `${protocol}://${host}${pathPart.startsWith('/') ? pathPart : `/${pathPart}`}`;
+}
+
+function cookieStoreKey(cookie) {
+    const host = cookieDomainToHost(cookie?.domain);
+    const pathPart = cookie?.path || '/';
+    return `${host}\n${pathPart}\n${String(cookie?.name || '')}`;
+}
+
+function getCookieModifiedAtMap(targetSession) {
+    if (!targetSession) return null;
+    let map = cookieModifiedAtBySession.get(targetSession);
+    if (!map) {
+        map = new Map();
+        cookieModifiedAtBySession.set(targetSession, map);
+    }
+    return map;
+}
+
+function getCookieModifiedAt(targetSession, cookie) {
+    return getCookieModifiedAtMap(targetSession)?.get(cookieStoreKey(cookie)) || 0;
+}
+
+function forgetCookieModifiedAt(targetSession, cookie) {
+    getCookieModifiedAtMap(targetSession)?.delete(cookieStoreKey(cookie));
+}
+
+function normalizeSinceTimestamp(value) {
+    if (value == null) return null;
+    const timestamp = Number(value);
+    return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+}
+
+function isCookieBlockedByStoredPolicy(cookie, profileId, options = {}) {
+    const host = cookieDomainToHost(cookie?.domain);
+    if (!host) return false;
+    return shouldBlockStoredCookie(host, getCachedCookieConfig(profileId), {
+        isStealthSession: !!options.isStealthSession,
+    });
+}
+
+function installCookieStoreGuard(targetSession, options = {}) {
+    if (!targetSession?.cookies || cookieStoreGuardedSessions.has(targetSession)) return;
+    cookieStoreGuardedSessions.add(targetSession);
+    const profileId = normalizeProfileId(options.profileId);
+    const isStealthSession = !!options.isStealthSession;
+    targetSession.cookies.on('changed', (_event, cookie, cause, removed) => {
+        if (!cookie) return;
+        if (removed || cause === 'expired' || cause === 'evicted') {
+            forgetCookieModifiedAt(targetSession, cookie);
+            return;
+        }
+        getCookieModifiedAtMap(targetSession)?.set(cookieStoreKey(cookie), Date.now());
+        if (!isCookieBlockedByStoredPolicy(cookie, profileId, { isStealthSession })) return;
+        Promise.resolve()
+            .then(() => targetSession.cookies.remove(cookieUrlForRemoval(cookie), cookie.name))
+            .catch((error) => {
+                appLogger.warn('cookies:store-guard-remove-failed', {
+                    domain: cookieDomainToHost(cookie.domain),
+                    name: cookie.name,
+                    error: appLogger.serializeError(error),
+                });
+            });
+    });
+}
+
+async function removeCookiesMatching(targetSession, predicate) {
+    if (!targetSession?.cookies) return 0;
+    const cookies = await targetSession.cookies.get({});
+    let removed = 0;
+    for (const cookie of cookies) {
+        if (!predicate(cookie)) continue;
+        try {
+            await targetSession.cookies.remove(cookieUrlForRemoval(cookie), cookie.name);
+            forgetCookieModifiedAt(targetSession, cookie);
+            removed += 1;
+        } catch (_) {
+            /* cookie may have been removed already */
+        }
+    }
+    return removed;
+}
+
+async function removeCookiesModifiedSince(targetSession, since) {
+    const normalizedSince = normalizeSinceTimestamp(since);
+    if (normalizedSince == null) {
+        return removeCookiesMatching(targetSession, () => true);
+    }
+    return removeCookiesMatching(
+        targetSession,
+        (cookie) => getCookieModifiedAt(targetSession, cookie) >= normalizedSince,
+    );
+}
+
+async function cleanupBlockedCookiesForProfile(profileId) {
+    const safeProfileId = normalizeProfileId(profileId);
+    if (!safeProfileId) return 0;
+    return removeCookiesMatching(
+        getProfileSession(safeProfileId),
+        (cookie) => isCookieBlockedByStoredPolicy(cookie, safeProfileId, { isStealthSession: false }),
+    );
+}
+
+async function cleanupStealthCookiesForContext(context) {
+    if (!context?.stealthWindow || !context.stealthTabsPartition) return 0;
+    return removeCookiesMatching(session.fromPartition(context.stealthTabsPartition), () => true);
+}
+
+async function cleanupStealthCookiesForAllContexts() {
+    const stealthContexts = Array.from(windowContextsById.values()).filter((ctx) => ctx?.stealthWindow);
+    const results = await Promise.all(stealthContexts.map((ctx) => cleanupStealthCookiesForContext(ctx)));
+    return results.reduce((sum, count) => sum + count, 0);
+}
+
+async function getCookieSummaryForSession(targetSession) {
+    if (!targetSession?.cookies) return [];
+    const cookies = await targetSession.cookies.get({});
+    const byDomain = new Map();
+    for (const cookie of cookies) {
+        const domain = cookieDomainToHost(cookie.domain);
+        if (!domain) continue;
+        const row = byDomain.get(domain) || {
+            domain,
+            count: 0,
+            storageBytes: 0,
+        };
+        row.count += 1;
+        row.storageBytes += Math.max(JSON.stringify(cookie).length, 512);
+        byDomain.set(domain, row);
+    }
+    return Array.from(byDomain.values()).sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
+async function cleanupSessionOnlyCookiesForProfile(profileId) {
+    const safeProfileId = normalizeProfileId(profileId);
+    const targetSession = getProfileSession(safeProfileId);
+    if (!targetSession) return 0;
+    const config = loadSettings(safeProfileId).cookieConfig;
+    const sessionOnlyRules = (config.exceptions || []).filter((rule) => rule.setting === 'session_only');
+    if (sessionOnlyRules.length === 0) return 0;
+    return removeCookiesMatching(targetSession, (cookie) => {
+        const host = cookieDomainToHost(cookie.domain);
+        return sessionOnlyRules.some((rule) => cookiePatternMatchesHost(rule.pattern, host));
+    });
+}
+
+async function cleanupSessionOnlyCookiesForAllProfiles() {
+    const profileIds = new Set();
+    for (const ctx of windowContextsById.values()) {
+        if (ctx?.profileId) profileIds.add(ctx.profileId);
+    }
+    if (defaultProfileId) profileIds.add(defaultProfileId);
+    for (const profile of profilesById.values()) {
+        if (profile?.profileId) profileIds.add(profile.profileId);
+    }
+    const results = await Promise.all(Array.from(profileIds).map((profileId) => cleanupSessionOnlyCookiesForProfile(profileId)));
+    return results.reduce((sum, count) => sum + count, 0);
+}
+
+function updateCookieConfigForProfile(profileId, patch) {
+    const safeProfileId = normalizeProfileId(profileId);
+    const current = loadSettings(safeProfileId);
+    const nextConfig = normalizeCookieConfig({
+        ...current.cookieConfig,
+        ...(patch && typeof patch === 'object' ? patch : {}),
+    });
+    const next = normalizeCookieSettingsFields({
+        ...current,
+        cookieConfig: nextConfig,
+        cookieConfigByProfile: {
+            ...(current.cookieConfigByProfile || {}),
+            ...(safeProfileId ? { [safeProfileId]: nextConfig } : {}),
+        },
+    }, safeProfileId);
+    saveSettings(chromeTheme.normalizeAccentFields(next));
+    return nextConfig;
+}
+
 ipcMain.handle(C.IPC_INVOKE.SETTINGS_GET, (e) => {
     if (!isSenderTrusted(e)) return SETTINGS_DEFAULTS;
-    return loadSettings();
+    return loadSettings(getProfileIdForEventSender(e.sender));
 });
 
-ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, (e, data) => {
+ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, async (e, data) => {
     if (!isSenderTrusted(e)) return false;
-    const current = loadSettings();
+    const profileId = getProfileIdForEventSender(e.sender);
+    const current = loadSettings(profileId);
     const patch = typeof data === 'object' && data ? data : {};
     const next = { ...current, ...patch };
     if (Object.prototype.hasOwnProperty.call(patch, 'colorTheme')) {
@@ -5515,8 +5801,70 @@ ipcMain.handle(C.IPC_INVOKE.SETTINGS_SAVE, (e, data) => {
         const raw = patch.accentCustomHex;
         next.accentCustomHex = raw == null || raw === '' ? null : chromeTheme.normalizeAccentHex(raw);
     }
-    saveSettings(chromeTheme.normalizeAccentFields(next));
+    if (Object.prototype.hasOwnProperty.call(patch, 'cookieConfig')) {
+        const normalizedCookieConfig = normalizeCookieConfig(patch.cookieConfig);
+        const byProfile = next.cookieConfigByProfile && typeof next.cookieConfigByProfile === 'object'
+            ? { ...next.cookieConfigByProfile }
+            : {};
+        const safeProfileId = normalizeProfileId(profileId);
+        if (safeProfileId) byProfile[safeProfileId] = normalizedCookieConfig;
+        next.cookieConfig = normalizedCookieConfig;
+        next.cookieConfigByProfile = byProfile;
+    }
+    saveSettings(chromeTheme.normalizeAccentFields(normalizeCookieSettingsFields(next, profileId)));
+    if (Object.prototype.hasOwnProperty.call(patch, 'cookieConfig')) {
+        await cleanupBlockedCookiesForProfile(profileId);
+    }
     applyColorThemeFromSettings();
+    broadcastSettingsUpdate(next);
+    return true;
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_SUMMARY, async (e, { profileId } = {}) => {
+    if (!isSenderTrusted(e)) return [];
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return [];
+    return getCookieSummaryForSession(getProfileSession(authorizedProfileId));
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_DELETE_DOMAIN, async (e, { profileId, domain } = {}) => {
+    if (!isSenderTrusted(e)) return { ok: false, deleted: 0 };
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return { ok: false, deleted: 0 };
+    const targetSession = getProfileSession(authorizedProfileId);
+    const deleted = await removeCookiesMatching(targetSession, (cookie) => cookieMatchesDomain(cookie, domain));
+    return { ok: true, deleted };
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_CLEAR_ALL, async (e, { profileId, since } = {}) => {
+    if (!isSenderTrusted(e)) return { ok: false, deleted: 0 };
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return { ok: false, deleted: 0 };
+    const deleted = await removeCookiesModifiedSince(getProfileSession(authorizedProfileId), since);
+    return { ok: true, deleted };
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_SETTINGS_GET, (e, { profileId } = {}) => {
+    if (!isSenderTrusted(e)) return COOKIE_CONFIG_DEFAULTS;
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return COOKIE_CONFIG_DEFAULTS;
+    return loadSettings(authorizedProfileId).cookieConfig;
+});
+
+ipcMain.handle(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, async (e, payload) => {
+    if (!isSenderTrusted(e)) return COOKIE_CONFIG_DEFAULTS;
+    const profileId = payload?.profileId;
+    const config = payload?.config || payload;
+    const authorizedProfileId = resolveAuthorizedProfileIdForSender(e.sender, profileId);
+    if (!authorizedProfileId) return COOKIE_CONFIG_DEFAULTS;
+    const savedConfig = updateCookieConfigForProfile(authorizedProfileId, config);
+    await cleanupBlockedCookiesForProfile(authorizedProfileId);
+    return savedConfig;
+});
+
+ipcMain.handle(C.IPC_INVOKE.CLIPBOARD_WRITE, (e, { text } = {}) => {
+    if (!isSenderTrusted(e)) return false;
+    clipboard.writeText(String(text || ''));
     return true;
 });
 
@@ -5524,7 +5872,7 @@ ipcMain.handle(C.IPC_INVOKE.APP_RELAUNCH, (e) => {
     if (!isSenderTrusted(e)) return;
     appLogger.info('app:relaunch-requested', {});
     app.relaunch();
-    app.exit(0);
+    app.quit();
 });
 
 ipcMain.handle(C.IPC_INVOKE.APP_LOG_INFO, (e) => {
@@ -5597,13 +5945,82 @@ ipcMain.handle(C.IPC_INVOKE.APP_LOG_CLEAR, (e, { since = null } = {}) => {
     }
 });
 
-ipcMain.handle(C.IPC_INVOKE.COMPAT_GET_REPORT, (e, payload = {}) => {
+function resolveWebContentsForIdentityProbe(context, { tabIdOverride = null, sender = null } = {}) {
+    const senderTabId = sender && !sender.isDestroyed?.()
+        ? webContentsIdToTabId.get(sender.id)
+        : null;
+
+    const tabId = tabIdOverride || senderTabId || context?.activeTabId || null;
+
+    let wc = null;
+    if (sender && !sender.isDestroyed?.() && senderTabId) {
+        wc = sender;
+    } else if (tabId && context?.tabs?.[tabId]) {
+        const view = context.tabs[tabId];
+        if (view?.webContents && !view.webContents.isDestroyed()) {
+            wc = view.webContents;
+        }
+    }
+
+    return { tabId, webContents: wc, senderTabId };
+}
+
+async function resolveIdentityReportForContext(context, tabIdOverride, sender = null) {
+    const { tabId, webContents: wc } = resolveWebContentsForIdentityProbe(context, {
+        tabIdOverride,
+        sender,
+    });
+    const targetSession = context?.partition && session
+        ? session.fromPartition(context.partition)
+        : session?.defaultSession || null;
+    return identityDiagnostics.buildIdentityReport({
+        app,
+        context,
+        webContents: wc,
+        tabId,
+        session: targetSession,
+    });
+}
+
+ipcMain.handle(C.IPC_INVOKE.IDENTITY_DIAG_GET_REPORT, async (e, payload = {}) => {
+    if (!isSenderTrusted(e)) return null;
+    const context = getWindowContextByEventSender(e.sender);
+    if (!context) return null;
+    const tabId = payload && payload.tabId != null ? String(payload.tabId) : undefined;
+    try {
+        const report = await resolveIdentityReportForContext(context, tabId, e.sender);
+        appLogger.info('identity-diag:report-generated', {
+            tabId: report.tabId,
+            profileId: report.profileId,
+            userAgentMatchesConfigured: report.analysis?.userAgentMatchesConfigured,
+        });
+        return report;
+    } catch (err) {
+        appLogger.error('identity-diag:report-failed', {
+            error: appLogger.serializeError(err),
+        });
+        return { error: String(err?.message || err), generatedAt: Date.now() };
+    }
+});
+
+ipcMain.handle(C.IPC_INVOKE.COMPAT_GET_REPORT, async (e, payload = {}) => {
     if (!isSenderTrusted(e)) return null;
     const context = getWindowContextByEventSender(e.sender);
     if (!context) return null;
     const tabId = payload && payload.tabId != null ? String(payload.tabId) : undefined;
     const report = compatDiagnostics.getReport(tabId);
-    return { ...report, activeTabId: context.activeTabId };
+    let identitySummary = null;
+    try {
+        const identityReport = await resolveIdentityReportForContext(
+            context,
+            tabId || context.activeTabId,
+            e.sender,
+        );
+        identitySummary = identityDiagnostics.getCompactSummary(identityReport);
+    } catch (_) {
+        identitySummary = null;
+    }
+    return { ...report, activeTabId: context.activeTabId, identitySummary };
 });
 
 ipcMain.handle(C.IPC_INVOKE.COMPAT_CLEAR, (e, payload = {}) => {
@@ -5921,6 +6338,96 @@ function broadcastBookmarks(profileId) {
         }
     }
 }
+
+ipcMain.handle('webauthn:getCookieUsage', async (event) => {
+    if (!isSenderTrusted(event)) return { main: null, embedded: [] };
+    const context = getWindowContextByEventSender(event.sender);
+    if (!context || !context.activeTabId) return { main: null, embedded: [] };
+
+    const tabView = context.tabs[context.activeTabId];
+    if (!tabView) return { main: null, embedded: [] };
+
+    const { getTabNetworkDomains } = require('./runtime/sessionPolicy');
+    const domains = getTabNetworkDomains(tabView.webContents.id);
+
+    let mainDomain = '';
+    try {
+        mainDomain = new URL(tabView.webContents.getURL()).hostname;
+    } catch (e) { }
+
+    const session = tabView.webContents.session;
+    const result = { main: null, embedded: [] };
+
+    for (const domain of domains) {
+        try {
+            const cookies = await session.cookies.get({ domain });
+            const count = cookies.length;
+            if (count > 0) {
+                if (domain === mainDomain || (mainDomain && domain.endsWith(mainDomain))) {
+                    if (!result.main) {
+                        result.main = { domain, count };
+                    } else {
+                        result.main.count += count;
+                    }
+                } else {
+                    result.embedded.push({ domain, count });
+                }
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    if (!result.main && mainDomain) {
+        result.main = { domain: mainDomain, count: 0 };
+    }
+
+    return result;
+});
+
+ipcMain.handle('webauthn:deleteCookies', async (event, domain) => {
+    if (!isSenderTrusted(event) || !domain) return false;
+    const context = getWindowContextByEventSender(event.sender);
+    if (!context || !context.activeTabId) return false;
+
+    const tabView = context.tabs[context.activeTabId];
+    if (!tabView) return false;
+
+    const session = tabView.webContents.session;
+    try {
+        const cookies = await session.cookies.get({ domain });
+        for (const cookie of cookies) {
+            let url = 'http' + (cookie.secure ? 's' : '') + '://' + cookie.domain + cookie.path;
+            await session.cookies.remove(url, cookie.name);
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+});
+
+ipcMain.handle('webauthn:blockCookies', async (event, domain) => {
+    if (!isSenderTrusted(event) || !domain) return false;
+    const { addToCookieBlocklist } = require('./runtime/sessionPolicy');
+    addToCookieBlocklist(domain);
+
+    // Also delete existing cookies
+    const context = getWindowContextByEventSender(event.sender);
+    if (context && context.activeTabId) {
+        const tabView = context.tabs[context.activeTabId];
+        if (tabView) {
+            const session = tabView.webContents.session;
+            try {
+                const cookies = await session.cookies.get({ domain });
+                for (const cookie of cookies) {
+                    let url = 'http' + (cookie.secure ? 's' : '') + '://' + cookie.domain + cookie.path;
+                    await session.cookies.remove(url, cookie.name);
+                }
+            } catch (e) { }
+        }
+    }
+    return true;
+});
 
 ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_GET, (e) => {
     if (!isSenderTrusted(e)) return { bar: [] };
@@ -6525,13 +7032,15 @@ function applyDockIconForSystemAppearance() {
 }
 
 app.whenReady().then(async () => {
+    setupWebAuthn();
     appLogger.info('app:ready', {
         logDir: appLogger.getLogDir(),
         logFile: appLogger.getCurrentLogFile(),
         isPackaged: app.isPackaged,
     });
     registerAppProtocolForSession(session.defaultSession, 'default');
-    authPolicy.applyGoogleAuthPolicy(session.defaultSession); // Force auth checks for the default session
+    installSessionNetworkGuards(session.defaultSession, { profileId: defaultProfileId, isStealthSession: false });
+    logStartupIdentity(app, appLogger);
 
     applyColorThemeFromSettings();
 
@@ -6606,22 +7115,44 @@ app.on('before-quit', (event) => {
         historyClosed: appHistoryClosed,
         historyCloseStarted: appHistoryCloseStarted,
     });
-    if (appHistoryClosed) return;
+    if (appHistoryClosed && appCookieCleanupClosed) return;
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
     if (appHistoryCloseStarted) return;
     appHistoryCloseStarted = true;
-    historyService.closeAll()
+    appCookieCleanupStarted = true;
+    Promise.all([
+        historyService.closeAll()
+            .then(() => {
+                appHistoryClosed = true;
+            }),
+        cleanupSessionOnlyCookiesForAllProfiles()
+            .then((deleted) => {
+                appCookieCleanupClosed = true;
+                if (deleted > 0) {
+                    appLogger.info('cookies:session-only-cleanup', { deleted });
+                }
+            }),
+        cleanupStealthCookiesForAllContexts()
+            .then((deleted) => {
+                if (deleted > 0) {
+                    appLogger.info('cookies:stealth-cleanup', { deleted });
+                }
+            }),
+    ])
         .catch((error) => {
-            appLogger.error('history:close-failed', {
+            appLogger.error('app:shutdown-cleanup-failed', {
                 error: appLogger.serializeError(error),
             });
-            console.error('Failed to close history databases:', error);
+            console.error('Failed to complete shutdown cleanup:', error);
         })
         .finally(() => {
             appHistoryClosed = true;
+            appCookieCleanupClosed = true;
             if (appQuitAfterHistoryClose) return;
             appQuitAfterHistoryClose = true;
-            appLogger.info('app:history-closed-before-quit');
+            appLogger.info('app:cleanup-closed-before-quit', {
+                cookieCleanupStarted: appCookieCleanupStarted,
+            });
             app.quit();
         });
 });

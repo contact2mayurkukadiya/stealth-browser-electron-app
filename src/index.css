@@ -463,6 +463,21 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     transition: border 0.2s;
 }
 
+.omnibox-input-zone #url-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    color: var(--chrome-fg);
+    padding: 0 12px 0 8px;
+    outline: none;
+    z-index: 2;
+    font-size: 14px;
+    -webkit-app-region: no-drag;
+}
+
 #url-input {
     position: absolute;
     inset: 0;
@@ -471,7 +486,7 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     background: transparent;
     border: none;
     color: var(--chrome-fg);
-    padding: 0 15px;
+    padding: 0 15px 0 38px;
     outline: none;
     z-index: 2;
     font-size: 14px;
@@ -488,7 +503,7 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     inset: 0;
     display: flex;
     align-items: center;
-    padding: 0 15px;
+    padding: 0 12px 0 8px;
     font-size: 14px;
     color: var(--chrome-url-ghost);
     /* Gray for non-domain */
@@ -507,6 +522,10 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 }
 
 .url-container:focus-within {
+    border: 1px solid var(--chrome-omnibox-focus-border, #FFB430);
+}
+
+.omnibox-bar:focus-within {
     border: 1px solid var(--chrome-omnibox-focus-border, #FFB430);
 }
 
@@ -607,16 +626,50 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     gap: 2px;
     background: var(--chrome-bookmark-bar);
     height: 32px;
-    overflow-x: auto;
-    overflow-y: hidden;
+    /* Adjusted from overflow-x: auto */
+    overflow: hidden;
     white-space: nowrap;
     -webkit-app-region: no-drag;
     flex-shrink: 0;
 }
 
-/* Hide scrollbar for bookmark bar but allow scrolling */
+/* Hide scrollbar for bookmark bar but allow scrolling - Keep for legacy fallback */
 .bookmark-bar::-webkit-scrollbar {
     display: none;
+}
+
+/* ── Container for flexibly measuring overflowed items ──────────────────── */
+.bk-items-container {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1 1 auto;
+    overflow: hidden;
+    position: relative;
+    height: 100%;
+}
+
+/* ── Overflow Menu Chevron ──────────────────────────────────────────────── */
+.bk-overflow-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    color: var(--chrome-toolbar-icon-muted);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+    padding: 0;
+    margin-left: 2px;
+}
+
+.bk-overflow-btn:hover {
+    background: var(--chrome-tab-hover-bg);
+    color: var(--chrome-toolbar-icon);
 }
 
 .bk-item-wrap {
@@ -1287,8 +1340,8 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 
 .close-btn .tab-close-icon {
     display: block;
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
 }
 
 .nav-bar .btn img {
@@ -1369,8 +1422,8 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 }
 
 .tab--mode-icon-only .close-btn .tab-close-icon {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
 }
 
 .tab--mode-extreme-overflow {
@@ -1423,8 +1476,8 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 }
 
 .tab--mode-extreme-overflow.active .close-btn .tab-close-icon {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
 }
 
 /* ── Tab drag-and-drop ─────────────────────────────────────────────────────── */

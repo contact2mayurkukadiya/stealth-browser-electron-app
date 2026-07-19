@@ -4,7 +4,7 @@ import Tab from './Tab';
 import { tabAddSvg } from '../constants/appAssetUrls';
 import { PLATFORM } from '../constants/conditionStrings.js';
 
-const ADD_ICON = <img className="chrome-toolbar-icon-img" src={tabAddSvg} width={15} height={15} alt="" />;
+const ADD_ICON = <img className="chrome-toolbar-icon-img" src={tabAddSvg} width={25} height={25} alt="" />;
 const TAB_DISPLAY_MODE = {
   FULL: 'full',
   ICON_ONLY: 'icon-only',

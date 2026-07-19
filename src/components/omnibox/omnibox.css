@@ -1,19 +1,172 @@
 /* ── Omnibox icon ─────────────────────────────────────────────────────────── */
 .omnibox-icon {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  color: var(--chrome-toolbar-icon, var(--chrome-fg));
+  /* opacity: 0.5; */
+  flex-shrink: 0;
+}
+
+.omnibox-icon-wrapper {
   position: absolute;
   left: 10px;
   top: 50%;
   transform: translateY(-50%);
-  width: 14px;
-  height: 14px;
-  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 3;
-  color: var(--chrome-toolbar-icon, var(--chrome-fg));
-  opacity: 0.5;
-  flex-shrink: 0;
 }
 
-/* When overlay B is open, neutralize A's well so it cannot show beneath B. */
+/* ── Three-zone omnibox bar (prefix | input | suffix) ─────────────────────── */
+.omnibox-static-prefix {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  margin: 0 2px;
+  flex-shrink: 0;
+  user-select: none;
+  pointer-events: none;
+  /* Keeps it decorative so focus safely falls to the text input behind it */
+}
+
+.omnibox-search-chip {
+  padding: 0 8px 0 6px;
+  margin: 0 6px 0 0;
+  background-color: var(--neutral-hover, rgba(0, 0, 0, 0.05));
+  border-radius: 14px;
+  gap: 6px;
+  min-width: auto;
+}
+
+.omnibox-chip-text {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary, #5f6368);
+  white-space: nowrap;
+}
+
+.omnibox-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  padding: 0 4px;
+  min-width: 0;
+  border: 1px solid transparent;
+}
+
+.omnibox-bar:focus-within {
+  border-color: var(--chrome-omnibox-focus-border, #FFB430);
+}
+
+.omnibox-prefix,
+.omnibox-suffix {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  z-index: 4;
+}
+
+.omnibox-input-zone {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.omnibox-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  border-radius: 12px;
+  cursor: pointer;
+  height: 24px;
+  min-width: 28px;
+  -webkit-app-region: no-drag;
+  background-color: var(--neutral-hover, rgba(0, 0, 0, 0.05));
+}
+
+.omnibox-action-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.omnibox-action-btn--active {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  .omnibox-search-chip {
+    background-color: var(--neutral-hover, rgba(255, 255, 255, 0.08));
+  }
+
+  .omnibox-chip-text {
+    color: var(--text-secondary, #9aa0a6);
+  }
+
+  .omnibox-action-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .omnibox-action-btn--active {
+    background: rgba(255, 255, 255, 0.14);
+  }
+}
+
+/* Legacy site-info-btn (unused after refactor; kept for NTP compat) */
+.site-info-btn {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  background: transparent;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  height: 24px;
+}
+
+.site-info-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .site-info-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* When overlay B is open, hide only the input zone shell text (prefix/suffix stay visible). */
+.omnibox-input-zone.omnibox-overlay-active {
+  background: transparent;
+}
+
+.omnibox-input-zone.omnibox-overlay-active #url-input {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.omnibox-input-zone.omnibox-overlay-active .omnibox-ghost {
+  display: none;
+}
+
+/* Legacy full-bar rule — deprecated */
 .url-container.omnibox-overlay-active {
   background: var(--chrome-nav-bg, transparent);
   box-shadow: none;
@@ -33,14 +186,27 @@
   display: none;
 }
 
-/* When the omnibox is focused, shift the input text to make room for the icon */
-.url-container:focus-within #url-input {
-  padding-left: 30px;
+/* When the input zone is focused, shift text for inline search icon */
+/* .omnibox-input-zone:focus-within #url-input {
+  padding-left: 38px;
+} */
+
+/* .omnibox-input-zone:focus-within .omnibox-ghost {
+  padding-left: 38px;
+} */
+
+.omnibox-input-zone:focus-within .url-display {
+  padding-left: 38px;
 }
 
-.url-container:focus-within .omnibox-ghost {
-  padding-left: 30px;
-}
+/* Legacy */
+/* .url-container:focus-within #url-input {
+  padding-left: 38px;
+} */
+
+/* .url-container:focus-within .omnibox-ghost {
+  padding-left: 38px;
+} */
 
 /* Empty-state placeholder when toolbar input is not focused */
 .omnibox-unfocused-placeholder {
@@ -63,7 +229,6 @@
   inset: 0;
   display: flex;
   align-items: center;
-  /* Must exactly match #url-input typography */
   padding: 0 15px;
   font-size: 14px;
   font-family: inherit;
@@ -72,7 +237,7 @@
   pointer-events: none;
   z-index: 1;
   overflow: hidden;
-  color: transparent; /* typed portion transparent */
+  color: transparent;
 }
 
 .omnibox-ghost__suffix {
@@ -80,7 +245,6 @@
 }
 
 /* ── Dropdown container ───────────────────────────────────────────────────── */
-/* position/top/left/width are set via inline styles by the React portal */
 .omnibox-dropdown {
   background: var(--chrome-nav-bg, #243038);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -89,9 +253,8 @@
   z-index: 9999;
   overflow: hidden;
   padding: 4px 0;
-
-  /* Enter animation */
   animation: omnibox-enter 0.12s ease;
+
 }
 
 @keyframes omnibox-enter {
@@ -99,6 +262,7 @@
     opacity: 0;
     transform: translateY(-4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -123,7 +287,8 @@
 }
 
 .omnibox-row--selected {
-  background: rgba(255, 180, 48, 0.12); /* amber tint matching the app focus ring */
+  background: rgba(255, 180, 48, 0.12);
+  /* amber tint matching the app focus ring */
 }
 
 /* ── Favicon / type icon ──────────────────────────────────────────────────── */
@@ -197,11 +362,30 @@
   opacity: 0.7;
 }
 
-.omnibox-badge--history  { background: rgba(255, 255, 255, 0.08); color: #aaa; }
-.omnibox-badge--search   { background: rgba(66, 133, 244, 0.18);  color: #8ab4f8; }
-.omnibox-badge--keyword  { background: rgba(52, 168, 83, 0.18);   color: #81c995; }
-.omnibox-badge--bookmark { background: rgba(251, 188, 4, 0.18);   color: #fdd663; }
-.omnibox-badge--url      { background: rgba(255, 255, 255, 0.08); color: #aaa; }
+.omnibox-badge--history {
+  background: rgba(255, 255, 255, 0.08);
+  color: #aaa;
+}
+
+.omnibox-badge--search {
+  background: rgba(66, 133, 244, 0.18);
+  color: #8ab4f8;
+}
+
+.omnibox-badge--keyword {
+  background: rgba(52, 168, 83, 0.18);
+  color: #81c995;
+}
+
+.omnibox-badge--bookmark {
+  background: rgba(251, 188, 4, 0.18);
+  color: #fdd663;
+}
+
+.omnibox-badge--url {
+  background: rgba(255, 255, 255, 0.08);
+  color: #aaa;
+}
 
 @media (prefers-color-scheme: light) {
   .omnibox-dropdown {
@@ -235,9 +419,28 @@
     color: rgba(23, 27, 32, 0.45);
   }
 
-  .omnibox-badge--history  { background: rgba(23, 27, 32, 0.06); color: #616161; }
-  .omnibox-badge--search   { background: rgba(66, 133, 244, 0.15);  color: #1967d2; }
-  .omnibox-badge--keyword  { background: rgba(52, 168, 83, 0.15);   color: #137333; }
-  .omnibox-badge--bookmark { background: rgba(251, 188, 4, 0.22);   color: #b06000; }
-  .omnibox-badge--url      { background: rgba(23, 27, 32, 0.06); color: #616161; }
+  .omnibox-badge--history {
+    background: rgba(23, 27, 32, 0.06);
+    color: #616161;
+  }
+
+  .omnibox-badge--search {
+    background: rgba(66, 133, 244, 0.15);
+    color: #1967d2;
+  }
+
+  .omnibox-badge--keyword {
+    background: rgba(52, 168, 83, 0.15);
+    color: #137333;
+  }
+
+  .omnibox-badge--bookmark {
+    background: rgba(251, 188, 4, 0.22);
+    color: #b06000;
+  }
+
+  .omnibox-badge--url {
+    background: rgba(23, 27, 32, 0.06);
+    color: #616161;
+  }
 }

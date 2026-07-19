@@ -1,10 +1,6 @@
 import React, { useState, useCallback } from 'react';
-
-const MORE_ICON = (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ width: 18, height: 18 }}>
-    <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-  </svg>
-);
+import AssetMaskIcon from '../../components/AssetMaskIcon';
+import { menuDotsVerticalSvg } from '../../constants/appAssetUrls';
 
 function buildFaviconUrl(url) {
   try {
@@ -85,7 +81,7 @@ export default function GroupCard({ groupTitle, entries, onOpenEntry, onOpenCont
           aria-label="More actions"
           onClick={handleMoreClick}
         >
-          {MORE_ICON}
+          <AssetMaskIcon icon={menuDotsVerticalSvg} size={18} />
         </button>
       </header>
 

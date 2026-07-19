@@ -2,22 +2,13 @@ import React, { useState, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
 import { setBookmarks } from '../store/bookmarksSlice';
 import { BOOKMARK } from '../constants/conditionStrings.js';
+import { angleRightSvg, folderSvg, trashSvg } from '../constants/appAssetUrls.js';
+import AssetMaskIcon from './AssetMaskIcon.jsx';
 
-const FOLDER_ICON = (
-  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 640 640">
-    <path fill="currentColor" opacity="0.7" d="M128 512L512 512C547.3 512 576 483.3 576 448L576 208C576 172.7 547.3 144 512 144L362.7 144C355.8 144 349 141.8 343.5 137.6L305.1 108.8C294 100.5 280.5 96 266.7 96L128 96C92.7 96 64 124.7 64 160L64 448C64 483.3 92.7 512 128 512z" />
-  </svg>
-);
-const CHEVRON_RIGHT = (
-  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-    <polyline points="9 18 15 12 9 6" />
-  </svg>
-);
-const DELETE_ICON = (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
+// ─── Icon ────────────────────────────────────────────────────────────────────
+const FOLDER_ICON = <AssetMaskIcon icon={folderSvg} size={16} />;
+
+const CHEVRON_RIGHT = <AssetMaskIcon icon={angleRightSvg} size={16} />;
 
 export default function BookmarkItem({
   item,
@@ -134,10 +125,6 @@ export default function BookmarkItem({
             <span className="bk-label">{item.title}</span>
           </>
         )}
-      </button>
-
-      <button className="bk-del-btn" title={isFolder ? 'Delete folder' : 'Remove bookmark'} onClick={handleDelete}>
-        {DELETE_ICON}
       </button>
     </div>
   );
