@@ -2,3 +2,5 @@ node_modules
 dist
 .stealth-renderer-reload
 graphify-out
+.agent
+.agents/rules

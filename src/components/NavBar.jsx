@@ -77,6 +77,23 @@ function isValidFolderId(folderId, bar) {
   return collectFolderOptions(bar).some((f) => f.id === folderId);
 }
 
+/**
+ * Strips base64 data: URLs from avatar.src in menu row objects before IPC posting.
+ * The overlay renderer falls back to initials + background when src is null.
+ * This prevents the IPC payload from exceeding CHROME_OVERLAY_POST_MAX_BYTES.
+ */
+function stripAvatarSrc(rows) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((row) => {
+    if (!row || !row.avatar || !row.avatar.src) return row;
+    // Only strip data: URLs — external app:// URLs are tiny and safe to keep
+    if (String(row.avatar.src).startsWith('data:')) {
+      return { ...row, avatar: { ...row.avatar, src: null } };
+    }
+    return row;
+  });
+}
+
 function flattenBookmarkMenuItems(items, depth = 0, out = []) {
   if (!Array.isArray(items) || out.length >= 12) return out;
   for (const item of items) {
@@ -465,7 +482,7 @@ export default function NavBar({
         { iconSrc: menuNewWindowSvg, label: 'New Window', shortcut: shortcut('⌘N', 'Ctrl+N'), commandId: 'newWindow' },
         { iconSrc: menuStealthWindowSvg, label: 'New Incognito Window', shortcut: shortcut('⇧⌘N', 'Ctrl+Shift+N'), commandId: 'newStealthWindow' },
         { type: 'separator' },
-        { label: activeProfileLabel, avatar: activeProfileAvatar, submenuKey: 'profile', highlight: true },
+        { label: activeProfileLabel, avatar: activeProfileAvatar ? { ...activeProfileAvatar, src: null } : null, submenuKey: 'profile', highlight: true },
         { iconSrc: menuHistorySvg, label: 'History', submenuKey: 'history' },
         { iconSrc: menuDownloadsSvg, label: 'Downloads', shortcut: shortcut('⌥⌘L', 'Ctrl+J'), commandId: 'openDownloads' },
         { iconSrc: menuBookmarksSvg, label: 'Bookmarks and Lists', submenuKey: 'bookmarks' },
@@ -483,7 +500,9 @@ export default function NavBar({
         { iconSrc: menuSettingsSvg, label: 'Settings', shortcut: shortcut('⌘,', 'Ctrl+,'), commandId: 'openSettings' },
       ],
       submenus: {
-        profile: profileRows,
+        // stripAvatarSrc removes base64 data: URLs from avatar.src before IPC posting.
+        // The overlay renderer falls back to initials + background color when src is null.
+        profile: stripAvatarSrc(profileRows),
         history: historyRows,
         bookmarks: bookmarkRowsForMenu,
         find: findRows,

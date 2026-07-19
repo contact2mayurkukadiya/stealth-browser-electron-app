@@ -46,7 +46,16 @@ export default function ProfileMenuButton({
     menuLeft = Math.max(8, Math.min(menuLeft, window.innerWidth - menuWidth - 8));
     const menuTop = Math.round(br.bottom + 6);
     const getRows = getProfileMenuRowsRef.current;
-    const rows = typeof getRows === 'function' ? getRows() : [];
+    const rawRows = typeof getRows === 'function' ? getRows() : [];
+    // Strip base64 data: URLs from avatar.src — the overlay falls back to initials.
+    // This keeps the payload under CHROME_OVERLAY_POST_MAX_BYTES (256 KB).
+    const rows = Array.isArray(rawRows) ? rawRows.map((row) => {
+      if (!row || !row.avatar || !row.avatar.src) return row;
+      if (String(row.avatar.src).startsWith('data:')) {
+        return { ...row, avatar: { ...row.avatar, src: null } };
+      }
+      return row;
+    }) : [];
     const payload = {
       kind: 'profileMenu',
       items: rows,

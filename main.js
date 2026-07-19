@@ -4622,7 +4622,10 @@ ipcMain.handle(C.IPC_INVOKE.CHROME_SHELL_MENU_OVERLAY_POST, (e, payload) => {
     if (!isShellMenuOverlayKind(patch.kind)) return { ok: false };
     try {
         const json = JSON.stringify(patch);
-        if (json.length > CHROME_OVERLAY_POST_MAX_BYTES) return { ok: false };
+        if (json.length > CHROME_OVERLAY_POST_MAX_BYTES) {
+            console.error('CHROME_OVERLAY_POST_MAX_BYTES exceeded! Size:', json.length, 'Kind:', patch.kind);
+            return { ok: false };
+        }
     } catch {
         return { ok: false };
     }
