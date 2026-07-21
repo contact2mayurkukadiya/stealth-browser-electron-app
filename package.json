@@ -2,7 +2,7 @@
   "name": "invisurf",
   "version": "1.0.0",
   "description": "InviSurf browser (Electron)",
-  "main": "main.js",
+  "main": "main/index.js",
   "scripts": {
     "start": "npm run build:renderer && electron .",
     "build:renderer": "node scripts/renderer-build-all.cjs",

@@ -4,3 +4,4 @@ dist
 graphify-out
 .agent
 .agents/rules
+Backups/*
