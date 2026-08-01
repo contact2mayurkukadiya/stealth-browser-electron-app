@@ -6,7 +6,7 @@
   "scripts": {
     "start": "npm run build:renderer && electron .",
     "build:renderer": "node scripts/renderer-build-all.cjs",
-    "dev": "node scripts/renderer-build-all.cjs && concurrently -k \"node scripts/renderer-watch.cjs\" \"electron --inspect=9229 .\"",
+    "dev": "node scripts/renderer-build-all.cjs && concurrently -k \"node scripts/renderer-watch.cjs\" \"node scripts/main-watch.cjs\"",
     "dev:renderer": "node scripts/renderer-watch.cjs",
     "dist": "npm run build:renderer && electron-builder --mac",
     "dist:win": "npm run build:renderer && electron-builder --win --x64",
