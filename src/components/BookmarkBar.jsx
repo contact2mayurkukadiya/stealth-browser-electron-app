@@ -129,12 +129,7 @@ export default function BookmarkBar({ currentTabId }) {
               break;
             case 'openNewWindow':
               if (!isFolder && item.url) {
-                // Adjust if your custom implementation differs
-                if (window.electronAPI.openUrlInNewWindow) {
-                  window.electronAPI.openUrlInNewWindow(item.url);
-                } else if (window.electronAPI.createWindow) {
-                  window.electronAPI.createWindow?.({ url: item.url });
-                }
+                window.electronAPI.createWindow?.({ url: item.url });
               }
               break;
             case 'openStealth':

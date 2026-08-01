@@ -458,6 +458,7 @@ function AppShell() {
   }, [openSingletonTab]);
 
   const handleTabCreated = useCallback(({ id, url, isStealth }) => {
+    console.log('handleTabCreated', id, url, isStealth);
     const { tabs } = stateRef.current;
     if (!tabs[id]) {
       dispatch(addTab({ id, isStealth, initialUrl: url }));
@@ -551,6 +552,14 @@ function AppShell() {
         createTabWithUrl(movedTabId, !!bootstrap.movedTab.isStealth, bootstrap.movedTab.url, {
           history: bootstrap.movedTab.history || null,
         });
+        return;
+      }
+
+      // 1.6b Bootstrap payload for windows spawned with a specific initial URL
+      //     (e.g. "Open in new window" from bookmark context menu).
+      if (bootstrap?.initialUrl) {
+        const tabId = `tab-${Date.now()}`;
+        createTabWithUrl(tabId, false, bootstrap.initialUrl);
         return;
       }
 

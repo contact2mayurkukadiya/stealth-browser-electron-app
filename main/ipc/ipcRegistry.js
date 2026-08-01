@@ -31,19 +31,24 @@ function spawnWindowWithTab({ profileId, url }) {
     profileService.ensureProfile(profileId);
     const createdContext = windowManager.createWindow({ profileId });
 
-    // 2. Delegate Tab creation to the Tab Manager
-    try {
-        if (url && typeof url === 'string' && url.trim() !== '') {
-            // Open specifically requested URL (e.g., from Bookmark)
-            tabManager.openUrlInNewTab(createdContext, url);
-        } else {
-            // Fallback to a blank tab (NTP)
-            tabManager.createTab(createdContext);
-        }
-    } catch (err) {
-        if (State.appLogger) {
-            State.appLogger.error('Failed to spawn initial tab for new window', err);
-        }
+    // 2. Store the initial URL as a bootstrap payload so that when the new window's
+    //    React shell mounts and calls init(), it reads this payload and opens the
+    //    correct tab — instead of falling through to the NTP fallback and creating
+    //    a duplicate blank tab.
+    if (url && typeof url === 'string' && url.trim() !== '') {
+        State.windowBootstrapById.set(createdContext.windowId, {
+            initialUrl: url,
+        });
+    }
+    // If no URL provided, App.jsx init() will create the default NTP tab via its
+    // own fallback logic (else branch) — no extra createTab call needed here.
+
+    if (State.appLogger) {
+        State.appLogger.info('window:spawn', {
+            windowId: createdContext.windowId,
+            profileId,
+            initialUrl: url || null,
+        });
     }
 
     return createdContext;
@@ -509,31 +514,6 @@ function registerIpcHandlers() {
     ipcMain.on(C.IPC_SEND.CHROME_OVERLAY_FROM_OVERLAY, (e, data) => {
         const context = getWindowContextByChromeOverlaySender(e.sender);
         if (!context?.window?.webContents || context.window.webContents.isDestroyed()) return;
-
-        if (data?.type === 'bookmarkMenu') {
-            console.log('bookmarkMenu', data);
-            if (data.id === 'openNewWindow') {
-                const bookmarksData = bookmarkService.loadBookmarks(context.profileId);
-                console.log('bookmarksData', bookmarksData);
-                const findBookmark = (items, targetId) => {
-                    for (const item of items) {
-                        if (item.id === targetId) return item;
-                        if (item.children) {
-                            const found = findBookmark(item.children, targetId);
-                            if (found) return found;
-                        }
-                    }
-                    return null;
-                };
-
-                const bookmark = findBookmark(bookmarksData.bar || [], data.bookmarkItemId);
-                if (bookmark && bookmark.url) {
-                    spawnWindowWithTab({ profileId: context.profileId, url: bookmark.url });
-                }
-                return;
-            }
-        }
-        console.log('data', data);
 
         if (data?.type === 'lensSelectionCapture') {
             lensManager.captureGoogleLensSelection(context, data.rect).catch((err) => { console.error('lensSelectionCapture', err?.message || err); });

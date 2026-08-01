@@ -349,12 +349,17 @@ function moveTabToDetachedWindow(id, fallbackTabId) {
 }
 
 function openUrlInNewTab(targetUrl, options = {}) {
+    console.log('targetUrl', targetUrl);
+    console.log('options', options);
     const context = options.context || getWindowContextByBrowserWindow(State.mainWindow);
     if (!context) return false;
     const openInBackground = options.background === true;
     const resolvedTargetUrl = resolveInternalPageUrl(targetUrl);
+    console.log('resolvedTargetUrl', resolvedTargetUrl);
+    console.log('openInBackground', openInBackground);
     if (!isAllowedTabNavigationUrl(resolvedTargetUrl)) return false;
 
+    console.log('context', context);
     const newTabId = generateTabId();
     const stealthTab = !!context.stealthWindow;
     createTab(context, newTabId, resolvedTargetUrl, stealthTab, { activate: !openInBackground });
@@ -591,6 +596,8 @@ function installDevToolsTypographyOnOpen(webContents) {
 
 function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, options = {}) {
     if (!context) return;
+    console.log('id', id);
+    console.log('url', url);
     const shouldActivate = options.activate !== false;
     const effectiveStealth = !!context.stealthWindow;
     const tabPartition = context.stealthWindow ? context.stealthTabsPartition : context.partition;
