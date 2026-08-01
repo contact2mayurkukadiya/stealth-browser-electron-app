@@ -266,6 +266,5 @@ https://www.flaticon.com/search?word=folder&weight=regular&type=uicon
 - Split Tabs
 - InBuilt VPN
 - InBuild AdBlocker
-- Omnibox Fixes
 - Auto-complete menu item fix - show netiv query instead of url.
 - 

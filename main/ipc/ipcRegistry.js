@@ -26,6 +26,30 @@ const compatDiagnostics = require(path.join(process.cwd(), 'compatibilityDiagnos
 const identityDiagnostics = require(path.join(process.cwd(), 'runtime', 'identityDiagnostics.js'));
 const { getTabNetworkDomains, addToCookieBlocklist } = require(path.join(process.cwd(), 'runtime', 'sessionPolicy.js'));
 
+function spawnWindowWithTab({ profileId, url }) {
+    // 1. Ensure profile exists and create the Native Window Shell
+    profileService.ensureProfile(profileId);
+    const createdContext = windowManager.createWindow({ profileId });
+
+    // 2. Delegate Tab creation to the Tab Manager
+    try {
+        if (url && typeof url === 'string' && url.trim() !== '') {
+            // Open specifically requested URL (e.g., from Bookmark)
+            tabManager.openUrlInNewTab(createdContext, url);
+        } else {
+            // Fallback to a blank tab (NTP)
+            tabManager.createTab(createdContext);
+        }
+    } catch (err) {
+        if (State.appLogger) {
+            State.appLogger.error('Failed to spawn initial tab for new window', err);
+        }
+    }
+
+    return createdContext;
+}
+
+
 // --- SENDER VALIDATION ---
 function isSenderTrusted(event) {
     try {
@@ -91,9 +115,8 @@ function registerIpcHandlers() {
         const senderContext = getWindowContextByEventSender(event.sender);
         if (!senderContext) return null;
         const profileId = typeof payload.profileId === 'string' && payload.profileId.trim() ? payload.profileId.trim() : senderContext.profileId;
-        profileService.ensureProfile(profileId);
-        const created = windowManager.createWindow({ profileId });
-        return { windowId: created.windowId, profileId };
+        const createdContext = spawnWindowWithTab({ profileId, url: payload.url });
+        return { windowId: createdContext.windowId, profileId };
     });
 
     ipcMain.handle(C.IPC_INVOKE.WINDOW_CREATE_STEALTH, (event) => {
@@ -486,6 +509,31 @@ function registerIpcHandlers() {
     ipcMain.on(C.IPC_SEND.CHROME_OVERLAY_FROM_OVERLAY, (e, data) => {
         const context = getWindowContextByChromeOverlaySender(e.sender);
         if (!context?.window?.webContents || context.window.webContents.isDestroyed()) return;
+
+        if (data?.type === 'bookmarkMenu') {
+            console.log('bookmarkMenu', data);
+            if (data.id === 'openNewWindow') {
+                const bookmarksData = bookmarkService.loadBookmarks(context.profileId);
+                console.log('bookmarksData', bookmarksData);
+                const findBookmark = (items, targetId) => {
+                    for (const item of items) {
+                        if (item.id === targetId) return item;
+                        if (item.children) {
+                            const found = findBookmark(item.children, targetId);
+                            if (found) return found;
+                        }
+                    }
+                    return null;
+                };
+
+                const bookmark = findBookmark(bookmarksData.bar || [], data.bookmarkItemId);
+                if (bookmark && bookmark.url) {
+                    spawnWindowWithTab({ profileId: context.profileId, url: bookmark.url });
+                }
+                return;
+            }
+        }
+        console.log('data', data);
 
         if (data?.type === 'lensSelectionCapture') {
             lensManager.captureGoogleLensSelection(context, data.rect).catch((err) => { console.error('lensSelectionCapture', err?.message || err); });

@@ -450,14 +450,7 @@ function serializeRendererError(value) {
 
 function sendRendererLog(level, event, data = {}) {
     try {
-        ipcRenderer.send(C.IPC_SEND.APP_LOG, {
-            level,
-            event,
-            data: {
-                ...data,
-                href: typeof window !== 'undefined' ? window.location.href : '',
-            },
-        });
+        ipcRenderer.send(C.IPC_SEND.APP_LOG, { level, event, data: { ...data, href: typeof window !== 'undefined' ? window.location.href : '' } });
     } catch (_) {
         // Logging must never break the renderer.
     }
@@ -486,23 +479,10 @@ contextBridge.exposeInMainWorld('__invisurf_webauthn', {
 
 contextBridge.exposeInMainWorld('electronAPI', {
     // Tab management
-    newTab: (id, isStealth = false, url = null, options = {}) => ipcRenderer.send(C.IPC_SEND.NEW_TAB, {
-        id,
-        isStealth,
-        url,
-        source: options && typeof options.source === 'string' ? options.source : undefined,
-        history: options && options.history ? options.history : undefined,
-    }),
+    newTab: (id, isStealth = false, url = null, options = {}) => ipcRenderer.send(C.IPC_SEND.NEW_TAB, { id, isStealth, url, source: options && typeof options.source === 'string' ? options.source : undefined, history: options && options.history ? options.history : undefined }),
     switchTab: (id) => ipcRenderer.send(C.IPC_SEND.SWITCH_TAB, { id }),
-    closeTab: (id, options = {}) => ipcRenderer.send(C.IPC_SEND.CLOSE_TAB, {
-        id,
-        closeWindowIfLast: options.closeWindowIfLast === true,
-    }),
-    navigate: (id, url, options = {}) => ipcRenderer.send(C.IPC_SEND.NAVIGATE, {
-        id,
-        url,
-        source: options && typeof options.source === 'string' ? options.source : undefined,
-    }),
+    closeTab: (id, options = {}) => ipcRenderer.send(C.IPC_SEND.CLOSE_TAB, { id, closeWindowIfLast: options.closeWindowIfLast === true }),
+    navigate: (id, url, options = {}) => ipcRenderer.send(C.IPC_SEND.NAVIGATE, { id, url, source: options && typeof options.source === 'string' ? options.source : undefined }),
     goBack: (id) => ipcRenderer.send(C.IPC_SEND.GO_BACK, { id }),
     goForward: (id) => ipcRenderer.send(C.IPC_SEND.GO_FORWARD, { id }),
     reload: (id) => ipcRenderer.send(C.IPC_SEND.RELOAD, { id }),
@@ -538,12 +518,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     isGoogleLensActiveForProfile: () => ipcRenderer.invoke(C.IPC_INVOKE.GOOGLE_LENS_ACTIVE_FOR_PROFILE),
     createWindow: (profileId) => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE, { profileId }),
     createStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE_STEALTH),
-    /** Close this BrowserWindow only if it is a stealth window; normal windows ignore (returns ok: false). */
     closeStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH),
-    /** Close the shell BrowserWindow that owns this renderer (normal or stealth). */
     closeCurrentWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CLOSE_CURRENT),
     windowGetBootstrap: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_GET_BOOTSTRAP),
-    /** True when this renderer lives in a stealth (incognito) window — including tab WebContents. */
     isStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.IS_STEALTH_WINDOW),
 
     tabSetAudioMuted: (id, muted) => ipcRenderer.send(C.IPC_SEND.TAB_SET_AUDIO_MUTED, { id, muted }),
@@ -578,11 +555,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     profileClearAvatar: (profileId) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_CLEAR_AVATAR, { profileId }),
     profileGetAvatarDataUrl: (profileId) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_GET_AVATAR, { profileId }),
     profileDelete: (profileId) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_DELETE, { profileId }),
-    profileOpenWindow: (profileId, options = {}) =>
-        ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_OPEN_WINDOW, {
-            profileId,
-            closeProfilePicker: options.closeProfilePicker === true,
-        }),
+    profileOpenWindow: (profileId, options = {}) => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_OPEN_WINDOW, { profileId, closeProfilePicker: options.closeProfilePicker === true }),
     profilePickerOpen: () => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_PICKER_OPEN),
     profileCloseCurrent: () => ipcRenderer.invoke(C.IPC_INVOKE.PROFILE_CLOSE_CURRENT),
     recentlyClosedList: () => ipcRenderer.invoke(C.IPC_INVOKE.RECENTLY_CLOSED_LIST),
@@ -610,10 +583,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener(C.IPC_EVENT.TAB_STRIP_MENU_ACTION, handler);
     },
 
-    /**
-     * Tier 2 — Chrome overlay WebContentsView above the tab (main ref-counts acquire/release).
-     * Tier 1: native Menu.popup. Tier 3 (legacy): tabPrepareShellOverlay / detach.
-     */
     chromeOverlayV1Reset: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_RESET),
     chromeOverlayV1Acquire: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_ACQUIRE),
     chromeOverlayV1Release: () => ipcRenderer.invoke(C.IPC_INVOKE.CHROME_OVERLAY_RELEASE),
@@ -642,7 +611,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on(C.IPC_EVENT.CHROME_SHELL_MENU_OVERLAY_SUPERSEDED, handler);
         return () => ipcRenderer.removeListener(C.IPC_EVENT.CHROME_SHELL_MENU_OVERLAY_SUPERSEDED, handler);
     },
-    /** Chrome overlay page only: user actions back to shell via main. */
     chromeOverlayNotifyHost: (data) => ipcRenderer.send(C.IPC_SEND.CHROME_OVERLAY_FROM_OVERLAY, data),
     onChromeOverlayV1Patch: (callback) => {
         const handler = (_event, payload) => callback(payload);
@@ -651,14 +619,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // Lazy tab loading: register a tab as sleeping (no WebContentsView created yet)
-    tabSleepRegister: (id, url, meta = {}) => ipcRenderer.send(C.IPC_SEND.TAB_SLEEP_REGISTER, {
-        id,
-        url,
-        title: meta.title,
-        favicon: meta.favicon,
-        history: meta.history,
-    }),
-    // Called by main process when a sleeping tab's WebContentsView is created on activation
+    tabSleepRegister: (id, url, meta = {}) => ipcRenderer.send(C.IPC_SEND.TAB_SLEEP_REGISTER, { id, url, title: meta.title, favicon: meta.favicon, history: meta.history }),
     onTabAwoken: (callback) => ipcRenderer.on(C.IPC_EVENT.TAB_AWOKEN, (event, data) => callback(data)),
 
     // Settings
@@ -667,13 +628,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     settingsUpdated: (callback) => ipcRenderer.on(C.IPC_INVOKE.SETTINGS_UPDATE, (event, data) => callback(data)),
     appRelaunch: () => ipcRenderer.invoke(C.IPC_INVOKE.APP_RELAUNCH),
 
-    /** Subscribe to accent/theme updates broadcast from main (all windows). */
+    // Theme
     onThemeApply: (callback) => {
         const handler = (_event, payload) => callback(payload);
         ipcRenderer.on(C.IPC_EVENT.THEME_APPLY, handler);
         return () => ipcRenderer.removeListener(C.IPC_EVENT.THEME_APPLY, handler);
     },
 
+    // Compatibility Diagnostics
     compatDiagGetReport: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.COMPAT_GET_REPORT, payload),
     compatDiagClear: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.COMPAT_CLEAR, payload),
     identityDiagGetReport: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.IDENTITY_DIAG_GET_REPORT, payload),
@@ -688,7 +650,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tooltipHide: () => ipcRenderer.send(C.IPC_SEND.TOOLTIP_HIDE),
     onTooltipUpdate: (callback) => ipcRenderer.on(C.IPC_EVENT.TOOLTIP_UPDATE, (event, v) => callback(v)),
 
-    // Platform identifier — used by the renderer to apply platform-specific styles
+    // Platform identifier
     platform: process.platform,
 });
 
