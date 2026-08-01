@@ -517,7 +517,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     runMenuCommand: (commandId) => ipcRenderer.invoke(C.IPC_INVOKE.RUN_MENU_COMMAND, commandId),
     isGoogleLensActiveForProfile: () => ipcRenderer.invoke(C.IPC_INVOKE.GOOGLE_LENS_ACTIVE_FOR_PROFILE),
     createWindow: (payload = {}) => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE, typeof payload === 'string' ? { profileId: payload } : payload),
-    createStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE_STEALTH),
+    createStealthWindow: (payload = {}) => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE_STEALTH, typeof payload === 'string' ? { profileId: payload } : payload),
     closeStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH),
     closeCurrentWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CLOSE_CURRENT),
     windowGetBootstrap: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_GET_BOOTSTRAP),

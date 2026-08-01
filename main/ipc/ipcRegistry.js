@@ -26,10 +26,10 @@ const compatDiagnostics = require(path.join(process.cwd(), 'compatibilityDiagnos
 const identityDiagnostics = require(path.join(process.cwd(), 'runtime', 'identityDiagnostics.js'));
 const { getTabNetworkDomains, addToCookieBlocklist } = require(path.join(process.cwd(), 'runtime', 'sessionPolicy.js'));
 
-function spawnWindowWithTab({ profileId, url }) {
+function spawnWindowWithTab({ profileId, url, stealthWindow }) {
     // 1. Ensure profile exists and create the Native Window Shell
     profileService.ensureProfile(profileId);
-    const createdContext = windowManager.createWindow({ profileId });
+    const createdContext = windowManager.createWindow({ profileId, stealthWindow });
 
     // 2. Store the initial URL as a bootstrap payload so that when the new window's
     //    React shell mounts and calls init(), it reads this payload and opens the
@@ -124,14 +124,12 @@ function registerIpcHandlers() {
         return { windowId: createdContext.windowId, profileId };
     });
 
-    ipcMain.handle(C.IPC_INVOKE.WINDOW_CREATE_STEALTH, (event) => {
-        if (!isSenderTrusted(event)) return { ok: false };
+    ipcMain.handle(C.IPC_INVOKE.WINDOW_CREATE_STEALTH, (event, payload = {}) => {
+        if (!isSenderTrusted(event)) return null;
         const senderContext = getWindowContextByEventSender(event.sender);
-        const profileId = senderContext?.profileId || State.defaultProfileId;
-        if (!profileId) return { ok: false };
-        profileService.ensureProfile(profileId);
-        windowManager.createWindow({ profileId, stealthWindow: true });
-        return { ok: true };
+        const profileId = typeof payload.profileId === 'string' && payload.profileId.trim() ? payload.profileId.trim() : senderContext.profileId;
+        const createdContext = spawnWindowWithTab({ profileId, stealthWindow: true, url: payload.url });
+        return { windowId: createdContext.windowId, profileId };
     });
 
     ipcMain.handle(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH, (event) => {
@@ -563,6 +561,7 @@ function registerIpcHandlers() {
         }
 
         const stealthTab = !!context.stealthWindow;
+        console.log("stealthTab", stealthTab)
         tabManager.createTab(context, id, resolvedUrl, stealthTab, { navigationHistory: history || null });
 
         if (context.window && !context.window.webContents.isDestroyed()) {

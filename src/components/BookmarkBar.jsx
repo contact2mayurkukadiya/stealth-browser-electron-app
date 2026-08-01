@@ -37,7 +37,7 @@ export default function BookmarkBar({ currentTabId }) {
   const [folderName, setFolderName] = useState('');
   const folderInputRef = useRef(null);
   const dragSrcIdRef = useRef(null);
-  
+
   const pendingOwnBookmarkResetRef = useRef(false);
   const bookmarkMenuActiveRef = useRef(false);
   const pendingOwnFolderResetRef = useRef(false);
@@ -121,7 +121,6 @@ export default function BookmarkBar({ currentTabId }) {
           switch (actionId) {
             case 'openNewTab':
               if (!isFolder && item.url) {
-                // Ensure arguments match your API (id, isStealth, url, options)
                 const id = 'tab-' + Date.now();
                 window.electronAPI.newTab(id, false, item.url, { source: 'bookmark' });
                 window.electronAPI.switchTab(id);
@@ -134,8 +133,7 @@ export default function BookmarkBar({ currentTabId }) {
               break;
             case 'openStealth':
               if (!isFolder && item.url) {
-                // Ensure arguments match your API (id, isStealth, url, options)
-                window.electronAPI.newTab(currentTabId, true, item.url, { source: 'bookmark' });
+                window.electronAPI.createStealthWindow?.({ url: item.url });
               }
               break;
             case 'delete':
