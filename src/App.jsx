@@ -571,6 +571,22 @@ function AppShell() {
         return;
       }
 
+      // 1.6c Bootstrap payload for "Open All (N) in new window / stealth window".
+      //     Opens every URL as a separate tab; first URL becomes the active tab.
+      if (Array.isArray(bootstrap?.initialUrls) && bootstrap.initialUrls.length > 0) {
+        const isStealth = !!bootstrap.stealthWindow;
+        const activeTabId = `tab-${Date.now()}-0`;
+        // Create the first tab eagerly (active)
+        createTabWithUrl(activeTabId, isStealth, bootstrap.initialUrls[0]);
+        // Remaining tabs: open them as sleeping tabs so the window isn't flooded
+        for (let i = 1; i < bootstrap.initialUrls.length; i++) {
+          const tid = `tab-${Date.now()}-${i}`;
+          dispatch(addSleepingTab({ id: tid, url: bootstrap.initialUrls[i], title: bootstrap.initialUrls[i], favicon: null }));
+          window.electronAPI.tabSleepRegister(tid, bootstrap.initialUrls[i]);
+        }
+        return;
+      }
+
       // 1.7 Bootstrap payload for Cmd/Ctrl+Shift+T closed-window restore.
       if (bootstrap?.restoreWindow?.tabs?.length) {
         const { tabs, activeTabId } = bootstrap.restoreWindow;

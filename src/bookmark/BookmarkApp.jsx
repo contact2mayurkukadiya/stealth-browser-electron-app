@@ -338,24 +338,30 @@ export default function BookmarkApp() {
     }, [clipboardItem, currentFolderId, fetchBookmarks, loadRawTree, searchTerm]);
 
     const handleOpenStealth = useCallback((entry, urls = []) => {
-        const targetUrls = entry?.url ? [entry.url] : urls;
+        // Build the full list of target URLs
+        const targetUrls = entry?.url ? [entry.url] : urls.filter(Boolean);
         if (targetUrls.length === 0) return;
-        const firstUrl = targetUrls[0];
-        window.electronAPI.createStealthWindow({ url: firstUrl });
-        for (let i = 1; i < targetUrls.length; i++) {
-            const tabId = `b-stealth-${Date.now()}-${i}`;
-            window.electronAPI.newTab(tabId, true, targetUrls[i], { source: 'bookmarks' });
+        if (targetUrls.length === 1) {
+            // Single URL – simple path
+            window.electronAPI.createStealthWindow({ url: targetUrls[0] });
+        } else {
+            // Multiple URLs: pass the entire array so the new stealth window
+            // opens them all as separate tabs (handled by App.jsx bootstrap init).
+            window.electronAPI.createStealthWindow({ urls: targetUrls });
         }
     }, []);
 
     const handleOpenNewWindow = useCallback((entry, urls = []) => {
-        const targetUrls = entry?.url ? [entry.url] : urls;
+        // Build the full list of target URLs
+        const targetUrls = entry?.url ? [entry.url] : urls.filter(Boolean);
         if (targetUrls.length === 0) return;
-        const firstUrl = targetUrls[0];
-        window.electronAPI.createWindow({ url: firstUrl });
-        for (let i = 1; i < targetUrls.length; i++) {
-            const tabId = `b-win-${Date.now()}-${i}`;
-            window.electronAPI.newTab(tabId, false, targetUrls[i], { source: 'bookmarks' });
+        if (targetUrls.length === 1) {
+            // Single URL – simple path
+            window.electronAPI.createWindow({ url: targetUrls[0] });
+        } else {
+            // Multiple URLs: pass the entire array so the new window
+            // opens them all as separate tabs (handled by App.jsx bootstrap init).
+            window.electronAPI.createWindow({ urls: targetUrls });
         }
     }, []);
 

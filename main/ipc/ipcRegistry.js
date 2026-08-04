@@ -26,18 +26,26 @@ const compatDiagnostics = require(path.join(process.cwd(), 'compatibilityDiagnos
 const identityDiagnostics = require(path.join(process.cwd(), 'runtime', 'identityDiagnostics.js'));
 const { getTabNetworkDomains, addToCookieBlocklist } = require(path.join(process.cwd(), 'runtime', 'sessionPolicy.js'));
 
-function spawnWindowWithTab({ profileId, url, stealthWindow }) {
+function spawnWindowWithTab({ profileId, url, urls, stealthWindow }) {
     // 1. Ensure profile exists and create the Native Window Shell
     profileService.ensureProfile(profileId);
     const createdContext = windowManager.createWindow({ profileId, stealthWindow });
 
-    // 2. Store the initial URL as a bootstrap payload so that when the new window's
+    // 2. Store the initial URL(s) as a bootstrap payload so that when the new window's
     //    React shell mounts and calls init(), it reads this payload and opens the
-    //    correct tab — instead of falling through to the NTP fallback and creating
-    //    a duplicate blank tab.
-    if (url && typeof url === 'string' && url.trim() !== '') {
+    //    correct tab(s) — instead of falling through to the NTP fallback.
+    //    `urls` (array) takes priority over `url` (single string).
+    const urlArray = Array.isArray(urls) && urls.length > 0
+        ? urls.filter((u) => typeof u === 'string' && u.trim() !== '')
+        : (url && typeof url === 'string' && url.trim() !== '' ? [url] : []);
+
+    if (urlArray.length === 1) {
         State.windowBootstrapById.set(createdContext.windowId, {
-            initialUrl: url,
+            initialUrl: urlArray[0],
+        });
+    } else if (urlArray.length > 1) {
+        State.windowBootstrapById.set(createdContext.windowId, {
+            initialUrls: urlArray,
         });
     }
     // If no URL provided, App.jsx init() will create the default NTP tab via its
@@ -47,7 +55,7 @@ function spawnWindowWithTab({ profileId, url, stealthWindow }) {
         State.appLogger.info('window:spawn', {
             windowId: createdContext.windowId,
             profileId,
-            initialUrl: url || null,
+            initialUrls: urlArray,
         });
     }
 
@@ -120,7 +128,8 @@ function registerIpcHandlers() {
         const senderContext = getWindowContextByEventSender(event.sender);
         if (!senderContext) return null;
         const profileId = typeof payload.profileId === 'string' && payload.profileId.trim() ? payload.profileId.trim() : senderContext.profileId;
-        const createdContext = spawnWindowWithTab({ profileId, url: payload.url });
+        // Support both a single `url` and an `urls` array (for "Open All in new window")
+        const createdContext = spawnWindowWithTab({ profileId, url: payload.url, urls: payload.urls });
         return { windowId: createdContext.windowId, profileId };
     });
 
@@ -128,7 +137,8 @@ function registerIpcHandlers() {
         if (!isSenderTrusted(event)) return null;
         const senderContext = getWindowContextByEventSender(event.sender);
         const profileId = typeof payload.profileId === 'string' && payload.profileId.trim() ? payload.profileId.trim() : senderContext.profileId;
-        const createdContext = spawnWindowWithTab({ profileId, stealthWindow: true, url: payload.url });
+        // Support both a single `url` and an `urls` array (for "Open All in stealth window")
+        const createdContext = spawnWindowWithTab({ profileId, stealthWindow: true, url: payload.url, urls: payload.urls });
         return { windowId: createdContext.windowId, profileId };
     });
 
