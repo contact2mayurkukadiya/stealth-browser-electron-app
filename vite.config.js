@@ -56,6 +56,21 @@ const configs = {
             },
         },
     },
+    bookmark: {
+        root: 'src',
+        base: './',
+        plugins: sharedPlugins,
+        build: {
+            outDir: path.resolve(__dirname, 'renderer', 'dist'),
+            emptyOutDir: false,
+            assetsDir: 'assets',
+            target: 'esnext',
+            rollupOptions: {
+                input: path.resolve(__dirname, 'src', 'bookmark.html'),
+                output: rollupOutput(),
+            },
+        },
+    },
     settings: {
         root: 'src',
         base: './',

@@ -145,6 +145,7 @@ export default function NavBar({
   currentTabId,
   onNewTab,
   onOpenHistory,
+  onOpenBookmark,
   onDeleteBrowsingData,
   onOpenSettings,
   searchEngine = 'google',
@@ -443,7 +444,7 @@ export default function NavBar({
     });
     const historyRows = [
       { iconSrc: menuHistorySvg, label: 'Open History Page', shortcut: shortcut('⌘Y', 'Ctrl+Y'), commandId: 'openHistoryPage' },
-      { iconSrc: menuHistorySvg, label: 'Show History in Side Panel', commandId: 'historySidePanel', disabled: true },
+      // { iconSrc: menuHistorySvg, label: 'Show History in Side Panel', commandId: 'historySidePanel', disabled: true },
       { type: 'separator' },
       { header: true, label: 'Recent Tabs' },
       ...(closedRows.length ? closedRows.map((row) => ({
@@ -456,6 +457,7 @@ export default function NavBar({
     ];
     const bookmarkRowsForMenu = [
       { iconSrc: menuBookmarksSvg, label: existingBookmark ? 'Edit bookmark for this tab' : 'Bookmark this tab', commandId: 'bookmarkCurrentTab', disabled: !canBookmark },
+      { iconSrc: menuBookmarksSvg, label: 'Open bookmarks menu', commandId: 'openBookmarkPage' },
       { type: 'separator' },
       { header: true, label: 'Bookmarks' },
       ...(bookmarkRows.length ? bookmarkRows : [{ label: 'No bookmarks yet', disabled: true }]),
@@ -561,6 +563,7 @@ export default function NavBar({
           } else if (commandId === 'newStealthWindow') window.electronAPI.createStealthWindow?.();
           else if (commandId === 'openSettings') onOpenSettings?.();
           else if (commandId === 'openHistoryPage') onOpenHistory?.();
+          else if (commandId === 'openBookmarkPage') onOpenBookmark?.();
           else if (commandId === 'openDownloads') window.electronAPI.runMenuCommand?.('open-downloads');
           else if (commandId === 'deleteBrowsingData') onDeleteBrowsingData?.();
           else if (commandId === 'print') window.electronAPI.runMenuCommand?.('print-active-tab');
@@ -691,6 +694,7 @@ export default function NavBar({
     onDeleteBrowsingData,
     onNewTab,
     onOpenHistory,
+    onOpenBookmark,
     onOpenSettings,
     openBookmarkEditorForCurrentPage,
     postStarEditorPatch,

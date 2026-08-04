@@ -371,6 +371,10 @@ const C = Object.freeze({
         "HISTORY_CLEAR": "history:clear",
         "NTP_TOP_SITES": "newtab:get-top-sites",
         "BOOKMARKS_GET": "bookmarks:get",
+        "BOOKMARKS_GET_FOLDER": "bookmarks:getFolder",
+        "BOOKMARKS_SEARCH": "bookmarks:search",
+        "BOOKMARKS_DELETE": "bookmarks:delete",
+        "BOOKMARKS_UPDATE": "bookmarks:update",
         "BOOKMARKS_SAVE": "bookmarks:save",
         "BOOKMARKS_ADD": "bookmarks:add",
         "BOOKMARKS_REMOVE": "bookmarks:remove",
@@ -529,12 +533,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Bookmarks
     bookmarksGet: () => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_GET),
+    bookmarkGetFolder: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_GET_FOLDER, payload),
+    bookmarkSearch: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_SEARCH, payload),
+    bookmarkDelete: (ids) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_DELETE, ids),
+    bookmarkUpdate: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_UPDATE, payload),
     bookmarksSave: (data) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_SAVE, data),
     bookmarksAdd: (item) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_ADD, item),
     bookmarksRemove: (id) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_REMOVE, id),
     bookmarksReorder: (bar) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_REORDER, bar),
     bookmarksAddFolder: (name) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_ADD_FOLDER, name),
     bookmarksAddToFolder: (folderId, item) => ipcRenderer.invoke(C.IPC_INVOKE.BOOKMARKS_ADD_TO_FOLDER, folderId, item),
+    onBookmarksUpdated: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('bookmarks:updated', handler);
+        return () => ipcRenderer.removeListener('bookmarks:updated', handler);
+    },
 
     // History
     historySearch: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.HISTORY_SEARCH, payload),

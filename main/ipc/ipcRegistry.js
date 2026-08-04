@@ -697,7 +697,7 @@ function registerIpcHandlers() {
         let formattedUrl = url.trim();
         const { resolveInternalPageUrl, buildSearchUrl, markNextNavigationTransition } = require('../utils/navigation');
         const resolvedInternalUrl = resolveInternalPageUrl(formattedUrl);
-        if (resolvedInternalUrl !== formattedUrl) {
+        if (resolvedInternalUrl && resolvedInternalUrl !== formattedUrl) {
             tabManager.resetTabWebContentsScale(context.tabs[targetId]);
             context.tabs[targetId]?.webContents.loadURL(resolvedInternalUrl);
             return;
@@ -1300,14 +1300,44 @@ function registerIpcHandlers() {
     // === BOOKMARKS ===
     ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_GET, (e) => {
         if (!isSenderTrusted(e)) return { bar: [] };
-        const context = getWindowContextByEventSender(e.sender);
+        const context = getWindowContextByEventSender(e.sender) || getWindowContextForShellFallback();
         if (!context) return { bar: [] };
         return bookmarkService.loadBookmarks(context.profileId);
     });
 
+    ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_GET_FOLDER, (e, payload = {}) => {
+        if (!isSenderTrusted(e)) return { items: [], hasMore: false, nextCursor: null };
+        const context = getWindowContextByEventSender(e.sender) || getWindowContextForShellFallback();
+        if (!context) return { items: [], hasMore: false, nextCursor: null };
+        const { folderId, limit, cursor } = payload;
+        return bookmarkService.getFolderItems(context.profileId, folderId, limit, cursor);
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_SEARCH, (e, payload = {}) => {
+        if (!isSenderTrusted(e)) return { items: [], hasMore: false, nextCursor: null };
+        const context = getWindowContextByEventSender(e.sender) || getWindowContextForShellFallback();
+        if (!context) return { items: [], hasMore: false, nextCursor: null };
+        const { query, limit, cursor } = payload;
+        return bookmarkService.searchBookmarks(context.profileId, query, limit, cursor);
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_DELETE, (e, ids) => {
+        if (!isSenderTrusted(e)) return false;
+        const context = getWindowContextByEventSender(e.sender) || getWindowContextForShellFallback();
+        if (!context) return false;
+        return bookmarkService.deleteBookmarks(context.profileId, ids);
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_UPDATE, (e, payload) => {
+        if (!isSenderTrusted(e)) return false;
+        const context = getWindowContextByEventSender(e.sender) || getWindowContextForShellFallback();
+        if (!context) return false;
+        return bookmarkService.updateBookmark(context.profileId, payload);
+    });
+
     ipcMain.handle(C.IPC_INVOKE.BOOKMARKS_SAVE, (e, data) => {
         if (!isSenderTrusted(e)) return false;
-        const context = getWindowContextByEventSender(e.sender);
+        const context = getWindowContextByEventSender(e.sender) || getWindowContextForShellFallback();
         if (!context) return false;
         bookmarkService.saveBookmarks(context.profileId, data);
         bookmarkService.broadcastBookmarks(context.profileId);

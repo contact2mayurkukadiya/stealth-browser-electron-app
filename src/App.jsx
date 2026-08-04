@@ -394,6 +394,11 @@ function AppShell() {
     openSingletonTab(URL_C.HISTORY_NAVIGATE, URL_C.HISTORY_DISPLAY);
   }, [openSingletonTab]);
 
+  const handleOpenBookmark = useCallback(() => {
+    console.log("Opening Bookmarks")
+    openSingletonTab(URL_C.BOOKMARK_NAVIGATE, URL_C.BOOKMARK_DISPLAY);
+  }, [openSingletonTab]);
+
   const handleDeleteBrowsingData = useCallback(() => {
     const { tabs, tabOrder } = stateRef.current;
     const existingId = tabOrder.find(id => tabs[id]?.url === URL_C.HISTORY_DISPLAY);
@@ -425,6 +430,7 @@ function AppShell() {
           if (id) window.electronAPI.reload(id);
         },
         openHistory: handleOpenHistory,
+        openBookmark: handleOpenBookmark,
         switchTabDir: handleSwitchTabDir,
         newTabToRight,
         duplicateTab,
@@ -443,6 +449,7 @@ function AppShell() {
       createTab,
       closeTab,
       handleOpenHistory,
+      handleOpenBookmark,
       handleSwitchTabDir,
       newTabToRight,
       duplicateTab,
@@ -506,6 +513,7 @@ function AppShell() {
     },
     onSwitchTabDir: handleSwitchTabDir,
     onHistory: handleOpenHistory,
+    onBookmark: handleOpenBookmark,
     onSettings: handleOpenSettings,
     onTabNewToRight: newTabToRight,
     onTabDuplicate: duplicateTab,
@@ -675,6 +683,7 @@ function AppShell() {
         currentTabId={currentTabId}
         onNewTab={createTab}
         onOpenHistory={handleOpenHistory}
+        onOpenBookmark={handleOpenBookmark}
         onDeleteBrowsingData={handleDeleteBrowsingData}
         onOpenSettings={handleOpenSettings}
         searchEngine={searchEngine}

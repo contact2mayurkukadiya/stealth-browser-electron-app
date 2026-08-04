@@ -12,10 +12,12 @@ export function isInvsurfBrandedInternalTab(tab) {
   if (lower === URL_C.NTP_DISPLAY || lower.startsWith(URL_C.NTP_LOCALHOST_PREFIX)) return true;
   if (lower.includes(URL_C.PATH_NEWTAB_HTML)) return true;
   if (lower === URL_C.HISTORY_DISPLAY || lower.startsWith(URL_C.HISTORY_DISPLAY)) return true;
+  if (lower === URL_C.BOOKMARK_DISPLAY || lower.startsWith(URL_C.BOOKMARK_DISPLAY)) return true;
   if (lower === URL_C.STEALTH_HISTORY || lower.startsWith(URL_C.STEALTH_HISTORY)) return true;
   if (lower === URL_C.SETTINGS_DISPLAY || lower.startsWith(URL_C.SETTINGS_DISPLAY)) return true;
   if (lower === URL_C.STEALTH_SETTINGS || lower.startsWith(URL_C.STEALTH_SETTINGS)) return true;
   if (lower.includes(URL_C.PATH_HISTORY_HTML)) return true;
+  if (lower.includes(URL_C.PATH_BOOKMARK_HTML)) return true;
   if (lower.includes(URL_C.PATH_SETTINGS_HTML)) return true;
   return false;
 }

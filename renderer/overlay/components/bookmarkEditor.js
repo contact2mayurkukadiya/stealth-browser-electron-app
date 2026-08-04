@@ -61,7 +61,7 @@ export function renderBookmarkEditor(payload) {
     sel.className = 'co-bk-select';
     const optRoot = document.createElement('option');
     optRoot.value = 'root';
-    optRoot.textContent = 'Bookmarks bar';
+    optRoot.textContent = 'Bookmarks Bar';
     sel.appendChild(optRoot);
     const folderIds = { root: 1 };
     const rawFolders = Array.isArray(payload.folders) ? payload.folders : [];
