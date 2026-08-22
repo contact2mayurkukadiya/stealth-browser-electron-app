@@ -272,6 +272,7 @@ export default function SettingsApp() {
   const [isStealthWindow, setIsStealthWindow] = useState(false);
   // Track whether contentProtection was changed since load (to show relaunch hint)
   const [pendingRelaunch, setPendingRelaunch] = useState(false);
+  const [keyboardPermission, setKeyboardPermission] = useState(null);
   const [activeView, setActiveView] = useState('privacy/main');
   const [settingsSearch, setSettingsSearch] = useState('');
   const [cookieSearch, setCookieSearch] = useState('');
@@ -329,6 +330,27 @@ export default function SettingsApp() {
     await persist({ ...settings, contentProtection: value });
     setPendingRelaunch(true);
   }, [settings, persist]);
+
+  const refreshKeyboardPermission = useCallback(async () => {
+    const api = window.electronAPI;
+    if (!api?.virtualKeyboardPermissionStatus) return;
+    try {
+      const status = await api.virtualKeyboardPermissionStatus();
+      setKeyboardPermission(status);
+    } catch (_) {
+      setKeyboardPermission(null);
+    }
+  }, []);
+
+  const handleNonActivatingInteractionChange = useCallback(async (value) => {
+    await persist({ ...settings, nonActivatingInteraction: value });
+    await refreshKeyboardPermission();
+  }, [settings, persist, refreshKeyboardPermission]);
+
+  useEffect(() => {
+    if (!settings?.nonActivatingInteraction) return;
+    void refreshKeyboardPermission();
+  }, [settings?.nonActivatingInteraction, refreshKeyboardPermission]);
 
   const handleStartupChange = useCallback(async (value) => {
     await persist({ ...settings, startupBehavior: value });
@@ -863,6 +885,36 @@ export default function SettingsApp() {
     <section className="settings-section">
       <h2 className="settings-section__title">Privacy and security</h2>
       <div className="settings-card">
+        <div className="setting-row">
+          <div className="setting-row__text">
+            <span className="setting-row__label">Non-activating interaction</span>
+            <span className="setting-row__desc">
+              Keep InviSurf mouse-interactive without activating the app or stealing keyboard focus
+              from the previously active application. Shadow keyboard input requires macOS Accessibility
+              permission.
+            </span>
+          </div>
+          <Toggle
+            checked={!!settings.nonActivatingInteraction}
+            onChange={handleNonActivatingInteractionChange}
+          />
+        </div>
+
+        {settings.nonActivatingInteraction && keyboardPermission && !keyboardPermission.granted && (
+          <div className="relaunch-banner">
+            <span className="relaunch-banner__text">
+              Accessibility permission is required for keyboard shadow input. Mouse interaction still works.
+            </span>
+            <button
+              type="button"
+              className="relaunch-btn"
+              onClick={() => window.electronAPI?.requestVirtualKeyboardPermission?.().then(refreshKeyboardPermission)}
+            >
+              Open System Settings
+            </button>
+          </div>
+        )}
+
         <div className="setting-row">
           <div className="setting-row__text">
             <span className="setting-row__label">Enable DRM (Digital rights Management)</span>

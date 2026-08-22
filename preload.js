@@ -352,6 +352,10 @@ const C = Object.freeze({
         "COOKIE_SETTINGS_GET": "cookies:settings-get",
         "COOKIE_SETTINGS_UPDATE": "cookies:settings-update",
         "CLIPBOARD_WRITE": "clipboard:write-text",
+        "CLIPBOARD_READ": "clipboard:read-text",
+        "VIRTUAL_KEYBOARD_FOCUS": "virtual-keyboard:set-focus",
+        "VIRTUAL_KEYBOARD_PERMISSION": "virtual-keyboard:permission-status",
+        "VIRTUAL_KEYBOARD_REQUEST_PERMISSION": "virtual-keyboard:request-permission",
         "APP_RELAUNCH": "app:relaunch",
         "APP_LOG_INFO": "app:log-info",
         "APP_LOG_FILES": "app:log-files",
@@ -436,7 +440,9 @@ const C = Object.freeze({
         "OMNIBOX_OVERLAY_DELIVERED": "omnibox-overlay:delivered",
         "THEME_APPLY": "theme:apply",
         "TAB_AWOKEN": "tab:awoken",
-        "TOOLTIP_UPDATE": "tooltip:update"
+        "TOOLTIP_UPDATE": "tooltip:update",
+        "VIRTUAL_KEYBOARD_EVENT": "virtual-keyboard:event",
+        "VIRTUAL_KEYBOARD_STATE": "virtual-keyboard:state"
     }
 });
 
@@ -653,6 +659,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     compatDiagClear: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.COMPAT_CLEAR, payload),
     identityDiagGetReport: (payload) => ipcRenderer.invoke(C.IPC_INVOKE.IDENTITY_DIAG_GET_REPORT, payload),
     clipboardWriteText: (text) => ipcRenderer.invoke(C.IPC_INVOKE.CLIPBOARD_WRITE, { text: String(text || '') }),
+    clipboardReadText: () => ipcRenderer.invoke(C.IPC_INVOKE.CLIPBOARD_READ),
+
+    setVirtualKeyboardFocus: (payload) => {
+        const active = typeof payload === 'boolean' ? payload : !!payload?.active;
+        const body = typeof payload === 'object' && payload ? payload : { active };
+        return ipcRenderer.invoke(C.IPC_INVOKE.VIRTUAL_KEYBOARD_FOCUS, body);
+    },
+    onVirtualKeyboardEvent: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on(C.IPC_EVENT.VIRTUAL_KEYBOARD_EVENT, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.VIRTUAL_KEYBOARD_EVENT, handler);
+    },
+    onVirtualKeyboardState: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on(C.IPC_EVENT.VIRTUAL_KEYBOARD_STATE, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.VIRTUAL_KEYBOARD_STATE, handler);
+    },
+    virtualKeyboardPermissionStatus: () => ipcRenderer.invoke(C.IPC_INVOKE.VIRTUAL_KEYBOARD_PERMISSION),
+    requestVirtualKeyboardPermission: () => ipcRenderer.invoke(C.IPC_INVOKE.VIRTUAL_KEYBOARD_REQUEST_PERMISSION),
 
     // New Tab Page
     ntpGetTopSites: () => ipcRenderer.invoke(C.IPC_INVOKE.NTP_TOP_SITES),
@@ -684,3 +709,42 @@ contextBridge.exposeInMainWorld('cookieAPI', {
     updateSettings: (config) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, { config }),
     updateConfig: (profileId, config) => ipcRenderer.invoke(C.IPC_INVOKE.COOKIE_SETTINGS_UPDATE, { profileId, config }),
 });
+
+function isTabWebContentsContext() {
+    try {
+        const href = window.location?.href || '';
+        return !href.startsWith('app://');
+    } catch (_) {
+        return false;
+    }
+}
+
+function resolveEditableTarget(node) {
+    let el = node;
+    while (el && el !== document.body) {
+        if (el.matches?.('input:not([type="hidden"]):not([disabled]):not([readonly]), textarea:not([disabled]):not([readonly]), [contenteditable="true"]')) {
+            return el;
+        }
+        if (el.matches?.('[data-virtual-input="off"]')) return null;
+        el = el.parentElement;
+    }
+    return null;
+}
+
+if (isTabWebContentsContext()) {
+    window.addEventListener('mousedown', (event) => {
+        const target = resolveEditableTarget(event.target);
+        if (!target) {
+            ipcRenderer.invoke(C.IPC_INVOKE.VIRTUAL_KEYBOARD_FOCUS, { active: false }).catch(() => {});
+            return;
+        }
+        try {
+            target.focus({ preventScroll: true });
+        } catch (_) { /* virtual-only fallback */ }
+        ipcRenderer.invoke(C.IPC_INVOKE.VIRTUAL_KEYBOARD_FOCUS, {
+            active: true,
+            kind: 'tab',
+            targetId: target.id || target.name || target.tagName?.toLowerCase?.() || 'editable',
+        }).catch(() => {});
+    }, true);
+}

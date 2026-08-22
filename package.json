@@ -5,6 +5,8 @@
   "main": "main/index.js",
   "scripts": {
     "start": "npm run build:renderer && electron .",
+    "build:native": "node-gyp rebuild",
+    "postinstall": "electron-rebuild -f -w invisurf_non_activating",
     "build:renderer": "node scripts/renderer-build-all.cjs",
     "dev": "node scripts/renderer-build-all.cjs && concurrently -k \"node scripts/renderer-watch.cjs\" \"node scripts/main-watch.cjs\"",
     "dev:renderer": "node scripts/renderer-watch.cjs",
@@ -18,7 +20,8 @@
     "productName": "InviSurf",
     "copyright": "Copyright © 2026 Mark Oliver",
     "asarUnpack": [
-      "node_modules/@journeyapps/sqlcipher/**"
+      "node_modules/@journeyapps/sqlcipher/**",
+      "build/Release/invisurf_non_activating.node"
     ],
     "mac": {
       "icon": "renderer/assets/logo/icon.png",
@@ -52,6 +55,7 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "@reduxjs/toolkit": "^2.5.1",
     "@vitejs/plugin-react": "^4.3.4",
     "chokidar": "^3.6.0",
@@ -59,6 +63,8 @@
     "electron": "^41.0.4",
     "electron-builder": "^26.8.1",
     "electron-reloader": "^1.2.3",
+    "node-addon-api": "^8.3.1",
+    "node-gyp": "^11.1.0",
     "png-to-ico": "^2.1.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

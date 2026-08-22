@@ -108,6 +108,8 @@ app.whenReady().then(async () => {
 
     State.startupSessionDoc = sessionService.readDecodedSessionDoc();
     registerIpcHandlers();
+    const { initNonActivatingInteractionFromSettings } = require('./services/nonActivatingService');
+    initNonActivatingInteractionFromSettings();
     windowManager.createProfilePickerWindow();
 
     if (!app.isPackaged) {
@@ -121,8 +123,11 @@ app.on('activate', () => {
     if (State.appIsQuitting) return;
     if (State.windowContextsById.size > 0) return;
     if (State.profilePickerWindow && !State.profilePickerWindow.isDestroyed()) {
-        State.profilePickerWindow.show();
-        State.profilePickerWindow.focus();
+        const { showBrowserWindow, shouldSkipOsFocus } = require('./windows/windowManager');
+        showBrowserWindow(State.profilePickerWindow);
+        if (!shouldSkipOsFocus()) {
+            State.profilePickerWindow.focus();
+        }
         return;
     }
     windowManager.createProfilePickerWindow();

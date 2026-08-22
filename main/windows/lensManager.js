@@ -823,7 +823,10 @@ async function startGoogleLensSelection(context = getWindowContextByBrowserWindo
     const existingLens = findActiveLensTabForProfile(context.profileId);
     if (existingLens) {
         try {
-            if (!existingLens.context.window.isDestroyed()) existingLens.context.window.focus();
+            const { shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
+            if (!shouldSkipOsFocus() && !existingLens.context.window.isDestroyed()) {
+                existingLens.context.window.focus();
+            }
         } catch (_) { }
         if (existingLens.tabId !== context.activeTabId || existingLens.context !== context) {
             activateTabInContext(existingLens.context, existingLens.tabId);
@@ -1013,7 +1016,10 @@ async function captureGoogleLensSelection(context, rect = {}) {
             require('./overlayManager').ensureChromeOverlayOnTop(context);
             try {
                 const sidebar = lensSession.sidebarView;
-                if (sidebar && !sidebar.webContents.isDestroyed()) sidebar.webContents.focus();
+                const { shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
+                if (!shouldSkipOsFocus() && sidebar && !sidebar.webContents.isDestroyed()) {
+                    sidebar.webContents.focus();
+                }
             } catch (_) { }
         }
         return true;

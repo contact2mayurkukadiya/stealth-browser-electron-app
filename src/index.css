@@ -1768,4 +1768,11 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     .bk-folder-prompt button:hover {
         background: rgba(23, 27, 32, 0.1);
     }
+
+/* Virtual keyboard focus indicator (ghost / shadow input mode) */
+.invisurf-virtual-focus {
+    outline: 2px solid var(--chrome-accent, #8ab4f8) !important;
+    outline-offset: 1px;
+    caret-color: var(--chrome-accent, #8ab4f8);
+}
 }

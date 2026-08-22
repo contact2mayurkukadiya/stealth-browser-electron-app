@@ -25,6 +25,14 @@ const {
     layoutOmniboxOverlayBounds
 } = require('./overlayManager');
 
+const {
+    getGhostBrowserWindowOptions,
+    attachGhostWindowLifecycle,
+    enableGhostWindow,
+    showBrowserWindow,
+    shouldSkipOsFocus,
+} = require('../ghostWindow/GhostWindowController');
+
 /** Usable screen rectangle (excludes dock/taskbar); keeps custom title bar — not OS fullscreen. */
 function getPrimaryWorkAreaBounds() {
     try {
@@ -80,8 +88,12 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
                 titleBarOverlay: stealthWindow ? stealthTitleBarOverlay : getTitleBarOverlayOptionsForNativeTheme(),
             }
         ),
+        ...getGhostBrowserWindowOptions(),
         webPreferences: buildSecureWebPreferences({ partition }),
     });
+
+    attachGhostWindowLifecycle(window);
+    enableGhostWindow(window);
 
     applyIdentityToWebContents(window.webContents);
     applyShellWindowSecurity(window, { permissionFullscreen: C.PERMISSION.FULLSCREEN });
@@ -305,8 +317,10 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
 function createProfilePickerWindow() {
     if (State.profilePickerWindow && !State.profilePickerWindow.isDestroyed()) {
-        State.profilePickerWindow.show();
-        State.profilePickerWindow.focus();
+        showBrowserWindow(State.profilePickerWindow);
+        if (!shouldSkipOsFocus()) {
+            State.profilePickerWindow.focus();
+        }
         return;
     }
     const workArea = screen.getPrimaryDisplay().workArea;
@@ -320,8 +334,12 @@ function createProfilePickerWindow() {
         title: 'Choose profile',
         titleBarStyle: 'default',
         fullscreen: false,
+        ...getGhostBrowserWindowOptions(),
         webPreferences: buildSecureWebPreferences(),
     });
+
+    attachGhostWindowLifecycle(picker);
+    enableGhostWindow(picker);
 
     applyProfilePickerSecurity(picker, loadSettings().contentProtection);
     applyIdentityToWebContents(picker.webContents);
@@ -343,5 +361,7 @@ function createProfilePickerWindow() {
 module.exports = {
     getPrimaryWorkAreaBounds,
     createWindow,
-    createProfilePickerWindow
+    createProfilePickerWindow,
+    showBrowserWindow,
+    shouldSkipOsFocus,
 };
