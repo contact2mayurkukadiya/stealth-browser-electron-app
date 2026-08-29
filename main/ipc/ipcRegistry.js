@@ -913,10 +913,6 @@ function registerIpcHandlers() {
             await cookieService.cleanupBlockedCookiesForProfile(profileId);
         }
         settingsService.applyColorThemeFromSettings();
-        if (Object.prototype.hasOwnProperty.call(patch, 'nonActivatingInteraction')) {
-            const { applyNonActivatingInteractionFromSettings } = require('../services/nonActivatingService');
-            applyNonActivatingInteractionFromSettings(next);
-        }
         settingsService.broadcastSettingsUpdate(next);
         return true;
     });
@@ -1168,41 +1164,6 @@ function registerIpcHandlers() {
     ipcMain.handle(C.IPC_INVOKE.CLIPBOARD_READ, (e) => {
         if (!isSenderTrusted(e)) return '';
         return clipboard.readText();
-    });
-
-    ipcMain.handle(C.IPC_INVOKE.VIRTUAL_KEYBOARD_FOCUS, (e, payload = {}) => {
-        if (!isSenderTrusted(e)) return { ok: false };
-        const globalInputController = require('../input/GlobalInputController');
-        const State = require('../state');
-        const active = !!payload.active;
-        const kind = payload.kind || (State.webContentsIdToTabId.has(e.sender.id) ? 'tab' : 'shell');
-        const tabId = kind === 'tab' ? State.webContentsIdToTabId.get(e.sender.id) : null;
-        return globalInputController.setVirtualKeyboardFocus({
-            active,
-            kind,
-            webContentsId: active ? e.sender.id : null,
-            tabId: tabId || null,
-            targetId: payload.targetId || null,
-        });
-    });
-
-    ipcMain.handle(C.IPC_INVOKE.VIRTUAL_KEYBOARD_PERMISSION, (e) => {
-        if (!isSenderTrusted(e)) return { supported: false, granted: false };
-        const permissionManager = require('../input/PermissionManager');
-        const globalInputController = require('../input/GlobalInputController');
-        return {
-            ...permissionManager.getPermissionStatus(),
-            monitoring: globalInputController.isMonitorRunning(),
-        };
-    });
-
-    ipcMain.handle(C.IPC_INVOKE.VIRTUAL_KEYBOARD_REQUEST_PERMISSION, (e) => {
-        if (!isSenderTrusted(e)) return { ok: false, granted: false };
-        const permissionManager = require('../input/PermissionManager');
-        const result = permissionManager.requestPermission();
-        const { applyNonActivatingInteractionFromSettings } = require('../services/nonActivatingService');
-        applyNonActivatingInteractionFromSettings(require('../services/settingsService').loadSettings());
-        return result;
     });
 
     ipcMain.handle(C.IPC_INVOKE.APP_RELAUNCH, (e) => {

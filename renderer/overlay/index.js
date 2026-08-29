@@ -10,9 +10,6 @@ import { renderSiteInfo } from './components/siteInfo.js';
 import { renderCookieControls, renderDownloadPanel } from './components/compactPanels.js';
 import { renderOmniboxSuggestions } from './components/omnibox.js';
 import { renderLensSelection } from './components/lensSelection.js';
-import { bootstrapVirtualInput } from '../input/bootstrapVirtualInput.js';
-
-bootstrapVirtualInput();
 
 DOM.backdrop.addEventListener('mousedown', function () {
     notifyHost({ type: 'dismiss' });

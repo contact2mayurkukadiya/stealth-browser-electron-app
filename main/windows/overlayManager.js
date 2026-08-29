@@ -127,10 +127,6 @@ function ensureChromeOverlayOnTop(context) {
         console.error('ensureChromeOverlayOnTop', err?.message || err);
     }
 
-    const { reassertGhostWindow, isNonActivatingInteractionEnabled } = require('../ghostWindow/GhostWindowController');
-    if (isNonActivatingInteractionEnabled()) {
-        reassertGhostWindow(context.window);
-    }
 }
 
 function clampNumber(value, min, max) {
@@ -394,16 +390,11 @@ function deliverOmniboxOverlayPatch(context, patch) {
 function focusChromeOmniboxOverlayWebContents(context) {
     if (!context?.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) return;
     if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
-    const { shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
     try {
-        if (!shouldSkipOsFocus() && context.window && !context.window.isDestroyed()) {
-            context.window.focus();
-        }
+        if (context.window && !context.window.isDestroyed()) context.window.focus();
     } catch (_) { /* ignore */ }
     try {
-        if (!shouldSkipOsFocus()) {
-            context.chromeOmniboxOverlayView.webContents.focus();
-        }
+        context.chromeOmniboxOverlayView.webContents.focus();
     } catch (err) {
         console.error('focusChromeOmniboxOverlayWebContents', err?.message || err);
     }
@@ -470,16 +461,11 @@ function dismissChromeShellMenuOverlayOnBlur(context) {
 function focusChromeShellMenuOverlayWebContents(context) {
     if (!context?.chromeShellMenuOverlayView || context.chromeShellMenuOverlayView.webContents.isDestroyed()) return;
     if ((context.chromeShellMenuOverlayAcquireCount || 0) <= 0) return;
-    const { shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
     try {
-        if (!shouldSkipOsFocus() && context.window && !context.window.isDestroyed()) {
-            context.window.focus();
-        }
+        if (context.window && !context.window.isDestroyed()) context.window.focus();
     } catch (_) { /* ignore */ }
     try {
-        if (!shouldSkipOsFocus()) {
-            context.chromeShellMenuOverlayView.webContents.focus();
-        }
+        context.chromeShellMenuOverlayView.webContents.focus();
     } catch (err) {
         console.error('focusChromeShellMenuOverlayWebContents', err?.message || err);
     }

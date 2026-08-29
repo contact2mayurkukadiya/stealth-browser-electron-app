@@ -310,9 +310,6 @@ const IPC_INVOKE = freeze({
   COOKIE_SETTINGS_UPDATE: 'cookies:settings-update',
   CLIPBOARD_WRITE: 'clipboard:write-text',
   CLIPBOARD_READ: 'clipboard:read-text',
-  VIRTUAL_KEYBOARD_FOCUS: 'virtual-keyboard:set-focus',
-  VIRTUAL_KEYBOARD_PERMISSION: 'virtual-keyboard:permission-status',
-  VIRTUAL_KEYBOARD_REQUEST_PERMISSION: 'virtual-keyboard:request-permission',
   APP_RELAUNCH: 'app:relaunch',
   APP_LOG_INFO: 'app:log-info',
   APP_LOG_FILES: 'app:log-files',
@@ -401,8 +398,6 @@ const IPC_EVENT = freeze({
   THEME_APPLY: 'theme:apply',
   TAB_AWOKEN: 'tab:awoken',
   TOOLTIP_UPDATE: 'tooltip:update',
-  VIRTUAL_KEYBOARD_EVENT: 'virtual-keyboard:event',
-  VIRTUAL_KEYBOARD_STATE: 'virtual-keyboard:state',
 });
 
 /** Custom DOM events (renderer-only) */

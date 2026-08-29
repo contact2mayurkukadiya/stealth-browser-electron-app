@@ -186,16 +186,9 @@ function layoutActiveTabView(context, tabId = context?.activeTabId) {
 
 function sendOmniboxFocusToShell(context, tabId, selectAll, openOverlay = false) {
     if (!context?.window || context.window.isDestroyed()) return;
-    const { shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
-    if (!shouldSkipOsFocus()) {
-        try {
-            context.window.focus();
-        } catch (_) {
-            /* ignore */
-        }
-        if (context.window.webContents && !context.window.webContents.isDestroyed()) {
-            context.window.webContents.focus();
-        }
+    try { context.window.focus(); } catch (_) { /* ignore */ }
+    if (context.window.webContents && !context.window.webContents.isDestroyed()) {
+        context.window.webContents.focus();
     }
     if (!context.window.webContents || context.window.webContents.isDestroyed()) return;
     context.window.webContents.send(C.IPC_EVENT.OMNIBOX_FOCUS, {
@@ -228,9 +221,8 @@ function activateTabInContext(context, id) {
     if (State.detachedTabWindows.has(id)) {
         const w = State.detachedTabWindows.get(id);
         if (w && !w.isDestroyed()) {
-            const { showBrowserWindow, shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
-            showBrowserWindow(w);
-            if (!shouldSkipOsFocus()) w.focus();
+            w.show();
+            w.focus();
         }
         return true;
     }
@@ -250,10 +242,7 @@ function activateTabInContext(context, id) {
     const activeUrl = context.tabs[id]?.webContents.getURL() ?? '';
     const blankActive = isBlankTab(activeUrl);
     if (!blankActive) {
-        const { shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
-        if (!shouldSkipOsFocus()) {
-            context.tabs[id].webContents.focus();
-        }
+        context.tabs[id].webContents.focus();
     }
     if (context.window && !context.window.webContents.isDestroyed()) {
         context.window.webContents.send(C.IPC_EVENT.TAB_SWITCHED, { id });
@@ -269,23 +258,15 @@ function activateTabInContext(context, id) {
     }
 
     if (blankActive) {
-        const { shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
-        if (!shouldSkipOsFocus()) {
-            context.omniboxFocusGen = (context.omniboxFocusGen || 0) + 1;
-            const omniboxGen = context.omniboxFocusGen;
-            setImmediate(() => {
-                if (context.omniboxFocusGen !== omniboxGen) return;
-                sendOmniboxFocusToShell(context, id, true, false);
-            });
-        }
+        context.omniboxFocusGen = (context.omniboxFocusGen || 0) + 1;
+        const omniboxGen = context.omniboxFocusGen;
+        setImmediate(() => {
+            if (context.omniboxFocusGen !== omniboxGen) return;
+            sendOmniboxFocusToShell(context, id, true, false);
+        });
     }
 
     overlayManager.ensureChromeOverlayOnTop(context);
-
-    const { reassertGhostWindow, shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
-    if (shouldSkipOsFocus()) {
-        reassertGhostWindow(context.window);
-    }
 
     return true;
 }
@@ -574,10 +555,7 @@ function triggerFindInActiveTab() {
     const activeView = getActiveTabView();
     if (!activeView || activeView.webContents.isDestroyed()) return false;
     try {
-        const { shouldSkipOsFocus } = require('../ghostWindow/GhostWindowController');
-        if (!shouldSkipOsFocus()) {
-            activeView.webContents.focus();
-        }
+        activeView.webContents.focus();
         const modifier = process.platform === 'darwin' ? 'meta' : 'control';
         activeView.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'F', modifiers: [modifier] });
         activeView.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'F', modifiers: [modifier] });

@@ -54,10 +54,6 @@ function handleGracefulShutdown(event, appLogger, app) {
             console.error('Failed to complete shutdown cleanup:', error);
         })
         .finally(() => {
-            try {
-                require('../input/GlobalInputController').shutdownGlobalInput();
-            } catch (_) { /* ignore */ }
-
             State.appHistoryClosed = true;
             State.appCookieCleanupClosed = true;
 
