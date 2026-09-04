@@ -239,11 +239,18 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 .header--ghost-window {
     border-bottom: 1px solid var(--chrome-tab-separator, rgba(0, 0, 0, 0.12));
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    -webkit-app-region: no-drag !important;
+}
+
+.header--ghost-window,
+.header--ghost-window * {
+    -webkit-app-region: no-drag !important;
 }
 
 .tab-bar--ghost {
     user-select: none;
     -webkit-user-select: none;
+    -webkit-app-region: no-drag !important;
 }
 
 .ghost-badge {

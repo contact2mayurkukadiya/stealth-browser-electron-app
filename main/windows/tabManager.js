@@ -186,7 +186,7 @@ function layoutActiveTabView(context, tabId = context?.activeTabId) {
 
 function sendOmniboxFocusToShell(context, tabId, selectAll, openOverlay = false) {
     if (!context?.window || context.window.isDestroyed()) return;
-    if (context.isInitialGhostSpawn) {
+    if (context.isInitialGhostSpawn || context.ghostWindow) {
         if (!context.window.webContents || context.window.webContents.isDestroyed()) return;
         context.window.webContents.send(C.IPC_EVENT.OMNIBOX_FOCUS, {
             tabId,

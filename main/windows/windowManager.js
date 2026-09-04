@@ -95,7 +95,7 @@ function createWindow({
                     height: workArea.height,
                 }
                 : { width: 1200, height: 800 })),
-        titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+        titleBarStyle: (isMac && !isGhost) ? 'hiddenInset' : 'hidden',
         ...(isMac
             ? { trafficLightPosition: { x: 15, y: 15 } }
             : {
@@ -114,6 +114,13 @@ function createWindow({
         ),
         webPreferences: buildSecureWebPreferences({ partition }),
     });
+
+    if (isGhost) {
+        try {
+            const { applyGhostMode } = require('../native');
+            applyGhostMode(window);
+        } catch (_) { }
+    }
 
     applyIdentityToWebContents(window.webContents);
     applyShellWindowSecurity(window, { permissionFullscreen: C.PERMISSION.FULLSCREEN });
@@ -172,10 +179,14 @@ function createWindow({
     const { handleShortcuts } = require('../ui/shortcuts');
     window.webContents.on('before-input-event', handleShortcuts);
 
-    if (!State.mainWindow || State.mainWindow.isDestroyed()) State.mainWindow = window;
+    if (!context.ghostWindow && (!State.mainWindow || State.mainWindow.isDestroyed())) {
+        State.mainWindow = window;
+    }
     window.on('focus', () => {
         if (context.isInitialGhostSpawn) context.isInitialGhostSpawn = false;
-        State.mainWindow = window;
+        if (!context.ghostWindow) {
+            State.mainWindow = window;
+        }
         menuUI.rebuildApplicationMenu();
     });
 

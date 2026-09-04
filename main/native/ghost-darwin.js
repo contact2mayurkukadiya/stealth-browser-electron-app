@@ -30,6 +30,9 @@ let sel_setCollectionBehavior = null;
 let sel_setHidesOnDeactivate = null;
 let sel_isKindOfClass = null;
 let sel_respondsToSelector = null;
+let sel_setBecomesKeyOnlyIfNeeded = null;
+let sel_setPreventsActivation = null;
+let sel_setFloatingPanel = null;
 
 let nsWindowClass = null;
 let nsPanelClass = null;
@@ -61,6 +64,9 @@ function initDarwinNative() {
         sel_setHidesOnDeactivate = sel_registerName('setHidesOnDeactivate:');
         sel_isKindOfClass = sel_registerName('isKindOfClass:');
         sel_respondsToSelector = sel_registerName('respondsToSelector:');
+        sel_setBecomesKeyOnlyIfNeeded = sel_registerName('setBecomesKeyOnlyIfNeeded:');
+        sel_setPreventsActivation = sel_registerName('_setPreventsActivation:');
+        sel_setFloatingPanel = sel_registerName('setFloatingPanel:');
 
         nsWindowClass = objc_getClass('NSWindow');
         nsPanelClass = objc_getClass('NSPanel');
@@ -160,6 +166,35 @@ function makeGhostDarwin(handleBuffer) {
             }
         } catch (e) {
             console.warn('[ghost-darwin] setStyleMask failed:', e?.message || e);
+        }
+
+        // 5. If window is an NSPanel, set becomesKeyOnlyIfNeeded to YES so clicking titlebar/frame does not activate
+        try {
+            const isPanel = nsPanelClass ? msgSend_bool_id(nsWindow, sel_isKindOfClass, nsPanelClass) : false;
+            if (isPanel && sel_respondsToSelector && sel_setBecomesKeyOnlyIfNeeded && msgSend_bool_id(nsWindow, sel_respondsToSelector, sel_setBecomesKeyOnlyIfNeeded)) {
+                msgSend_void_bool(nsWindow, sel_setBecomesKeyOnlyIfNeeded, true);
+            }
+        } catch (e) {
+            console.warn('[ghost-darwin] setBecomesKeyOnlyIfNeeded failed:', e?.message || e);
+        }
+
+        // 6. Set _setPreventsActivation:YES so clicks on the titlebar / NSTitlebarView never steal activation
+        try {
+            if (sel_respondsToSelector && sel_setPreventsActivation && msgSend_bool_id(nsWindow, sel_respondsToSelector, sel_setPreventsActivation)) {
+                msgSend_void_bool(nsWindow, sel_setPreventsActivation, true);
+            }
+        } catch (e) {
+            console.warn('[ghost-darwin] _setPreventsActivation failed:', e?.message || e);
+        }
+
+        // 7. If window is an NSPanel, set floatingPanel:YES so AppKit treats it as an auxiliary floating panel
+        try {
+            const isPanel = nsPanelClass ? msgSend_bool_id(nsWindow, sel_isKindOfClass, nsPanelClass) : false;
+            if (isPanel && sel_respondsToSelector && sel_setFloatingPanel && msgSend_bool_id(nsWindow, sel_respondsToSelector, sel_setFloatingPanel)) {
+                msgSend_void_bool(nsWindow, sel_setFloatingPanel, true);
+            }
+        } catch (e) {
+            console.warn('[ghost-darwin] setFloatingPanel failed:', e?.message || e);
         }
 
         return true;

@@ -47,8 +47,11 @@ function AppShell() {
   const stealthWindowRef = useRef(!!(typeof window !== 'undefined' && window.__INVISURF_STEALTH_WINDOW__));
   const isStealthShell = stealthWindowRef.current;
   /** True for dedicated ghost (non-activating) windows. */
-  const ghostWindowRef = useRef(!!(typeof window !== 'undefined' && window.__INVISURF_GHOST_WINDOW__));
-  const isGhostShell = ghostWindowRef.current;
+  const [isGhostShell, setIsGhostShell] = useState(
+    () => !!(typeof window !== 'undefined' && (window.__INVISURF_GHOST_WINDOW__ || window.__APP_BOOTSTRAP?.ghostWindow))
+  );
+  const ghostWindowRef = useRef(isGhostShell);
+  ghostWindowRef.current = isGhostShell;
 
   const [searchTabsOpen, setSearchTabsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -545,6 +548,7 @@ function AppShell() {
       }
       if (bootstrap?.ghostWindow) {
         ghostWindowRef.current = true;
+        setIsGhostShell(true);
       }
 
       // 1. Load bookmarks and settings in parallel

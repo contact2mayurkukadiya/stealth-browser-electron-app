@@ -48,6 +48,8 @@ export default function TabBar({
     if (e.button !== 0) return;
     if (e.target.closest('button, .tab, input')) return;
 
+    e.preventDefault();
+
     let lastX = e.screenX;
     let lastY = e.screenY;
 
