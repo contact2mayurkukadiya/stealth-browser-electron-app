@@ -543,6 +543,9 @@ function AppShell() {
       if (bootstrap?.stealthWindow) {
         stealthWindowRef.current = true;
       }
+      if (bootstrap?.ghostWindow) {
+        ghostWindowRef.current = true;
+      }
 
       // 1. Load bookmarks and settings in parallel
       const [bkData, settingsData] = await Promise.all([

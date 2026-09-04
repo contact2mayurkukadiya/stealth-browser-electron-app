@@ -20,6 +20,9 @@ async function bootstrapShellTheme() {
   try {
     const api = window.electronAPI;
     const bootstrap = api?.windowGetBootstrap ? await api.windowGetBootstrap() : null;
+    if (bootstrap) {
+      window.__APP_BOOTSTRAP = bootstrap;
+    }
     if (bootstrap?.ghostWindow) {
       window.__INVISURF_GHOST_WINDOW__ = true;
     }

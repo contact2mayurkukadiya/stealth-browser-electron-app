@@ -99,7 +99,19 @@ function captureClosedTabSnapshot(context, tabId) {
     if (context.sleepingTabs[tabId]) {
         const sleep = context.sleepingTabs[tabId];
         const displayUrl = toDisplayUrl(sleep.url || '');
-        if (!canStoreRecentlyClosedUrl(displayUrl)) return null;
+        if (!canStoreRecentlyClosedUrl(displayUrl)) {
+            if (context.ghostWindow) {
+                return {
+                    id: tabId,
+                    title: (sleep.title || '').trim() || 'Ghost Window',
+                    url: '',
+                    history: null,
+                    favicon: sleep.favicon || null,
+                    isSleeping: true,
+                };
+            }
+            return null;
+        }
         return {
             id: tabId,
             title: (sleep.title || '').trim() || displayUrl,
@@ -115,7 +127,19 @@ function captureClosedTabSnapshot(context, tabId) {
     const tabWebContents = view.webContents;
     const rawUrl = tabWebContents.getURL();
     const displayUrl = toDisplayUrl(rawUrl);
-    if (!canStoreRecentlyClosedUrl(displayUrl)) return null;
+    if (!canStoreRecentlyClosedUrl(displayUrl)) {
+        if (context.ghostWindow) {
+            return {
+                id: tabId,
+                title: (tabWebContents.getTitle() || '').trim() || 'Ghost Window',
+                url: '',
+                history: null,
+                favicon: null,
+                isSleeping: false,
+            };
+        }
+        return null;
+    }
     return {
         id: tabId,
         title: (tabWebContents.getTitle() || '').trim() || displayUrl,
@@ -154,9 +178,18 @@ function captureClosedWindowSnapshot(context) {
         activeTabId = tabs[tabs.length - 1].id;
     }
 
+    let bounds = null;
+    try {
+        if (context.window && !context.window.isDestroyed()) {
+            bounds = context.window.getBounds();
+        }
+    } catch (_) { }
+
     return {
         type: 'window',
         profileId: context.profileId,
+        ghostWindow: !!context.ghostWindow,
+        bounds,
         tabs,
         activeTabId,
     };
@@ -171,11 +204,13 @@ function recentlyClosedEntryLabel(entry) {
     if (!entry) return '';
     if (entry.type === 'window') {
         const count = entry.tabs?.length || 0;
+        const prefix = entry.ghostWindow ? 'Ghost Window' : 'Window';
         if (count === 1) {
             const only = entry.tabs[0];
-            return truncateMenuLabel(only.title || only.url || 'Tab');
+            const title = only.title || only.url || (entry.ghostWindow ? 'Ghost Window' : 'New Tab');
+            return truncateMenuLabel(entry.ghostWindow ? `Ghost: ${title}` : title);
         }
-        return `Window (${count} tabs)`;
+        return `${prefix} (${count} tabs)`;
     }
     return truncateMenuLabel(entry.title || entry.url);
 }
@@ -183,7 +218,8 @@ function recentlyClosedEntryLabel(entry) {
 function recentlyClosedEntryTooltip(entry) {
     if (!entry) return '';
     if (entry.type === 'window') {
-        return (entry.tabs || []).map((t) => t.url).filter(Boolean).join('\n');
+        const prefix = entry.ghostWindow ? '[Ghost Window]\n' : '';
+        return prefix + (entry.tabs || []).map((t) => t.url).filter(Boolean).join('\n');
     }
     return entry.url || '';
 }
@@ -208,7 +244,8 @@ function pushRecentlyClosedEntry(profileId, entry) {
     let normalized;
 
     if (entry.type === 'window') {
-        const tabs = (entry.tabs || []).filter((t) => t && canStoreRecentlyClosedUrl(t.url));
+        const isGhost = !!entry.ghostWindow;
+        const tabs = (entry.tabs || []).filter((t) => t && (canStoreRecentlyClosedUrl(t.url) || (isGhost && (t.url === '' || !t.url))));
         if (tabs.length === 0) return;
         let activeTabId = entry.activeTabId;
         if (!activeTabId || !tabs.some((t) => t.id === activeTabId)) {
@@ -217,6 +254,8 @@ function pushRecentlyClosedEntry(profileId, entry) {
         normalized = {
             type: 'window',
             profileId: entry.profileId || profileId,
+            ghostWindow: isGhost,
+            bounds: entry.bounds || null,
             tabs,
             activeTabId,
             closedAt: Date.now(),
@@ -228,6 +267,7 @@ function pushRecentlyClosedEntry(profileId, entry) {
             title: (entry.title || '').trim(),
             url: toDisplayUrl(entry.url),
             history: entry.history || null,
+            ghostWindow: !!entry.ghostWindow,
             closedAt: Date.now(),
         };
     }
@@ -241,6 +281,7 @@ function pushRecentlyClosedEntry(profileId, entry) {
             profileId,
             type: normalized.type,
             url: normalized.url,
+            ghostWindow: normalized.ghostWindow,
             tabCount: normalized.tabs?.length || undefined,
             stackSize: stack.length,
         });
@@ -297,18 +338,28 @@ function restoreRecentlyClosedWindowEntry(entry) {
     const { createWindow } = require('../windows/windowManager');
     ensureProfile(profileId);
 
-    const targetContext = createWindow({ profileId });
-    State.windowBootstrapById.set(targetContext.windowId, {
+    const isGhost = !!entry.ghostWindow;
+    const bootstrapPayload = {
+        ghostWindow: isGhost,
         restoreWindow: {
             tabs: entry.tabs,
             activeTabId: entry.activeTabId,
         },
+    };
+
+    const targetContext = createWindow({
+        profileId,
+        ghostWindow: isGhost,
+        bounds: entry.bounds || null,
+        bootstrapPayload,
     });
 
     if (State.appLogger) {
         State.appLogger.info('recently-closed:restore-window', {
             profileId,
             windowId: targetContext.windowId,
+            ghostWindow: isGhost,
+            bounds: entry.bounds || null,
             tabCount: entry.tabs.length,
             activeTabId: entry.activeTabId,
         });
@@ -321,6 +372,7 @@ function consumeRecentlyClosedWindowForProfile(profileId) {
     const stack = getOrCreateRecentlyClosedForProfile(profileId);
     const index = stack.findIndex((entry) => (
         entry?.type === 'window' &&
+        !entry.ghostWindow &&
         entry.profileId === profileId &&
         Array.isArray(entry.tabs) &&
         entry.tabs.length > 0
@@ -348,13 +400,17 @@ function restoreRecentlyClosedEntry(context, entry) {
     return restoreRecentlyClosedTabInContext(context, entry);
 }
 
-function resolveRestoreTargetContext(profileId) {
+function resolveRestoreTargetContext(profileId, callerContext = null) {
+    if (callerContext && !callerContext.window?.isDestroyed() && callerContext.profileId === profileId) {
+        return callerContext;
+    }
     const focused = getWindowContextForShellFallback();
     if (focused && focused.profileId === profileId) return focused;
     for (const ctx of State.windowContextsById.values()) {
         if (
             ctx.profileId === profileId &&
             !ctx.stealthWindow &&
+            !ctx.ghostWindow &&
             ctx.window &&
             !ctx.window.isDestroyed()
         ) {
@@ -365,8 +421,8 @@ function resolveRestoreTargetContext(profileId) {
     return createWindow({ profileId });
 }
 
-function restoreRecentlyClosed(closedAt = null) {
-    const focusedContext = getWindowContextForShellFallback();
+function restoreRecentlyClosed(closedAt = null, callerContext = null) {
+    const focusedContext = callerContext || getWindowContextForShellFallback();
     const profileId = focusedContext?.profileId || State.defaultProfileId;
     if (!profileId) return;
 
@@ -385,6 +441,7 @@ function restoreRecentlyClosed(closedAt = null) {
         State.appLogger.info('recently-closed:restore', {
             profileId,
             type: entry.type,
+            ghostWindow: !!entry.ghostWindow,
             closedAt: entry.closedAt,
             remaining: stack.length,
         });
@@ -395,7 +452,7 @@ function restoreRecentlyClosed(closedAt = null) {
         return;
     }
 
-    const targetContext = resolveRestoreTargetContext(entry.profileId || profileId);
+    const targetContext = resolveRestoreTargetContext(entry.profileId || profileId, callerContext);
     restoreRecentlyClosedTabInContext(targetContext, entry);
 }
 
@@ -406,8 +463,9 @@ function restoreRecentlyClosedTab(closedAt = null) {
 
 function buildRecentlyClosedMenuItems() {
     const context = getWindowContextForShellFallback();
-    if (!context) return [{ label: 'No recently closed tabs', enabled: false }];
-    const stack = getOrCreateRecentlyClosedForProfile(context.profileId);
+    const profileId = context?.profileId || State.defaultProfileId;
+    if (!profileId) return [{ label: 'No recently closed tabs', enabled: false }];
+    const stack = getOrCreateRecentlyClosedForProfile(profileId);
     if (stack.length === 0) {
         return [{ label: 'No recently closed tabs', enabled: false }];
     }

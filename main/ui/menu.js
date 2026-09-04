@@ -149,7 +149,8 @@ function buildApplicationMenu() {
                     enabled: (() => {
                         const context = getWindowContextForShellFallback();
                         const { getOrCreateRecentlyClosedForProfile } = require('../services/sessionService');
-                        return !!context && getOrCreateRecentlyClosedForProfile(context.profileId).length > 0;
+                        const profileId = context?.profileId || State.defaultProfileId;
+                        return !!profileId && getOrCreateRecentlyClosedForProfile(profileId).length > 0;
                     })(),
                     click: () => restoreRecentlyClosed(),
                 },

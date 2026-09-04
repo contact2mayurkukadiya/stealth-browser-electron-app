@@ -18,6 +18,7 @@ export function buildCommandPaletteCommands(ctx) {
     fileQuit: mac ? '⌘Q' : 'Alt+F4',
     viewReload: mac ? '⌘R' : 'Ctrl+R',
     viewSettings: mac ? '⌘,' : 'Ctrl+,',
+    historyReopen: mac ? '⌘⇧T' : 'Ctrl+Shift+T',
     tabNext: mac ? '⌃Tab' : 'Ctrl+Tab',
     tabPrev: mac ? '⌃⇧Tab' : 'Ctrl+Shift+Tab',
     tabDup: mac ? '⌘⇧D' : 'Ctrl+Shift+D',
@@ -163,6 +164,15 @@ export function buildCommandPaletteCommands(ctx) {
       label: 'History page',
       keywords: 'chronicle browsing invisurf',
       run: () => ctx.openHistory(),
+    },
+    {
+      category: 'History',
+      label: 'Reopen Closed Tab / Window',
+      shortcut: S.historyReopen,
+      keywords: 'restore reopen closed ghost tab window',
+      run: () => {
+        void window.electronAPI.recentlyClosedRestore?.();
+      },
     },
     {
       category: 'Tab',

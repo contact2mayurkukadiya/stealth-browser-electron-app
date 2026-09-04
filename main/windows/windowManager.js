@@ -37,7 +37,15 @@ function getPrimaryWorkAreaBounds() {
     }
 }
 
-function createWindow({ profileId = null, windowId = null, fillWorkArea = true, stealthWindow = false, ghostWindow = false } = {}) {
+function createWindow({
+    profileId = null,
+    windowId = null,
+    fillWorkArea = true,
+    stealthWindow = false,
+    ghostWindow = false,
+    bounds = null,
+    bootstrapPayload = null,
+} = {}) {
     const resolvedProfileId = profileId || State.defaultProfileId || `profile-${crypto.randomUUID()}`;
     ensureProfile(resolvedProfileId);
     const partition = `persist:profile-${resolvedProfileId}`;
@@ -65,15 +73,28 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
             )
             : null;
 
+    const hasValidBounds = bounds &&
+        typeof bounds.x === 'number' &&
+        typeof bounds.y === 'number' &&
+        typeof bounds.width === 'number' && bounds.width > 0 &&
+        typeof bounds.height === 'number' && bounds.height > 0;
+
     const window = new BrowserWindow({
-        ...(workArea
+        ...(hasValidBounds
             ? {
-                x: workArea.x,
-                y: workArea.y,
-                width: workArea.width,
-                height: workArea.height,
+                x: Math.round(bounds.x),
+                y: Math.round(bounds.y),
+                width: Math.round(bounds.width),
+                height: Math.round(bounds.height),
             }
-            : { width: 1200, height: 800 }),
+            : (workArea
+                ? {
+                    x: workArea.x,
+                    y: workArea.y,
+                    width: workArea.width,
+                    height: workArea.height,
+                }
+                : { width: 1200, height: 800 })),
         titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
         ...(isMac
             ? { trafficLightPosition: { x: 15, y: 15 } }
@@ -97,24 +118,6 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     applyIdentityToWebContents(window.webContents);
     applyShellWindowSecurity(window, { permissionFullscreen: C.PERMISSION.FULLSCREEN });
     applyContentProtection(window, loadSettings().contentProtection);
-
-    const shellEntryUrl = 'app://dist/index.html';
-    window.loadURL(shellEntryUrl).catch((error) => {
-        console.error('Failed to load shell entry URL:', shellEntryUrl, error);
-    });
-
-    const menuUI = require('../ui/menu');
-    menuUI.rebuildApplicationMenu();
-
-    const { handleShortcuts } = require('../ui/shortcuts');
-    window.webContents.on('before-input-event', handleShortcuts);
-
-    if (!State.mainWindow || State.mainWindow.isDestroyed()) State.mainWindow = window;
-    window.on('focus', () => {
-        if (context.isInitialGhostSpawn) context.isInitialGhostSpawn = false;
-        State.mainWindow = window;
-        menuUI.rebuildApplicationMenu();
-    });
 
     const context = {
         window,
@@ -149,6 +152,33 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     };
     State.windowContextsById.set(window.id, context);
 
+    const initialBootstrap = {
+        ...(isGhost ? { ghostWindow: true } : {}),
+        ...(stealthWindow ? { stealthWindow: true } : {}),
+        ...(bootstrapPayload || {}),
+    };
+    if (Object.keys(initialBootstrap).length > 0) {
+        State.windowBootstrapById.set(context.windowId, initialBootstrap);
+    }
+
+    const shellEntryUrl = 'app://dist/index.html';
+    window.loadURL(shellEntryUrl).catch((error) => {
+        console.error('Failed to load shell entry URL:', shellEntryUrl, error);
+    });
+
+    const menuUI = require('../ui/menu');
+    menuUI.rebuildApplicationMenu();
+
+    const { handleShortcuts } = require('../ui/shortcuts');
+    window.webContents.on('before-input-event', handleShortcuts);
+
+    if (!State.mainWindow || State.mainWindow.isDestroyed()) State.mainWindow = window;
+    window.on('focus', () => {
+        if (context.isInitialGhostSpawn) context.isInitialGhostSpawn = false;
+        State.mainWindow = window;
+        menuUI.rebuildApplicationMenu();
+    });
+
     const { createTabContentContainer, layoutTabContentContainer, removeTabContentChildView, layoutActiveTabView } = require('./tabManager');
     const { getLensSession, postLensSelectionPatch } = require('./lensManager');
 
@@ -166,7 +196,9 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
     if (isGhost) {
         window.setTitle('InviSurf — Ghost');
+        const prevBoot = State.windowBootstrapById.get(context.windowId) || {};
         State.windowBootstrapById.set(context.windowId, {
+            ...prevBoot,
             stealthWindow: !!stealthWindow,
             ghostWindow: true,
         });
@@ -192,7 +224,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         }
     } else if (stealthWindow) {
         window.setTitle('InviSurf — Stealth');
-        State.windowBootstrapById.set(context.windowId, { stealthWindow: true });
+        const prevBoot = State.windowBootstrapById.get(context.windowId) || {};
+        State.windowBootstrapById.set(context.windowId, { ...prevBoot, stealthWindow: true });
     }
 
     window.on('resize', () => {
@@ -221,18 +254,20 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     });
 
     window.on('close', () => {
-        const windowSnapshot = captureClosedWindowSnapshot(context);
-        if (State.appLogger) {
-            State.appLogger.info('window:close', {
-                windowId: context.windowId,
-                profileId: context.profileId,
-                stealthWindow: context.stealthWindow,
-                tabCount: Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length,
-                capturedRecentlyClosedTabs: windowSnapshot?.tabs?.length || 0,
-            });
-        }
-        if (windowSnapshot) {
-            pushRecentlyClosedEntry(context.profileId, windowSnapshot);
+        if (!context._closedWindowSnapshotPushed) {
+            const windowSnapshot = captureClosedWindowSnapshot(context);
+            if (State.appLogger) {
+                State.appLogger.info('window:close', {
+                    windowId: context.windowId,
+                    profileId: context.profileId,
+                    stealthWindow: context.stealthWindow,
+                    tabCount: Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length,
+                    capturedRecentlyClosedTabs: windowSnapshot?.tabs?.length || 0,
+                });
+            }
+            if (windowSnapshot) {
+                pushRecentlyClosedEntry(context.profileId, windowSnapshot);
+            }
         }
 
         for (const tabId of Object.keys(context.tabs)) {

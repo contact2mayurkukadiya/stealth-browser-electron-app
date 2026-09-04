@@ -376,16 +376,20 @@ function registerIpcHandlers() {
         const stack = sessionService.getOrCreateRecentlyClosedForProfile(context.profileId);
         return stack.slice(0, 15).map((entry) => ({
             type: entry?.type === 'window' ? 'window' : 'tab',
+            ghostWindow: !!entry?.ghostWindow,
             label: sessionService.recentlyClosedEntryLabel(entry),
-            subtitle: entry?.type === 'window' ? `${entry?.tabs?.length || 0} tabs` : (entry?.url || ''),
+            subtitle: entry?.ghostWindow
+                ? (entry?.tabs?.length === 1 ? `Ghost Window • ${entry?.tabs[0]?.url || 'New Tab'}` : `Ghost Window (${entry?.tabs?.length || 0} tabs)`)
+                : (entry?.type === 'window' ? `${entry?.tabs?.length || 0} tabs` : (entry?.url || '')),
             closedAt: entry?.closedAt || null,
         }));
     });
 
     ipcMain.handle(C.IPC_INVOKE.RECENTLY_CLOSED_RESTORE, (event, payload = {}) => {
         if (!isSenderTrusted(event)) return { ok: false };
+        const callerContext = getWindowContextByEventSender(event.sender);
         const closedAt = typeof payload?.closedAt === 'number' ? payload.closedAt : null;
-        sessionService.restoreRecentlyClosed(closedAt);
+        sessionService.restoreRecentlyClosed(closedAt, callerContext);
         return { ok: true };
     });
 
@@ -669,6 +673,9 @@ function registerIpcHandlers() {
             return;
         }
 
+        const totalTabsRemaining = Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length;
+        const willCloseWindow = closeWindowIfLast && totalTabsRemaining <= 1;
+
         if (context.tabs[id]) {
             tabManager.removeTabContentChildView(context, context.tabs[id]);
             context.tabs[id].webContents.destroy();
@@ -681,8 +688,32 @@ function registerIpcHandlers() {
         if (State.historyService) State.historyService.clearTab(id);
         compatDiagnostics.clear(id);
 
-        if (tabSnapshot) {
-            sessionService.pushRecentlyClosedEntry(context.profileId, { type: 'tab', title: tabSnapshot.title, url: tabSnapshot.url, history: tabSnapshot.history });
+        if (willCloseWindow) {
+            let windowBounds = null;
+            try {
+                if (context.window && !context.window.isDestroyed()) {
+                    windowBounds = context.window.getBounds();
+                }
+            } catch (_) { }
+
+            const windowSnapshot = {
+                type: 'window',
+                profileId: context.profileId,
+                ghostWindow: !!context.ghostWindow,
+                bounds: windowBounds,
+                tabs: tabSnapshot ? [tabSnapshot] : (context.ghostWindow ? [{ id, title: 'Ghost Window', url: '' }] : []),
+                activeTabId: id,
+            };
+            sessionService.pushRecentlyClosedEntry(context.profileId, windowSnapshot);
+            context._closedWindowSnapshotPushed = true;
+        } else if (tabSnapshot) {
+            sessionService.pushRecentlyClosedEntry(context.profileId, {
+                type: 'tab',
+                title: tabSnapshot.title,
+                url: tabSnapshot.url,
+                history: tabSnapshot.history,
+                ghostWindow: !!context.ghostWindow,
+            });
         }
 
         const tabsRemaining = Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length;
