@@ -151,8 +151,18 @@ export default function TabBar({
       className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}${isGhostWindow ? ' tab-bar--ghost' : ''}`}
       onMouseDown={isGhostWindow ? handleGhostDragMouseDown : undefined}
     >
-      {isGhostWindow && (
-        <div className="ghost-badge" title="Ghost Window: Non-activating floating browser">
+      {isGhostWindow && isMac && (
+        <button
+          className="btn ghost-close-btn ghost-close-btn--mac"
+          title="Close Ghost Window"
+          aria-label="Close Ghost Window"
+          onClick={() => window.electronAPI?.ghostClose?.()}
+        >
+          <span className="ghost-close-icon-mac">✕</span>
+        </button>
+      )}
+      {isGhostWindow && !isMac && (
+        <div className="ghost-badge ghost-badge--left" title="Ghost Window: Non-activating floating browser">
           <span className="ghost-badge-dot" />
           <span>Ghost</span>
         </div>
@@ -182,9 +192,15 @@ export default function TabBar({
       <button id="add-tab" className="btn" onClick={() => onNewTab()}>
         {ADD_ICON}
       </button>
-      {isGhostWindow && (
+      {isGhostWindow && isMac && (
+        <div className="ghost-badge ghost-badge--right" title="Ghost Window: Non-activating floating browser">
+          <span className="ghost-badge-dot" />
+          <span>Ghost</span>
+        </div>
+      )}
+      {isGhostWindow && !isMac && (
         <button
-          className="btn ghost-close-btn"
+          className="btn ghost-close-btn ghost-close-btn--win"
           title="Close Ghost Window"
           aria-label="Close Ghost Window"
           onClick={() => window.electronAPI?.ghostClose?.()}

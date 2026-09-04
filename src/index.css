@@ -234,41 +234,11 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 }
 
 /*
- * Dedicated ghost (non-activating) window: floating glassmorphic chrome
+ * Dedicated ghost (non-activating) window: inherits profile theme with clean floating elevation
  */
 .header--ghost-window {
-    background: rgba(26, 28, 36, 0.96);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid rgba(130, 120, 255, 0.15);
-}
-
-.header--ghost-window .tab-active-slider,
-.header--ghost-window .tab-active-slider::before,
-.header--ghost-window .tab-active-slider::after {
-    background: #2b2f3e;
-}
-
-.header--ghost-window .nav-bar {
-    background: #222532;
-}
-
-.header--ghost-window .url-container {
-    background: #1b1d28;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.header--ghost-window .bookmark-bar {
-    background: #1e212d;
-}
-
-body:has(.header--ghost-window) {
-    background-color: #1a1c24;
-    color: rgba(255, 255, 255, 0.95);
-}
-
-body:has(.header--ghost-window) .tab-content-snapshot {
-    background: #1a1c24;
+    border-bottom: 1px solid var(--chrome-tab-separator, rgba(0, 0, 0, 0.12));
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 
 .tab-bar--ghost {
@@ -276,43 +246,116 @@ body:has(.header--ghost-window) .tab-content-snapshot {
     -webkit-user-select: none;
 }
 
+/* macOS ghost tab bar: close button on left, no 90px native padding needed */
+.tab-bar--mac.tab-bar--ghost {
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+/* Windows ghost tab bar: close button on right, no 150px native padding needed */
+.tab-bar--win.tab-bar--ghost {
+    padding-left: 10px;
+    padding-right: 4px;
+}
+
 .ghost-badge {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 2px 8px;
-    margin: 0 4px;
-    background: rgba(130, 120, 255, 0.14);
+    background: rgba(130, 120, 255, 0.15);
     border: 1px solid rgba(130, 120, 255, 0.35);
     border-radius: 12px;
     font-size: 11px;
     font-weight: 500;
-    color: #c4bfff;
+    color: var(--chrome-accent, #8b80ff);
     letter-spacing: 0.4px;
     user-select: none;
     pointer-events: none;
     flex-shrink: 0;
 }
 
+[data-effective-appearance="dark"] .ghost-badge {
+    color: #c4bfff;
+    background: rgba(130, 120, 255, 0.18);
+    border-color: rgba(130, 120, 255, 0.42);
+}
+
+[data-effective-appearance="light"] .ghost-badge {
+    color: #5844e3;
+    background: rgba(88, 68, 227, 0.12);
+    border-color: rgba(88, 68, 227, 0.35);
+}
+
+.ghost-badge--left {
+    margin: 0 10px 0 2px;
+}
+
+.ghost-badge--right {
+    margin: 0 6px 0 10px;
+}
+
 .ghost-badge-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background-color: #8b80ff;
-    box-shadow: 0 0 6px #8b80ff;
+    background-color: var(--chrome-accent, #8b80ff);
+    box-shadow: 0 0 6px var(--chrome-accent, #8b80ff);
 }
 
-.ghost-close-btn {
+/* macOS-style close button (left section) */
+.ghost-close-btn--mac {
+    width: 14px;
+    height: 14px;
+    min-width: 14px;
+    min-height: 14px;
+    padding: 0;
+    margin: 0 12px 0 0;
+    border-radius: 50%;
+    background-color: #ff5f56;
+    border: 0.5px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
+    flex-shrink: 0;
+    position: relative;
+    transition: filter 0.15s ease, transform 0.1s ease;
+}
+
+.ghost-close-btn--mac .ghost-close-icon-mac {
+    opacity: 0;
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1;
+    color: #4d0000;
+    transition: opacity 0.15s ease;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.ghost-close-btn--mac:hover .ghost-close-icon-mac {
+    opacity: 1;
+}
+
+.ghost-close-btn--mac:active {
+    filter: brightness(0.85);
+    transform: scale(0.94);
+}
+
+/* Windows-style close button (right section) */
+.ghost-close-btn--win {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 30px;
     padding: 0;
-    margin: 0 6px;
+    margin: 0 2px;
     border: none;
-    border-radius: 6px;
-    color: rgba(255, 255, 255, 0.65);
+    border-radius: 0;
+    color: var(--chrome-toolbar-icon, currentColor);
     font-size: 13px;
     line-height: 1;
     background: transparent;
@@ -321,8 +364,13 @@ body:has(.header--ghost-window) .tab-content-snapshot {
     transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.ghost-close-btn:hover {
-    background: rgba(235, 60, 60, 0.85);
+.ghost-close-btn--win:hover {
+    background: #e81123;
+    color: #ffffff;
+}
+
+.ghost-close-btn--win:active {
+    background: #bf0f1d;
     color: #ffffff;
 }
 
