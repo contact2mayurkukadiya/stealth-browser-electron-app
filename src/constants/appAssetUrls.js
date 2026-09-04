@@ -62,6 +62,7 @@ export const menuPrintSvg = `${BASE}/print.svg`;
 export const menuProfileSvg = `${BASE}/user.svg`;
 export const menuSettingsSvg = `${BASE}/settings.svg`;
 export const menuStealthWindowSvg = `${BASE}/incognito.svg`;
+export const menuGhostWindowSvg = `${BASE}/ghost.svg`;
 export const menuTabSvg = `${BASE}/menu-tab.svg`;
 export const menuMonitorSvg = `${BASE}/monitor.svg`;
 export const menuBurgerSvg = `${BASE}/menu-burger.svg`;
