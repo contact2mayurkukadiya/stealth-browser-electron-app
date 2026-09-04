@@ -50,6 +50,16 @@ function buildApplicationMenu() {
                     },
                 },
                 {
+                    label: 'New Ghost Window',
+                    accelerator: 'CmdOrCtrl+Alt+G',
+                    click: () => {
+                        const w = getFocusedShellWindow() || State.mainWindow;
+                        const context = getWindowContextByBrowserWindow(w);
+                        const profileId = context?.profileId || State.defaultProfileId;
+                        windowManager.createWindow({ profileId, ghostWindow: true });
+                    },
+                },
+                {
                     label: 'New Window',
                     accelerator: 'CmdOrCtrl+N',
                     click: () => {

@@ -13,6 +13,7 @@ export function buildCommandPaletteCommands(ctx) {
   const S = {
     fileNew: mac ? '⌘T' : 'Ctrl+T',
     fileStealthWindow: mac ? '⌘⇧N' : 'Ctrl+Shift+N',
+    fileGhostWindow: mac ? '⌥⌘G' : 'Ctrl+Alt+G',
     fileClose: mac ? '⌘W' : 'Ctrl+W',
     fileQuit: mac ? '⌘Q' : 'Alt+F4',
     viewReload: mac ? '⌘R' : 'Ctrl+R',
@@ -40,6 +41,15 @@ export function buildCommandPaletteCommands(ctx) {
       keywords: 'incognito ephemeral private invisurf',
       run: () => {
         void ctx.createStealthWindow?.();
+      },
+    },
+    {
+      category: 'File',
+      label: 'New Ghost Window',
+      shortcut: S.fileGhostWindow,
+      keywords: 'ghost non-activating focus float interactive',
+      run: () => {
+        void ctx.createGhostWindow?.();
       },
     },
     {

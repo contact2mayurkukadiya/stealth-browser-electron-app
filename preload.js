@@ -314,10 +314,13 @@ const C = Object.freeze({
         "RUN_MENU_COMMAND": "app:run-menu-command",
         "GOOGLE_LENS_ACTIVE_FOR_PROFILE": "google-lens:active-for-profile",
         "IS_STEALTH_WINDOW": "context:is-stealth-window",
+        "IS_GHOST_WINDOW": "context:is-ghost-window",
         "WINDOW_CREATE": "window:create",
         "WINDOW_CREATE_STEALTH": "window:create-stealth",
+        "WINDOW_CREATE_GHOST": "window:create-ghost",
         "WINDOW_CLOSE_IF_STEALTH": "window:close-if-stealth",
         "WINDOW_CLOSE_CURRENT": "window:close-current",
+        "GHOST_CLOSE": "ghost:close",
         "WINDOW_GET_BOOTSTRAP": "window:get-bootstrap",
         "PROFILE_LIST": "profile:list",
         "PROFILE_GET_CURRENT": "profile:get-current",
@@ -406,7 +409,8 @@ const C = Object.freeze({
         "TOOLTIP_SHOW": "tooltip:show",
         "TOOLTIP_HIDE": "tooltip:hide",
         "CHROME_OVERLAY_FROM_OVERLAY": "chrome-overlay:v1:from-overlay",
-        "APP_LOG": "app:log"
+        "APP_LOG": "app:log",
+        "GHOST_DRAG": "ghost:drag"
     },
     "IPC_EVENT": {
         "URL_CHANGED": "url-changed",
@@ -523,10 +527,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     isGoogleLensActiveForProfile: () => ipcRenderer.invoke(C.IPC_INVOKE.GOOGLE_LENS_ACTIVE_FOR_PROFILE),
     createWindow: (payload = {}) => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE, typeof payload === 'string' ? { profileId: payload } : payload),
     createStealthWindow: (payload = {}) => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE_STEALTH, typeof payload === 'string' ? { profileId: payload } : payload),
+    createGhostWindow: (payload = {}) => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CREATE_GHOST, typeof payload === 'string' ? { profileId: payload } : payload),
     closeStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH),
     closeCurrentWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_CLOSE_CURRENT),
+    ghostClose: () => ipcRenderer.invoke(C.IPC_INVOKE.GHOST_CLOSE),
+    ghostDrag: (deltaX, deltaY) => ipcRenderer.send(C.IPC_SEND.GHOST_DRAG, { deltaX, deltaY }),
     windowGetBootstrap: () => ipcRenderer.invoke(C.IPC_INVOKE.WINDOW_GET_BOOTSTRAP),
     isStealthWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.IS_STEALTH_WINDOW),
+    isGhostWindow: () => ipcRenderer.invoke(C.IPC_INVOKE.IS_GHOST_WINDOW),
 
     tabSetAudioMuted: (id, muted) => ipcRenderer.send(C.IPC_SEND.TAB_SET_AUDIO_MUTED, { id, muted }),
     tabMenuSyncLabels: (payload) => ipcRenderer.send(C.IPC_SEND.TAB_MENU_SYNC, payload),

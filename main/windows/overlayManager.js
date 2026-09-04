@@ -388,6 +388,7 @@ function deliverOmniboxOverlayPatch(context, patch) {
 }
 
 function focusChromeOmniboxOverlayWebContents(context) {
+    if (context?.ghostWindow) return;
     if (!context?.chromeOmniboxOverlayView || context.chromeOmniboxOverlayView.webContents.isDestroyed()) return;
     if ((context.chromeOmniboxOverlayAcquireCount || 0) <= 0) return;
     try {
@@ -459,6 +460,7 @@ function dismissChromeShellMenuOverlayOnBlur(context) {
 }
 
 function focusChromeShellMenuOverlayWebContents(context) {
+    if (context?.ghostWindow) return;
     if (!context?.chromeShellMenuOverlayView || context.chromeShellMenuOverlayView.webContents.isDestroyed()) return;
     if ((context.chromeShellMenuOverlayAcquireCount || 0) <= 0) return;
     try {

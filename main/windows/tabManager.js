@@ -186,6 +186,15 @@ function layoutActiveTabView(context, tabId = context?.activeTabId) {
 
 function sendOmniboxFocusToShell(context, tabId, selectAll, openOverlay = false) {
     if (!context?.window || context.window.isDestroyed()) return;
+    if (context.ghostWindow) {
+        if (!context.window.webContents || context.window.webContents.isDestroyed()) return;
+        context.window.webContents.send(C.IPC_EVENT.OMNIBOX_FOCUS, {
+            tabId,
+            selectAll,
+            openOverlay: !!openOverlay,
+        });
+        return;
+    }
     try { context.window.focus(); } catch (_) { /* ignore */ }
     if (context.window.webContents && !context.window.webContents.isDestroyed()) {
         context.window.webContents.focus();
@@ -241,8 +250,12 @@ function activateTabInContext(context, id) {
 
     const activeUrl = context.tabs[id]?.webContents.getURL() ?? '';
     const blankActive = isBlankTab(activeUrl);
-    if (!blankActive) {
+    if (!blankActive && !context.ghostWindow) {
         context.tabs[id].webContents.focus();
+    }
+    if (context.ghostWindow && process.platform === 'win32') {
+        const { hookWindowChildren } = require('../native');
+        hookWindowChildren(context.window);
     }
     if (context.window && !context.window.webContents.isDestroyed()) {
         context.window.webContents.send(C.IPC_EVENT.TAB_SWITCHED, { id });
@@ -257,7 +270,7 @@ function activateTabInContext(context, id) {
         } catch (_) { }
     }
 
-    if (blankActive) {
+    if (blankActive && !context.ghostWindow) {
         context.omniboxFocusGen = (context.omniboxFocusGen || 0) + 1;
         const omniboxGen = context.omniboxFocusGen;
         setImmediate(() => {
@@ -626,6 +639,10 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     if (!shouldActivate) {
         addTabContentChildView(context, view);
         view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    }
+    if (context.ghostWindow && process.platform === 'win32') {
+        const { hookWindowChildren } = require('../native');
+        hookWindowChildren(context.window);
     }
 
     const webContentsNumericId = view.webContents.id;

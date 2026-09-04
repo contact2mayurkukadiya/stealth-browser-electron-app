@@ -233,6 +233,99 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     background: #253035;
 }
 
+/*
+ * Dedicated ghost (non-activating) window: floating glassmorphic chrome
+ */
+.header--ghost-window {
+    background: rgba(26, 28, 36, 0.96);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(130, 120, 255, 0.15);
+}
+
+.header--ghost-window .tab-active-slider,
+.header--ghost-window .tab-active-slider::before,
+.header--ghost-window .tab-active-slider::after {
+    background: #2b2f3e;
+}
+
+.header--ghost-window .nav-bar {
+    background: #222532;
+}
+
+.header--ghost-window .url-container {
+    background: #1b1d28;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.header--ghost-window .bookmark-bar {
+    background: #1e212d;
+}
+
+body:has(.header--ghost-window) {
+    background-color: #1a1c24;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+body:has(.header--ghost-window) .tab-content-snapshot {
+    background: #1a1c24;
+}
+
+.tab-bar--ghost {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.ghost-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    margin: 0 4px;
+    background: rgba(130, 120, 255, 0.14);
+    border: 1px solid rgba(130, 120, 255, 0.35);
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #c4bfff;
+    letter-spacing: 0.4px;
+    user-select: none;
+    pointer-events: none;
+    flex-shrink: 0;
+}
+
+.ghost-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #8b80ff;
+    box-shadow: 0 0 6px #8b80ff;
+}
+
+.ghost-close-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    margin: 0 6px;
+    border: none;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 13px;
+    line-height: 1;
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.ghost-close-btn:hover {
+    background: rgba(235, 60, 60, 0.85);
+    color: #ffffff;
+}
+
 @media (prefers-color-scheme: light) {
     /* Seamless tab strip + omnibox row — no divider between them */
 

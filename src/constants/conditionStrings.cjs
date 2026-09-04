@@ -271,10 +271,13 @@ const IPC_INVOKE = freeze({
   RUN_MENU_COMMAND: 'app:run-menu-command',
   GOOGLE_LENS_ACTIVE_FOR_PROFILE: 'google-lens:active-for-profile',
   IS_STEALTH_WINDOW: 'context:is-stealth-window',
+  IS_GHOST_WINDOW: 'context:is-ghost-window',
   WINDOW_CREATE: 'window:create',
   WINDOW_CREATE_STEALTH: 'window:create-stealth',
+  WINDOW_CREATE_GHOST: 'window:create-ghost',
   WINDOW_CLOSE_IF_STEALTH: 'window:close-if-stealth',
   WINDOW_CLOSE_CURRENT: 'window:close-current',
+  GHOST_CLOSE: 'ghost:close',
   WINDOW_GET_BOOTSTRAP: 'window:get-bootstrap',
   PROFILE_LIST: 'profile:list',
   PROFILE_GET_CURRENT: 'profile:get-current',
@@ -366,6 +369,7 @@ const IPC_SEND = freeze({
   TOOLTIP_HIDE: 'tooltip:hide',
   CHROME_OVERLAY_FROM_OVERLAY: 'chrome-overlay:v1:from-overlay',
   APP_LOG: 'app:log',
+  GHOST_DRAG: 'ghost:drag',
 });
 
 /** IPC event channels (main → renderer) */

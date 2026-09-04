@@ -37,7 +37,7 @@ function getPrimaryWorkAreaBounds() {
     }
 }
 
-function createWindow({ profileId = null, windowId = null, fillWorkArea = true, stealthWindow = false } = {}) {
+function createWindow({ profileId = null, windowId = null, fillWorkArea = true, stealthWindow = false, ghostWindow = false } = {}) {
     const resolvedProfileId = profileId || State.defaultProfileId || `profile-${crypto.randomUUID()}`;
     ensureProfile(resolvedProfileId);
     const partition = `persist:profile-${resolvedProfileId}`;
@@ -55,6 +55,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     }
 
     const isMac = process.platform === C.PLATFORM.DARWIN;
+    const isGhost = !!ghostWindow;
     const workArea = fillWorkArea ? getPrimaryWorkAreaBounds() : null;
     const stealthTitleBarOverlay =
         process.platform !== 'darwin'
@@ -73,11 +74,25 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
                 height: workArea.height,
             }
             : { width: 1200, height: 800 }),
-        titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-        ...(isMac
-            ? { trafficLightPosition: { x: 15, y: 15 } }
+        ...(isGhost
+            ? {
+                type: isMac ? 'panel' : undefined,
+                frame: false,
+                transparent: true,
+                alwaysOnTop: true,
+                focusable: false,
+                acceptFirstMouse: true,
+                fullscreenable: false,
+                show: false,
+            }
             : {
-                titleBarOverlay: stealthWindow ? stealthTitleBarOverlay : getTitleBarOverlayOptionsForNativeTheme(),
+                titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+                ...(isMac
+                    ? { trafficLightPosition: { x: 15, y: 15 } }
+                    : {
+                        titleBarOverlay: stealthWindow ? stealthTitleBarOverlay : getTitleBarOverlayOptionsForNativeTheme(),
+                    }
+                ),
             }
         ),
         webPreferences: buildSecureWebPreferences({ partition }),
@@ -110,6 +125,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         profileId: resolvedProfileId,
         partition,
         stealthWindow: !!stealthWindow,
+        ghostWindow: isGhost,
         stealthTabsPartition,
         tabs: {},
         sleepingTabs: {},
@@ -150,13 +166,43 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         });
     }
 
-    if (stealthWindow) {
+    if (isGhost) {
+        window.setTitle('InviSurf — Ghost');
+        State.windowBootstrapById.set(context.windowId, {
+            stealthWindow: !!stealthWindow,
+            ghostWindow: true,
+        });
+        const { applyGhostMode } = require('../native');
+        const showGhost = () => {
+            try {
+                applyGhostMode(window);
+                window.showInactive();
+            } catch (err) {
+                console.error('[windowManager] Failed to show ghost window:', err);
+                try { window.show(); } catch (_) { }
+            }
+        };
+        if (window.isVisible()) {
+            showGhost();
+        } else {
+            window.once('ready-to-show', showGhost);
+            setTimeout(() => {
+                if (!window.isDestroyed() && !window.isVisible()) {
+                    showGhost();
+                }
+            }, 800);
+        }
+    } else if (stealthWindow) {
         window.setTitle('InviSurf — Stealth');
         State.windowBootstrapById.set(context.windowId, { stealthWindow: true });
     }
 
     window.on('resize', () => {
         layoutTabContentContainer(context);
+        if (context.ghostWindow && process.platform === 'win32') {
+            const { hookWindowChildren } = require('../native');
+            hookWindowChildren(context.window);
+        }
         if (!context.activeTabId || State.detachedTabWindows.has(context.activeTabId)) return;
         const view = context.tabs[context.activeTabId];
         if (!view) return;

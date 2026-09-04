@@ -26,10 +26,10 @@ const compatDiagnostics = require(path.join(process.cwd(), 'compatibilityDiagnos
 const identityDiagnostics = require(path.join(process.cwd(), 'runtime', 'identityDiagnostics.js'));
 const { getTabNetworkDomains, addToCookieBlocklist } = require(path.join(process.cwd(), 'runtime', 'sessionPolicy.js'));
 
-function spawnWindowWithTab({ profileId, url, urls, stealthWindow }) {
+function spawnWindowWithTab({ profileId, url, urls, stealthWindow, ghostWindow }) {
     // 1. Ensure profile exists and create the Native Window Shell
     profileService.ensureProfile(profileId);
-    const createdContext = windowManager.createWindow({ profileId, stealthWindow });
+    const createdContext = windowManager.createWindow({ profileId, stealthWindow, ghostWindow });
 
     // 2. Store the initial URL(s) as a bootstrap payload so that when the new window's
     //    React shell mounts and calls init(), it reads this payload and opens the
@@ -39,12 +39,15 @@ function spawnWindowWithTab({ profileId, url, urls, stealthWindow }) {
         ? urls.filter((u) => typeof u === 'string' && u.trim() !== '')
         : (url && typeof url === 'string' && url.trim() !== '' ? [url] : []);
 
+    const existingBootstrap = State.windowBootstrapById.get(createdContext.windowId) || {};
     if (urlArray.length === 1) {
         State.windowBootstrapById.set(createdContext.windowId, {
+            ...existingBootstrap,
             initialUrl: urlArray[0],
         });
     } else if (urlArray.length > 1) {
         State.windowBootstrapById.set(createdContext.windowId, {
+            ...existingBootstrap,
             initialUrls: urlArray,
         });
     }
@@ -140,6 +143,44 @@ function registerIpcHandlers() {
         // Support both a single `url` and an `urls` array (for "Open All in stealth window")
         const createdContext = spawnWindowWithTab({ profileId, stealthWindow: true, url: payload.url, urls: payload.urls });
         return { windowId: createdContext.windowId, profileId };
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.WINDOW_CREATE_GHOST || 'window:create-ghost', (event, payload = {}) => {
+        if (!isSenderTrusted(event)) return null;
+        const senderContext = getWindowContextByEventSender(event.sender);
+        const profileId = typeof payload.profileId === 'string' && payload.profileId.trim() ? payload.profileId.trim() : (senderContext?.profileId || State.defaultProfileId);
+        const createdContext = spawnWindowWithTab({ profileId, ghostWindow: true, url: payload.url, urls: payload.urls });
+        return { windowId: createdContext.windowId, profileId };
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.IS_GHOST_WINDOW || 'context:is-ghost-window', (event) => {
+        if (!isSenderTrusted(event)) return false;
+        const context = getWindowContextByEventSender(event.sender);
+        return !!context?.ghostWindow;
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.GHOST_CLOSE || 'ghost:close', (event) => {
+        if (!isSenderTrusted(event)) return { ok: false };
+        const context = getWindowContextByEventSender(event.sender);
+        if (!context?.window || context.window.isDestroyed()) return { ok: false };
+        try {
+            context.window.close();
+            return { ok: true };
+        } catch (_) {
+            try { context.window.destroy(); return { ok: true }; } catch (e) { return { ok: false }; }
+        }
+    });
+
+    ipcMain.on(C.IPC_SEND.GHOST_DRAG || 'ghost:drag', (event, { deltaX, deltaY } = {}) => {
+        if (!isSenderTrusted(event)) return;
+        const context = getWindowContextByEventSender(event.sender);
+        if (!context?.window || context.window.isDestroyed()) return;
+        try {
+            const [x, y] = context.window.getPosition();
+            const newX = Math.round(x + (Number(deltaX) || 0));
+            const newY = Math.round(y + (Number(deltaY) || 0));
+            context.window.setPosition(newX, newY);
+        } catch (_) { }
     });
 
     ipcMain.handle(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH, (event) => {

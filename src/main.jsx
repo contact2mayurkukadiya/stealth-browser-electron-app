@@ -20,7 +20,9 @@ async function bootstrapShellTheme() {
   try {
     const api = window.electronAPI;
     const bootstrap = api?.windowGetBootstrap ? await api.windowGetBootstrap() : null;
-    window.__APP_BOOTSTRAP = bootstrap ?? null;
+    if (bootstrap?.ghostWindow) {
+      window.__INVISURF_GHOST_WINDOW__ = true;
+    }
     if (bootstrap?.stealthWindow) {
       window.__INVISURF_STEALTH_WINDOW__ = true;
       applyStealthWindowChrome();
