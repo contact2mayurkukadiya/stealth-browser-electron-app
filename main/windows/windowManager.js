@@ -80,7 +80,6 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
                 frame: false,
                 transparent: true,
                 alwaysOnTop: true,
-                focusable: false,
                 acceptFirstMouse: true,
                 fullscreenable: false,
                 show: false,
@@ -115,6 +114,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
     if (!State.mainWindow || State.mainWindow.isDestroyed()) State.mainWindow = window;
     window.on('focus', () => {
+        if (context.isInitialGhostSpawn) context.isInitialGhostSpawn = false;
         State.mainWindow = window;
         menuUI.rebuildApplicationMenu();
     });
@@ -126,6 +126,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         partition,
         stealthWindow: !!stealthWindow,
         ghostWindow: isGhost,
+        isInitialGhostSpawn: isGhost,
         stealthTabsPartition,
         tabs: {},
         sleepingTabs: {},

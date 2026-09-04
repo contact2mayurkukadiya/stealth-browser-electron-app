@@ -74,13 +74,20 @@ function initWin32Native() {
         RemoveWindowSubclass = comctl32.func('RemoveWindowSubclass', 'bool', ['void*', 'void*', 'uintptr_t']);
         DefSubclassProc = comctl32.func('DefSubclassProc', 'intptr_t', ['void*', 'uint32_t', 'uintptr_t', 'intptr_t']);
 
+        const HTCLIENT = 1;
+
         // Define SubclassProc callback prototype:
         // LRESULT CALLBACK SubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
         const SubclassProto = koffi.proto('intptr_t SubclassProto(void *hWnd, uint32_t uMsg, uintptr_t wParam, intptr_t lParam, uintptr_t uIdSubclass, uintptr_t dwRefData)');
         subclassCallbackPtr = koffi.register((hWnd, uMsg, wParam, lParam, uIdSubclass, dwRefData) => {
-            // 1. Mouse activate: Return MA_NOACTIVATE so Windows does not activate this window
+            // 1. Mouse activate: Only return MA_NOACTIVATE for non-client caption/drag areas to avoid focus theft on drag.
+            // For client area (buttons, tabs, inputs), let DefSubclassProc handle so inputs and buttons function normally.
             if (uMsg === WM_MOUSEACTIVATE || uMsg === WM_NCMOUSEACTIVATE) {
-                return MA_NOACTIVATE;
+                const hitTest = Number(lParam) & 0xffff;
+                if (hitTest === HTCAPTION) {
+                    return MA_NOACTIVATE;
+                }
+                return DefSubclassProc(hWnd, uMsg, wParam, lParam);
             }
 
             // 2. Non-client click (Close button / Caption)
@@ -95,14 +102,6 @@ function initWin32Native() {
                 }
             }
 
-            // 3. WM_ACTIVATE: Suppress activation if not inactive
-            if (uMsg === WM_ACTIVATE) {
-                const state = Number(wParam) & 0xffff;
-                if (state !== WA_INACTIVE) {
-                    return 0;
-                }
-            }
-
             return DefSubclassProc(hWnd, uMsg, wParam, lParam);
         }, koffi.pointer(SubclassProto));
 
@@ -110,11 +109,8 @@ function initWin32Native() {
         // BOOL CALLBACK EnumChildProc(HWND hWnd, LPARAM lParam);
         const EnumProto = koffi.proto('bool EnumProto(void *hWnd, intptr_t lParam)');
         enumChildCallbackPtr = koffi.register((hWnd, lParam) => {
-            if (hWnd && !hookedHwnds.has(hWnd)) {
-                hookedHwnds.add(hWnd);
-                SetWindowSubclass(hWnd, subclassCallbackPtr, GHOST_SUBCLASS_ID, 0);
-            }
-            return true; // continue enumeration
+            // Child rendering windows must not be blocked from receiving focus/input
+            return true;
         }, koffi.pointer(EnumProto));
 
         initialized = true;

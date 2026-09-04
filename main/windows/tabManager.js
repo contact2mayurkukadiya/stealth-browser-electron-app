@@ -186,7 +186,7 @@ function layoutActiveTabView(context, tabId = context?.activeTabId) {
 
 function sendOmniboxFocusToShell(context, tabId, selectAll, openOverlay = false) {
     if (!context?.window || context.window.isDestroyed()) return;
-    if (context.ghostWindow) {
+    if (context.isInitialGhostSpawn) {
         if (!context.window.webContents || context.window.webContents.isDestroyed()) return;
         context.window.webContents.send(C.IPC_EVENT.OMNIBOX_FOCUS, {
             tabId,
@@ -250,7 +250,7 @@ function activateTabInContext(context, id) {
 
     const activeUrl = context.tabs[id]?.webContents.getURL() ?? '';
     const blankActive = isBlankTab(activeUrl);
-    if (!blankActive && !context.ghostWindow) {
+    if (!blankActive && !context.isInitialGhostSpawn) {
         context.tabs[id].webContents.focus();
     }
     if (context.ghostWindow && process.platform === 'win32') {
@@ -270,7 +270,7 @@ function activateTabInContext(context, id) {
         } catch (_) { }
     }
 
-    if (blankActive && !context.ghostWindow) {
+    if (blankActive && !context.isInitialGhostSpawn) {
         context.omniboxFocusGen = (context.omniboxFocusGen || 0) + 1;
         const omniboxGen = context.omniboxFocusGen;
         setImmediate(() => {
