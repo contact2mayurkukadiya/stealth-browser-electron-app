@@ -74,25 +74,22 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
                 height: workArea.height,
             }
             : { width: 1200, height: 800 }),
+        titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+        ...(isMac
+            ? { trafficLightPosition: { x: 15, y: 15 } }
+            : {
+                titleBarOverlay: stealthWindow ? stealthTitleBarOverlay : getTitleBarOverlayOptionsForNativeTheme(),
+            }
+        ),
         ...(isGhost
             ? {
                 type: isMac ? 'panel' : undefined,
-                frame: false,
-                transparent: true,
                 alwaysOnTop: true,
                 acceptFirstMouse: true,
                 fullscreenable: false,
                 show: false,
             }
-            : {
-                titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-                ...(isMac
-                    ? { trafficLightPosition: { x: 15, y: 15 } }
-                    : {
-                        titleBarOverlay: stealthWindow ? stealthTitleBarOverlay : getTitleBarOverlayOptionsForNativeTheme(),
-                    }
-                ),
-            }
+            : {}
         ),
         webPreferences: buildSecureWebPreferences({ partition }),
     });
