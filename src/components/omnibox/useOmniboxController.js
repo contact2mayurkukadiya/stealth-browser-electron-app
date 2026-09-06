@@ -1,5 +1,5 @@
 import {
-  useState, useRef, useCallback, useEffect, useMemo,
+  useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo,
 } from 'react';
 import AutocompleteController from './AutocompleteController.js';
 import { toNavigateUrl } from './AutocompleteInput.js';
@@ -138,6 +138,23 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
   const pendingCommittedUrlRef = useRef('');
   const recentHistoryFallbackRef = useRef([]);
   const recentFallbackSeqRef = useRef(0);
+
+  // A blank tab must focus the shell omnibox as soon as React commits the new
+  // active-tab state.  Previously this depended on an IPC event from main;
+  // that event can arrive before this hook has observed the new tab id, then
+  // only the later did-finish-load retry succeeds.  Keeping this in the shell
+  // makes NTP load time irrelevant to keyboard readiness.
+  useLayoutEffect(() => {
+    if (!currentTabId || !tab?.isNewTab) return undefined;
+    const input = inputRef.current;
+    if (!input) return undefined;
+
+    input.focus({ preventScroll: true });
+    try {
+      input.select();
+    } catch (_) { /* ignore */ }
+    return undefined;
+  }, [currentTabId, tab?.isNewTab]);
   const recentFallbackKeyRef = useRef(null);
   const activeSuggestionQueryRef = useRef(null);
   const suggestionCacheRef = useRef({ query: null, suggestions: [], ghostSuffix: '' });

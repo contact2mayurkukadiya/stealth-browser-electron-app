@@ -8,7 +8,7 @@ const chromeTheme = require('../../src/theme/chromeTheme.cjs');
 const { ensureProfile } = require('../services/profileService');
 const { loadSettings, getTitleBarOverlayOptionsForNativeTheme } = require('../services/settingsService');
 const { pushRecentlyClosedEntry, captureClosedWindowSnapshot } = require('../services/sessionService');
-const { registerAppProtocolForSession, installSessionNetworkGuards } = require('../services/networkService');
+const { registerAppProtocolForSession, installSessionNetworkGuards, prewarmNewTabAssets } = require('../services/networkService');
 const { cleanupStealthCookiesForContext, cleanupSessionOnlyCookiesForProfile } = require('../services/cookieService');
 
 const { applyIdentityToWebContents } = require('../../runtime/browserIdentity');
@@ -52,6 +52,9 @@ function createWindow({
     const mappedSession = session.fromPartition(partition);
     registerAppProtocolForSession(mappedSession, partition);
     installSessionNetworkGuards(mappedSession, { profileId: resolvedProfileId, isStealthSession: false });
+    // This is deliberately best-effort and is shared safely across all
+    // partitions: these are packaged, profile-independent renderer assets.
+    void prewarmNewTabAssets();
 
     /** One shared in-memory session per stealth window (all tabs incognito; discarded with the window). */
     let stealthTabsPartition = null;
@@ -137,6 +140,8 @@ function createWindow({
         stealthTabsPartition,
         tabs: {},
         sleepingTabs: {},
+        // Detached, fully loaded spare used only for the next foreground NTP.
+        prewarmedNtp: null,
         activeTabId: null,
         isActiveTabTemporarilyHidden: false,
         activeTabViewRemovedForShellOverlay: false,
@@ -190,7 +195,7 @@ function createWindow({
         menuUI.rebuildApplicationMenu();
     });
 
-    const { createTabContentContainer, layoutTabContentContainer, removeTabContentChildView, layoutActiveTabView } = require('./tabManager');
+    const { createTabContentContainer, layoutTabContentContainer, removeTabContentChildView, layoutActiveTabView, prewarmNewTabView } = require('./tabManager');
     const { getLensSession, postLensSelectionPatch } = require('./lensManager');
 
     createTabContentContainer(context);
@@ -288,6 +293,10 @@ function createWindow({
         }
         context.tabs = {};
         context.activeTabId = null;
+        if (context.prewarmedNtp?.view) {
+            try { if (!context.prewarmedNtp.view.webContents.isDestroyed()) context.prewarmedNtp.view.webContents.destroy(); } catch (_) { }
+        }
+        context.prewarmedNtp = null;
 
         if (context.tooltipView) {
             try { context.window.contentView.removeChildView(context.tooltipView); } catch (_) { }
@@ -390,6 +399,9 @@ function createWindow({
     createChromeOmniboxOverlayLayer(context);
     createTooltipOverlay(context);
     ensureChromeOverlayOnTop(context);
+    // Start this after the shell/overlay setup.  It stays detached and is only
+    // promoted for a foreground blank NTP in this exact window context.
+    setImmediate(() => prewarmNewTabView(context));
     return context;
 }
 

@@ -18,7 +18,6 @@ const {
     toDisplayUrl,
     isBlankTab,
     shouldReassertOmniboxAfterPageLoad,
-    isCustomNewTabDocumentUrl,
     classifyNavigationError,
     buildRedirectBlockedPage,
     buildSearchUrl
@@ -606,11 +605,71 @@ function installDevToolsTypographyOnOpen(webContents) {
     });
 }
 
+/**
+ * Keep one ready-to-promote NTP renderer per normal/stealth window.  It is
+ * never shared between windows or session partitions, and is deliberately not
+ * used for ghost windows.  The WebContents is detached while warming, so it
+ * cannot receive user input or affect the active tab.
+ */
+function prewarmNewTabView(context) {
+    if (!context || context.ghostWindow || context.prewarmedNtp) return;
+    if (!context.window || context.window.isDestroyed()) return;
+
+    const warmId = `__prewarm_ntp_${context.windowId}`;
+    createTab(context, warmId, CANONICAL_NTP_HTML, !!context.stealthWindow, {
+        activate: false,
+        prewarm: true,
+    });
+
+    const view = context.tabs[warmId];
+    if (!view || view.webContents.isDestroyed()) return;
+
+    // createTab attaches inactive views so Electron starts the load.  Detach
+    // immediately afterwards: this spare must never be part of tab layout or
+    // session snapshots.
+    removeTabContentChildView(context, view);
+    delete context.tabs[warmId];
+    context.prewarmedNtp = { id: warmId, view, ready: false };
+
+    view.webContents.once('did-finish-load', () => {
+        if (context.prewarmedNtp?.view === view) context.prewarmedNtp.ready = true;
+    });
+    view.webContents.once('destroyed', () => {
+        if (context.prewarmedNtp?.view === view) context.prewarmedNtp = null;
+    });
+}
+
+function promotePrewarmedNtp(context, id) {
+    const warmed = context?.prewarmedNtp;
+    const view = warmed?.view;
+    if (!warmed?.ready || !view || view.webContents.isDestroyed()) return false;
+
+    context.prewarmedNtp = null;
+    State.tabIdToWindowId.delete(warmed.id);
+    State.webContentsIdToTabId.set(view.webContents.id, id);
+    // Event listeners created while warming close over `id`; update that
+    // binding before making the view visible so future navigation metadata is
+    // always attributed to the real tab.
+    view._invisurfSetTabId?.(id);
+    context.tabs[id] = view;
+    State.tabIdToWindowId.set(id, context.window.id);
+    activateTabInContext(context, id);
+
+    // Refill asynchronously.  A missed or failed prewarm always falls back to
+    // normal tab creation, so this cannot block opening tabs.
+    setImmediate(() => prewarmNewTabView(context));
+    return true;
+}
+
 function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, options = {}) {
     if (!context) return;
+    const shouldActivate = options.activate !== false;
+    const isBlankNtp = resolveTabLoadUrl(url) === CANONICAL_NTP_HTML;
+    if (!options.prewarm && shouldActivate && !options.navigationHistory && isBlankNtp && promotePrewarmedNtp(context, id)) {
+        return;
+    }
     console.log('id', id);
     console.log('url', url);
-    const shouldActivate = options.activate !== false;
     const effectiveStealth = !!context.stealthWindow;
     const tabPartition = context.stealthWindow ? context.stealthTabsPartition : context.partition;
     const { buildSecureWebPreferences } = require('../../runtime/webPreferences');
@@ -647,7 +706,21 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
 
     const webContentsNumericId = view.webContents.id;
     State.webContentsIdToTabId.set(webContentsNumericId, id);
+    // Allows a detached prewarmed view to be promoted without rebuilding its
+    // renderer or losing its existing WebContents event listeners.
+    view._invisurfSetTabId = (nextId) => {
+        id = nextId;
+        view._invisurfPromoted = true;
+    };
     resetTabWebContentsScale(view);
+
+    const sendTabEvent = (channel, payload) => {
+        // A detached prewarmed NTP is not a tab yet.  Its lifecycle events
+        // must not reach Redux, which creates UI entries for unknown IDs.
+        if (options.prewarm && !view._invisurfPromoted) return;
+        if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
+        context.window.webContents.send(channel, payload);
+    };
 
     view.webContents.on('destroyed', () => {
         if (State.appLogger) {
@@ -848,7 +921,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
         if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
         const { toDisplayUrl, isInternalPageUrl } = require('../utils/navigation');
         const currentDisplayUrl = toDisplayUrl(view.webContents.getURL());
-        context.window.webContents.send(C.IPC_EVENT.TAB_UPDATE, { id, title, url: currentDisplayUrl });
+        sendTabEvent(C.IPC_EVENT.TAB_UPDATE, { id, title, url: currentDisplayUrl });
         if (!effectiveStealth && currentDisplayUrl && !currentDisplayUrl.startsWith('data:') && !isInternalPageUrl(currentDisplayUrl)) {
             if (State.historyService) {
                 State.historyService.updateTitle(context.profileId, currentDisplayUrl, title).catch((err) => {
@@ -861,20 +934,20 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     view.webContents.on('page-favicon-updated', (e, favicons) => {
         if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
         const { toDisplayUrl } = require('../utils/navigation');
-        context.window.webContents.send(C.IPC_EVENT.TAB_UPDATE, { id, favicon: favicons[0] || null, url: toDisplayUrl(view.webContents.getURL()) });
+        sendTabEvent(C.IPC_EVENT.TAB_UPDATE, { id, favicon: favicons[0] || null, url: toDisplayUrl(view.webContents.getURL()) });
     });
 
     view.webContents.on('did-start-loading', () => {
         if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
         resetTabWebContentsScale(view);
         const { toDisplayUrl } = require('../utils/navigation');
-        context.window.webContents.send(C.IPC_EVENT.TAB_UPDATE, { id, isLoading: true, url: toDisplayUrl(view.webContents.getURL()) });
+        sendTabEvent(C.IPC_EVENT.TAB_UPDATE, { id, isLoading: true, url: toDisplayUrl(view.webContents.getURL()) });
     });
 
     view.webContents.on('did-stop-loading', () => {
         if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
         const { toDisplayUrl } = require('../utils/navigation');
-        context.window.webContents.send(C.IPC_EVENT.TAB_UPDATE, { id, isLoading: false, url: toDisplayUrl(view.webContents.getURL()) });
+        sendTabEvent(C.IPC_EVENT.TAB_UPDATE, { id, isLoading: false, url: toDisplayUrl(view.webContents.getURL()) });
     });
 
     view.webContents.on('did-finish-load', () => {
@@ -890,12 +963,9 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
             return;
         }
 
-        if (isCustomNewTabDocumentUrl(loadedUrl) && isBlankTab(loadedUrl)) {
-            setImmediate(() => {
-                if (context.activeTabId !== id) return;
-                sendOmniboxFocusToShell(context, id, true, false);
-            });
-        }
+        // Blank-tab focus is now driven by the shell's committed Redux state.
+        // Do not re-focus after the NTP has loaded: that caused Cmd+T focus to
+        // appear delayed and could override an intervening user interaction.
     });
 
     const { consumeNextNavigationTransition, isInternalPageUrl } = require('../utils/navigation');
@@ -913,7 +983,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
             });
         }
         recordCompatEvent(id, { type: 'navigated', url: displayUrl, rawUrl: targetUrl });
-        context.window.webContents.send(C.IPC_EVENT.URL_CHANGED, { id, url: displayUrl });
+        sendTabEvent(C.IPC_EVENT.URL_CHANGED, { id, url: displayUrl });
         if (!effectiveStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
             if (State.historyService) {
                 State.historyService.recordVisit(context.profileId, {
@@ -940,7 +1010,7 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
                 url: displayUrl,
             });
         }
-        context.window.webContents.send(C.IPC_EVENT.URL_CHANGED, { id, url: displayUrl });
+        sendTabEvent(C.IPC_EVENT.URL_CHANGED, { id, url: displayUrl });
         if (!effectiveStealth && !targetUrl.startsWith('data:') && !isInternalPageUrl(targetUrl)) {
             if (State.historyService) {
                 State.historyService.recordVisit(context.profileId, {
@@ -1029,6 +1099,11 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
     if (shouldActivate) {
         activateTabInContext(context, id);
     }
+    // If startup prewarming lost a race with the first Cmd+T, keep the normal
+    // creation path intact and prepare the next blank tab in the background.
+    if (!options.prewarm && isBlankNtp) {
+        setImmediate(() => prewarmNewTabView(context));
+    }
 }
 
 module.exports = {
@@ -1061,5 +1136,6 @@ module.exports = {
     openUndockedDevToolsForActiveTab,
     printActiveTab,
     triggerFindInActiveTab,
+    prewarmNewTabView,
     createTab
 };

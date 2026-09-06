@@ -60,6 +60,9 @@ function AppShell() {
   // Always-fresh ref so event-handler closures never capture stale state
   const stateRef = useRef({});
   stateRef.current = { tabs, tabOrder, currentTabId };
+  // Startup waits on IPC before deciding whether to create its default tab.
+  // Track tab creation synchronously so Cmd+T can win that race safely.
+  const hasRegisteredTabRef = useRef(false);
   /** Latest handlers for native tab strip context menu action IPC (refilled each render). */
   const tabStripMenuHandlersRef = useRef({});
 
@@ -130,6 +133,7 @@ function AppShell() {
   const createTab = useCallback(() => {
     const st = stealthWindowRef.current;
     const id = 'tab-' + Date.now();
+    hasRegisteredTabRef.current = true;
     dispatch(addTab({ id, isStealth: st, initialUrl: null }));
     // Main activates the tab inside new-tab → createTab; avoid redundant switch-tab IPC
     // (stateRef is stale until the next render, so switchTab would always fire duplicate IPC).
@@ -138,6 +142,7 @@ function AppShell() {
 
   const createTabWithUrl = useCallback((id, isStealth, initialUrl, options = {}) => {
     const st = stealthWindowRef.current || isStealth;
+    hasRegisteredTabRef.current = true;
     dispatch(addTab({ id, isStealth: st, initialUrl }));
     window.electronAPI.newTab(id, st, initialUrl, options);
   }, [dispatch]);
@@ -473,6 +478,7 @@ function AppShell() {
 
   const handleTabCreated = useCallback(({ id, url, isStealth }) => {
     console.log('handleTabCreated', id, url, isStealth);
+    hasRegisteredTabRef.current = true;
     const { tabs } = stateRef.current;
     if (!tabs[id]) {
       dispatch(addTab({ id, isStealth, initialUrl: url }));
@@ -636,6 +642,10 @@ function AppShell() {
       if (window.electronAPI.sessionLoad) {
         session = await window.electronAPI.sessionLoad();
       }
+
+      // A user-created tab arrived while initialization was awaiting IPC. Do
+      // not append the default/restored tab after it.
+      if (hasRegisteredTabRef.current) return;
 
       if (session?.tabs?.length > 0) {
         // Determine which tab should be active on restore.
