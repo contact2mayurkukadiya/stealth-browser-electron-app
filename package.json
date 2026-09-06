@@ -1,9 +1,11 @@
 {
   "name": "invisurf",
+  "productName": "InviSurf",
   "version": "1.0.0",
   "description": "InviSurf browser (Electron)",
   "main": "main/index.js",
   "scripts": {
+    "postinstall": "node scripts/patch-macos-dev-name.cjs",
     "start": "npm run build:renderer && electron .",
     "build:native": "node-gyp rebuild",
     "build:renderer": "node scripts/renderer-build-all.cjs",

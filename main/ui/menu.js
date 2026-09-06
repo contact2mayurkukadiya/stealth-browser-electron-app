@@ -29,8 +29,23 @@ function openDownloadsFolder() {
 function buildApplicationMenu() {
     const tabManager = require('../windows/tabManager');
     const windowManager = require('../windows/windowManager');
+    const isMac = process.platform === 'darwin';
 
     return Menu.buildFromTemplate([
+        ...(isMac ? [{
+            label: app.name,
+            submenu: [
+                { role: 'about' },
+                { type: 'separator' },
+                { role: 'services' },
+                { type: 'separator' },
+                { role: 'hide' },
+                { role: 'hideOthers' },
+                { role: 'unhide' },
+                { type: 'separator' },
+                { role: 'quit' }
+            ]
+        }] : []),
         {
             label: 'File',
             submenu: [
@@ -80,7 +95,7 @@ function buildApplicationMenu() {
                     click: () => tabManager.printActiveTab(),
                 },
                 { type: 'separator' },
-                { role: 'quit' }
+                isMac ? { role: 'close' } : { role: 'quit' }
             ]
         },
         {
