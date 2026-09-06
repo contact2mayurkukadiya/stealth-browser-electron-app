@@ -5,7 +5,8 @@ const State = require('../state');
 
 const {
     focusedShellWebContents,
-    getWindowContextForShellFallback
+    getWindowContextForShellFallback,
+    getWindowContextByEventSender
 } = require('../windows/windowContextUtils');
 
 const { restoreRecentlyClosed } = require('../services/sessionService');
@@ -17,7 +18,8 @@ function handleShortcuts(event, input) {
     const key = input.key.toLowerCase();
     const isCommandOrControlPressed = input.control || input.meta;
 
-    const context = getWindowContextForShellFallback();
+    const senderContext = event?.sender ? getWindowContextByEventSender(event.sender) : null;
+    const context = senderContext || getWindowContextForShellFallback();
     const { getLensSession, closeGoogleLensSelection } = require('../windows/lensManager');
     const lensSelectionActive = getLensSession(context, context?.activeTabId, false)?.selectionActive;
 
@@ -41,7 +43,7 @@ function handleShortcuts(event, input) {
 
     if (isCommandOrControlPressed && input.shift && key === 't') {
         event.preventDefault();
-        restoreRecentlyClosed();
+        restoreRecentlyClosed(null, context);
         return;
     }
 

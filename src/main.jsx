@@ -5,8 +5,6 @@ import { store } from './store/store';
 import App from './App';
 import './index.css';
 import { applyChromeThemeFromSettings, applyStealthWindowChrome } from './hooks/useChromeTheme';
-import { bootstrapVirtualInput } from './input/bootstrapVirtualInput.js';
-import DiagnosticOverlay from './input/DiagnosticOverlay.jsx';
 
 const SETTINGS_FALLBACK = {
   colorTheme: 'automatic',
@@ -22,7 +20,12 @@ async function bootstrapShellTheme() {
   try {
     const api = window.electronAPI;
     const bootstrap = api?.windowGetBootstrap ? await api.windowGetBootstrap() : null;
-    window.__APP_BOOTSTRAP = bootstrap ?? null;
+    if (bootstrap) {
+      window.__APP_BOOTSTRAP = bootstrap;
+    }
+    if (bootstrap?.ghostWindow) {
+      window.__INVISURF_GHOST_WINDOW__ = true;
+    }
     if (bootstrap?.stealthWindow) {
       window.__INVISURF_STEALTH_WINDOW__ = true;
       applyStealthWindowChrome();
@@ -41,14 +44,12 @@ async function bootstrapShellTheme() {
 
 async function bootstrap() {
   await bootstrapShellTheme();
-  bootstrapVirtualInput();
 
   const container = document.getElementById('root');
   const root = createRoot(container);
   root.render(
     <Provider store={store}>
       <App />
-      <DiagnosticOverlay />
     </Provider>,
   );
 }

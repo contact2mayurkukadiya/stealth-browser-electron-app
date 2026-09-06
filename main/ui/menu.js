@@ -29,8 +29,23 @@ function openDownloadsFolder() {
 function buildApplicationMenu() {
     const tabManager = require('../windows/tabManager');
     const windowManager = require('../windows/windowManager');
+    const isMac = process.platform === 'darwin';
 
     return Menu.buildFromTemplate([
+        ...(isMac ? [{
+            label: app.name,
+            submenu: [
+                { role: 'about' },
+                { type: 'separator' },
+                { role: 'services' },
+                { type: 'separator' },
+                { role: 'hide' },
+                { role: 'hideOthers' },
+                { role: 'unhide' },
+                { type: 'separator' },
+                { role: 'quit' }
+            ]
+        }] : []),
         {
             label: 'File',
             submenu: [
@@ -47,6 +62,16 @@ function buildApplicationMenu() {
                         const context = getWindowContextByBrowserWindow(w);
                         if (!context) return;
                         windowManager.createWindow({ profileId: context.profileId, stealthWindow: true });
+                    },
+                },
+                {
+                    label: 'New Ghost Window',
+                    accelerator: 'CmdOrCtrl+Alt+G',
+                    click: () => {
+                        const w = getFocusedShellWindow() || State.mainWindow;
+                        const context = getWindowContextByBrowserWindow(w);
+                        const profileId = context?.profileId || State.defaultProfileId;
+                        windowManager.createWindow({ profileId, ghostWindow: true });
                     },
                 },
                 {
@@ -70,7 +95,7 @@ function buildApplicationMenu() {
                     click: () => tabManager.printActiveTab(),
                 },
                 { type: 'separator' },
-                { role: 'quit' }
+                isMac ? { role: 'close' } : { role: 'quit' }
             ]
         },
         {
@@ -139,7 +164,8 @@ function buildApplicationMenu() {
                     enabled: (() => {
                         const context = getWindowContextForShellFallback();
                         const { getOrCreateRecentlyClosedForProfile } = require('../services/sessionService');
-                        return !!context && getOrCreateRecentlyClosedForProfile(context.profileId).length > 0;
+                        const profileId = context?.profileId || State.defaultProfileId;
+                        return !!profileId && getOrCreateRecentlyClosedForProfile(profileId).length > 0;
                     })(),
                     click: () => restoreRecentlyClosed(),
                 },

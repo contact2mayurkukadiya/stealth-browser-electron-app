@@ -13,10 +13,12 @@ export function buildCommandPaletteCommands(ctx) {
   const S = {
     fileNew: mac ? '⌘T' : 'Ctrl+T',
     fileStealthWindow: mac ? '⌘⇧N' : 'Ctrl+Shift+N',
+    fileGhostWindow: mac ? '⌥⌘G' : 'Ctrl+Alt+G',
     fileClose: mac ? '⌘W' : 'Ctrl+W',
     fileQuit: mac ? '⌘Q' : 'Alt+F4',
     viewReload: mac ? '⌘R' : 'Ctrl+R',
     viewSettings: mac ? '⌘,' : 'Ctrl+,',
+    historyReopen: mac ? '⌘⇧T' : 'Ctrl+Shift+T',
     tabNext: mac ? '⌃Tab' : 'Ctrl+Tab',
     tabPrev: mac ? '⌃⇧Tab' : 'Ctrl+Shift+Tab',
     tabDup: mac ? '⌘⇧D' : 'Ctrl+Shift+D',
@@ -40,6 +42,15 @@ export function buildCommandPaletteCommands(ctx) {
       keywords: 'incognito ephemeral private invisurf',
       run: () => {
         void ctx.createStealthWindow?.();
+      },
+    },
+    {
+      category: 'File',
+      label: 'New Ghost Window',
+      shortcut: S.fileGhostWindow,
+      keywords: 'ghost non-activating focus float interactive',
+      run: () => {
+        void ctx.createGhostWindow?.();
       },
     },
     {
@@ -153,6 +164,15 @@ export function buildCommandPaletteCommands(ctx) {
       label: 'History page',
       keywords: 'chronicle browsing invisurf',
       run: () => ctx.openHistory(),
+    },
+    {
+      category: 'History',
+      label: 'Reopen Closed Tab / Window',
+      shortcut: S.historyReopen,
+      keywords: 'restore reopen closed ghost tab window',
+      run: () => {
+        void window.electronAPI.recentlyClosedRestore?.();
+      },
     },
     {
       category: 'Tab',

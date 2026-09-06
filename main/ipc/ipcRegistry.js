@@ -26,10 +26,10 @@ const compatDiagnostics = require(path.join(process.cwd(), 'compatibilityDiagnos
 const identityDiagnostics = require(path.join(process.cwd(), 'runtime', 'identityDiagnostics.js'));
 const { getTabNetworkDomains, addToCookieBlocklist } = require(path.join(process.cwd(), 'runtime', 'sessionPolicy.js'));
 
-function spawnWindowWithTab({ profileId, url, urls, stealthWindow }) {
+function spawnWindowWithTab({ profileId, url, urls, stealthWindow, ghostWindow }) {
     // 1. Ensure profile exists and create the Native Window Shell
     profileService.ensureProfile(profileId);
-    const createdContext = windowManager.createWindow({ profileId, stealthWindow });
+    const createdContext = windowManager.createWindow({ profileId, stealthWindow, ghostWindow });
 
     // 2. Store the initial URL(s) as a bootstrap payload so that when the new window's
     //    React shell mounts and calls init(), it reads this payload and opens the
@@ -39,12 +39,15 @@ function spawnWindowWithTab({ profileId, url, urls, stealthWindow }) {
         ? urls.filter((u) => typeof u === 'string' && u.trim() !== '')
         : (url && typeof url === 'string' && url.trim() !== '' ? [url] : []);
 
+    const existingBootstrap = State.windowBootstrapById.get(createdContext.windowId) || {};
     if (urlArray.length === 1) {
         State.windowBootstrapById.set(createdContext.windowId, {
+            ...existingBootstrap,
             initialUrl: urlArray[0],
         });
     } else if (urlArray.length > 1) {
         State.windowBootstrapById.set(createdContext.windowId, {
+            ...existingBootstrap,
             initialUrls: urlArray,
         });
     }
@@ -140,6 +143,44 @@ function registerIpcHandlers() {
         // Support both a single `url` and an `urls` array (for "Open All in stealth window")
         const createdContext = spawnWindowWithTab({ profileId, stealthWindow: true, url: payload.url, urls: payload.urls });
         return { windowId: createdContext.windowId, profileId };
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.WINDOW_CREATE_GHOST || 'window:create-ghost', (event, payload = {}) => {
+        if (!isSenderTrusted(event)) return null;
+        const senderContext = getWindowContextByEventSender(event.sender);
+        const profileId = typeof payload.profileId === 'string' && payload.profileId.trim() ? payload.profileId.trim() : (senderContext?.profileId || State.defaultProfileId);
+        const createdContext = spawnWindowWithTab({ profileId, ghostWindow: true, url: payload.url, urls: payload.urls });
+        return { windowId: createdContext.windowId, profileId };
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.IS_GHOST_WINDOW || 'context:is-ghost-window', (event) => {
+        if (!isSenderTrusted(event)) return false;
+        const context = getWindowContextByEventSender(event.sender);
+        return !!context?.ghostWindow;
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.GHOST_CLOSE || 'ghost:close', (event) => {
+        if (!isSenderTrusted(event)) return { ok: false };
+        const context = getWindowContextByEventSender(event.sender);
+        if (!context?.window || context.window.isDestroyed()) return { ok: false };
+        try {
+            context.window.close();
+            return { ok: true };
+        } catch (_) {
+            try { context.window.destroy(); return { ok: true }; } catch (e) { return { ok: false }; }
+        }
+    });
+
+    ipcMain.on(C.IPC_SEND.GHOST_DRAG || 'ghost:drag', (event, { deltaX, deltaY } = {}) => {
+        if (!isSenderTrusted(event)) return;
+        const context = getWindowContextByEventSender(event.sender);
+        if (!context?.window || context.window.isDestroyed()) return;
+        try {
+            const [x, y] = context.window.getPosition();
+            const newX = Math.round(x + (Number(deltaX) || 0));
+            const newY = Math.round(y + (Number(deltaY) || 0));
+            context.window.setPosition(newX, newY);
+        } catch (_) { }
     });
 
     ipcMain.handle(C.IPC_INVOKE.WINDOW_CLOSE_IF_STEALTH, (event) => {
@@ -335,16 +376,20 @@ function registerIpcHandlers() {
         const stack = sessionService.getOrCreateRecentlyClosedForProfile(context.profileId);
         return stack.slice(0, 15).map((entry) => ({
             type: entry?.type === 'window' ? 'window' : 'tab',
+            ghostWindow: !!entry?.ghostWindow,
             label: sessionService.recentlyClosedEntryLabel(entry),
-            subtitle: entry?.type === 'window' ? `${entry?.tabs?.length || 0} tabs` : (entry?.url || ''),
+            subtitle: entry?.ghostWindow
+                ? (entry?.tabs?.length === 1 ? `Ghost Window • ${entry?.tabs[0]?.url || 'New Tab'}` : `Ghost Window (${entry?.tabs?.length || 0} tabs)`)
+                : (entry?.type === 'window' ? `${entry?.tabs?.length || 0} tabs` : (entry?.url || '')),
             closedAt: entry?.closedAt || null,
         }));
     });
 
     ipcMain.handle(C.IPC_INVOKE.RECENTLY_CLOSED_RESTORE, (event, payload = {}) => {
         if (!isSenderTrusted(event)) return { ok: false };
+        const callerContext = getWindowContextByEventSender(event.sender);
         const closedAt = typeof payload?.closedAt === 'number' ? payload.closedAt : null;
-        sessionService.restoreRecentlyClosed(closedAt);
+        sessionService.restoreRecentlyClosed(closedAt, callerContext);
         return { ok: true };
     });
 
@@ -628,6 +673,9 @@ function registerIpcHandlers() {
             return;
         }
 
+        const totalTabsRemaining = Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length;
+        const willCloseWindow = closeWindowIfLast && totalTabsRemaining <= 1;
+
         if (context.tabs[id]) {
             tabManager.removeTabContentChildView(context, context.tabs[id]);
             context.tabs[id].webContents.destroy();
@@ -640,8 +688,32 @@ function registerIpcHandlers() {
         if (State.historyService) State.historyService.clearTab(id);
         compatDiagnostics.clear(id);
 
-        if (tabSnapshot) {
-            sessionService.pushRecentlyClosedEntry(context.profileId, { type: 'tab', title: tabSnapshot.title, url: tabSnapshot.url, history: tabSnapshot.history });
+        if (willCloseWindow) {
+            let windowBounds = null;
+            try {
+                if (context.window && !context.window.isDestroyed()) {
+                    windowBounds = context.window.getBounds();
+                }
+            } catch (_) { }
+
+            const windowSnapshot = {
+                type: 'window',
+                profileId: context.profileId,
+                ghostWindow: !!context.ghostWindow,
+                bounds: windowBounds,
+                tabs: tabSnapshot ? [tabSnapshot] : (context.ghostWindow ? [{ id, title: 'Ghost Window', url: '' }] : []),
+                activeTabId: id,
+            };
+            sessionService.pushRecentlyClosedEntry(context.profileId, windowSnapshot);
+            context._closedWindowSnapshotPushed = true;
+        } else if (tabSnapshot) {
+            sessionService.pushRecentlyClosedEntry(context.profileId, {
+                type: 'tab',
+                title: tabSnapshot.title,
+                url: tabSnapshot.url,
+                history: tabSnapshot.history,
+                ghostWindow: !!context.ghostWindow,
+            });
         }
 
         const tabsRemaining = Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length;
@@ -913,10 +985,6 @@ function registerIpcHandlers() {
             await cookieService.cleanupBlockedCookiesForProfile(profileId);
         }
         settingsService.applyColorThemeFromSettings();
-        if (Object.prototype.hasOwnProperty.call(patch, 'nonActivatingInteraction')) {
-            const { applyNonActivatingInteractionFromSettings } = require('../services/nonActivatingService');
-            applyNonActivatingInteractionFromSettings(next);
-        }
         settingsService.broadcastSettingsUpdate(next);
         return true;
     });
@@ -1168,41 +1236,6 @@ function registerIpcHandlers() {
     ipcMain.handle(C.IPC_INVOKE.CLIPBOARD_READ, (e) => {
         if (!isSenderTrusted(e)) return '';
         return clipboard.readText();
-    });
-
-    ipcMain.handle(C.IPC_INVOKE.VIRTUAL_KEYBOARD_FOCUS, (e, payload = {}) => {
-        if (!isSenderTrusted(e)) return { ok: false };
-        const globalInputController = require('../input/GlobalInputController');
-        const State = require('../state');
-        const active = !!payload.active;
-        const kind = payload.kind || (State.webContentsIdToTabId.has(e.sender.id) ? 'tab' : 'shell');
-        const tabId = kind === 'tab' ? State.webContentsIdToTabId.get(e.sender.id) : null;
-        return globalInputController.setVirtualKeyboardFocus({
-            active,
-            kind,
-            webContentsId: active ? e.sender.id : null,
-            tabId: tabId || null,
-            targetId: payload.targetId || null,
-        });
-    });
-
-    ipcMain.handle(C.IPC_INVOKE.VIRTUAL_KEYBOARD_PERMISSION, (e) => {
-        if (!isSenderTrusted(e)) return { supported: false, granted: false };
-        const permissionManager = require('../input/PermissionManager');
-        const globalInputController = require('../input/GlobalInputController');
-        return {
-            ...permissionManager.getPermissionStatus(),
-            monitoring: globalInputController.isMonitorRunning(),
-        };
-    });
-
-    ipcMain.handle(C.IPC_INVOKE.VIRTUAL_KEYBOARD_REQUEST_PERMISSION, (e) => {
-        if (!isSenderTrusted(e)) return { ok: false, granted: false };
-        const permissionManager = require('../input/PermissionManager');
-        const result = permissionManager.requestPermission();
-        const { applyNonActivatingInteractionFromSettings } = require('../services/nonActivatingService');
-        applyNonActivatingInteractionFromSettings(require('../services/settingsService').loadSettings());
-        return result;
     });
 
     ipcMain.handle(C.IPC_INVOKE.APP_RELAUNCH, (e) => {

@@ -60,7 +60,6 @@ const COOKIE_CONFIG_DEFAULTS = {
 
 const SETTINGS_DEFAULTS = {
     contentProtection: true,
-    nonActivatingInteraction: false,
     startupBehavior: 'continue', // 'fresh' | 'continue' | 'clearHistory'
     compatibilityDiagnosticsEnabled: false,
     searchEngine: 'google', // 'google' | 'bing' | 'brave' | 'duckDuckGo'

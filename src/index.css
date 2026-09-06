@@ -233,6 +233,71 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     background: #253035;
 }
 
+/*
+ * Dedicated ghost (non-activating) window: inherits profile theme with clean floating elevation
+ */
+.header--ghost-window {
+    border-bottom: 1px solid var(--chrome-tab-separator, rgba(0, 0, 0, 0.12));
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    -webkit-app-region: no-drag !important;
+}
+
+.header--ghost-window,
+.header--ghost-window * {
+    -webkit-app-region: no-drag !important;
+}
+
+.tab-bar--ghost {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-app-region: no-drag !important;
+}
+
+.ghost-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    background: rgba(130, 120, 255, 0.15);
+    border: 1px solid rgba(130, 120, 255, 0.35);
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--chrome-accent, #8b80ff);
+    letter-spacing: 0.4px;
+    user-select: none;
+    pointer-events: none;
+    flex-shrink: 0;
+}
+
+[data-effective-appearance="dark"] .ghost-badge {
+    color: #c4bfff;
+    background: rgba(130, 120, 255, 0.18);
+    border-color: rgba(130, 120, 255, 0.42);
+}
+
+[data-effective-appearance="light"] .ghost-badge {
+    color: #5844e3;
+    background: rgba(88, 68, 227, 0.12);
+    border-color: rgba(88, 68, 227, 0.35);
+}
+
+.ghost-badge--left {
+    margin: 0 10px 0 2px;
+}
+
+.ghost-badge--right {
+    margin: 0 12px 0 10px;
+}
+
+.ghost-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--chrome-accent, #8b80ff);
+    box-shadow: 0 0 6px var(--chrome-accent, #8b80ff);
+}
+
 @media (prefers-color-scheme: light) {
     /* Seamless tab strip + omnibox row — no divider between them */
 

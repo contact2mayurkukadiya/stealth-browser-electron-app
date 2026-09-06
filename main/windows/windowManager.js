@@ -25,14 +25,6 @@ const {
     layoutOmniboxOverlayBounds
 } = require('./overlayManager');
 
-const {
-    getGhostBrowserWindowOptions,
-    attachGhostWindowLifecycle,
-    enableGhostWindow,
-    showBrowserWindow,
-    shouldSkipOsFocus,
-} = require('../ghostWindow/GhostWindowController');
-
 /** Usable screen rectangle (excludes dock/taskbar); keeps custom title bar — not OS fullscreen. */
 function getPrimaryWorkAreaBounds() {
     try {
@@ -45,7 +37,15 @@ function getPrimaryWorkAreaBounds() {
     }
 }
 
-function createWindow({ profileId = null, windowId = null, fillWorkArea = true, stealthWindow = false } = {}) {
+function createWindow({
+    profileId = null,
+    windowId = null,
+    fillWorkArea = true,
+    stealthWindow = false,
+    ghostWindow = false,
+    bounds = null,
+    bootstrapPayload = null,
+} = {}) {
     const resolvedProfileId = profileId || State.defaultProfileId || `profile-${crypto.randomUUID()}`;
     ensureProfile(resolvedProfileId);
     const partition = `persist:profile-${resolvedProfileId}`;
@@ -63,6 +63,7 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     }
 
     const isMac = process.platform === C.PLATFORM.DARWIN;
+    const isGhost = !!ghostWindow;
     const workArea = fillWorkArea ? getPrimaryWorkAreaBounds() : null;
     const stealthTitleBarOverlay =
         process.platform !== 'darwin'
@@ -72,49 +73,58 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
             )
             : null;
 
+    const hasValidBounds = bounds &&
+        typeof bounds.x === 'number' &&
+        typeof bounds.y === 'number' &&
+        typeof bounds.width === 'number' && bounds.width > 0 &&
+        typeof bounds.height === 'number' && bounds.height > 0;
+
     const window = new BrowserWindow({
-        ...(workArea
+        ...(hasValidBounds
             ? {
-                x: workArea.x,
-                y: workArea.y,
-                width: workArea.width,
-                height: workArea.height,
+                x: Math.round(bounds.x),
+                y: Math.round(bounds.y),
+                width: Math.round(bounds.width),
+                height: Math.round(bounds.height),
             }
-            : { width: 1200, height: 800 }),
-        titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+            : (workArea
+                ? {
+                    x: workArea.x,
+                    y: workArea.y,
+                    width: workArea.width,
+                    height: workArea.height,
+                }
+                : { width: 1200, height: 800 })),
+        titleBarStyle: (isMac && !isGhost) ? 'hiddenInset' : 'hidden',
         ...(isMac
             ? { trafficLightPosition: { x: 15, y: 15 } }
             : {
                 titleBarOverlay: stealthWindow ? stealthTitleBarOverlay : getTitleBarOverlayOptionsForNativeTheme(),
             }
         ),
-        ...getGhostBrowserWindowOptions(),
+        ...(isGhost
+            ? {
+                type: isMac ? 'panel' : undefined,
+                alwaysOnTop: true,
+                acceptFirstMouse: true,
+                fullscreenable: false,
+                show: false,
+            }
+            : {}
+        ),
         webPreferences: buildSecureWebPreferences({ partition }),
     });
 
-    attachGhostWindowLifecycle(window);
-    enableGhostWindow(window);
+    if (isGhost) {
+        try {
+            const { applyGhostMode } = require('../native');
+            applyGhostMode(window);
+        } catch (_) { }
+    }
 
     applyIdentityToWebContents(window.webContents);
     applyShellWindowSecurity(window, { permissionFullscreen: C.PERMISSION.FULLSCREEN });
     applyContentProtection(window, loadSettings().contentProtection);
-
-    const shellEntryUrl = 'app://dist/index.html';
-    window.loadURL(shellEntryUrl).catch((error) => {
-        console.error('Failed to load shell entry URL:', shellEntryUrl, error);
-    });
-
-    const menuUI = require('../ui/menu');
-    menuUI.rebuildApplicationMenu();
-
-    const { handleShortcuts } = require('../ui/shortcuts');
-    window.webContents.on('before-input-event', handleShortcuts);
-
-    if (!State.mainWindow || State.mainWindow.isDestroyed()) State.mainWindow = window;
-    window.on('focus', () => {
-        State.mainWindow = window;
-        menuUI.rebuildApplicationMenu();
-    });
 
     const context = {
         window,
@@ -122,6 +132,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         profileId: resolvedProfileId,
         partition,
         stealthWindow: !!stealthWindow,
+        ghostWindow: isGhost,
+        isInitialGhostSpawn: isGhost,
         stealthTabsPartition,
         tabs: {},
         sleepingTabs: {},
@@ -147,6 +159,37 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     };
     State.windowContextsById.set(window.id, context);
 
+    const initialBootstrap = {
+        ...(isGhost ? { ghostWindow: true } : {}),
+        ...(stealthWindow ? { stealthWindow: true } : {}),
+        ...(bootstrapPayload || {}),
+    };
+    if (Object.keys(initialBootstrap).length > 0) {
+        State.windowBootstrapById.set(context.windowId, initialBootstrap);
+    }
+
+    const shellEntryUrl = 'app://dist/index.html';
+    window.loadURL(shellEntryUrl).catch((error) => {
+        console.error('Failed to load shell entry URL:', shellEntryUrl, error);
+    });
+
+    const menuUI = require('../ui/menu');
+    menuUI.rebuildApplicationMenu();
+
+    const { handleShortcuts } = require('../ui/shortcuts');
+    window.webContents.on('before-input-event', handleShortcuts);
+
+    if (!context.ghostWindow && (!State.mainWindow || State.mainWindow.isDestroyed())) {
+        State.mainWindow = window;
+    }
+    window.on('focus', () => {
+        if (context.isInitialGhostSpawn) context.isInitialGhostSpawn = false;
+        if (!context.ghostWindow) {
+            State.mainWindow = window;
+        }
+        menuUI.rebuildApplicationMenu();
+    });
+
     const { createTabContentContainer, layoutTabContentContainer, removeTabContentChildView, layoutActiveTabView } = require('./tabManager');
     const { getLensSession, postLensSelectionPatch } = require('./lensManager');
 
@@ -162,13 +205,46 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
         });
     }
 
-    if (stealthWindow) {
+    if (isGhost) {
+        window.setTitle('InviSurf — Ghost');
+        const prevBoot = State.windowBootstrapById.get(context.windowId) || {};
+        State.windowBootstrapById.set(context.windowId, {
+            ...prevBoot,
+            stealthWindow: !!stealthWindow,
+            ghostWindow: true,
+        });
+        const { applyGhostMode } = require('../native');
+        const showGhost = () => {
+            try {
+                applyGhostMode(window);
+                window.showInactive();
+            } catch (err) {
+                console.error('[windowManager] Failed to show ghost window:', err);
+                try { window.show(); } catch (_) { }
+            }
+        };
+        if (window.isVisible()) {
+            showGhost();
+        } else {
+            window.once('ready-to-show', showGhost);
+            setTimeout(() => {
+                if (!window.isDestroyed() && !window.isVisible()) {
+                    showGhost();
+                }
+            }, 800);
+        }
+    } else if (stealthWindow) {
         window.setTitle('InviSurf — Stealth');
-        State.windowBootstrapById.set(context.windowId, { stealthWindow: true });
+        const prevBoot = State.windowBootstrapById.get(context.windowId) || {};
+        State.windowBootstrapById.set(context.windowId, { ...prevBoot, stealthWindow: true });
     }
 
     window.on('resize', () => {
         layoutTabContentContainer(context);
+        if (context.ghostWindow && process.platform === 'win32') {
+            const { hookWindowChildren } = require('../native');
+            hookWindowChildren(context.window);
+        }
         if (!context.activeTabId || State.detachedTabWindows.has(context.activeTabId)) return;
         const view = context.tabs[context.activeTabId];
         if (!view) return;
@@ -189,18 +265,20 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
     });
 
     window.on('close', () => {
-        const windowSnapshot = captureClosedWindowSnapshot(context);
-        if (State.appLogger) {
-            State.appLogger.info('window:close', {
-                windowId: context.windowId,
-                profileId: context.profileId,
-                stealthWindow: context.stealthWindow,
-                tabCount: Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length,
-                capturedRecentlyClosedTabs: windowSnapshot?.tabs?.length || 0,
-            });
-        }
-        if (windowSnapshot) {
-            pushRecentlyClosedEntry(context.profileId, windowSnapshot);
+        if (!context._closedWindowSnapshotPushed) {
+            const windowSnapshot = captureClosedWindowSnapshot(context);
+            if (State.appLogger) {
+                State.appLogger.info('window:close', {
+                    windowId: context.windowId,
+                    profileId: context.profileId,
+                    stealthWindow: context.stealthWindow,
+                    tabCount: Object.keys(context.tabs).length + Object.keys(context.sleepingTabs).length,
+                    capturedRecentlyClosedTabs: windowSnapshot?.tabs?.length || 0,
+                });
+            }
+            if (windowSnapshot) {
+                pushRecentlyClosedEntry(context.profileId, windowSnapshot);
+            }
         }
 
         for (const tabId of Object.keys(context.tabs)) {
@@ -317,10 +395,8 @@ function createWindow({ profileId = null, windowId = null, fillWorkArea = true, 
 
 function createProfilePickerWindow() {
     if (State.profilePickerWindow && !State.profilePickerWindow.isDestroyed()) {
-        showBrowserWindow(State.profilePickerWindow);
-        if (!shouldSkipOsFocus()) {
-            State.profilePickerWindow.focus();
-        }
+        State.profilePickerWindow.show();
+        State.profilePickerWindow.focus();
         return;
     }
     const workArea = screen.getPrimaryDisplay().workArea;
@@ -334,12 +410,8 @@ function createProfilePickerWindow() {
         title: 'Choose profile',
         titleBarStyle: 'default',
         fullscreen: false,
-        ...getGhostBrowserWindowOptions(),
         webPreferences: buildSecureWebPreferences(),
     });
-
-    attachGhostWindowLifecycle(picker);
-    enableGhostWindow(picker);
 
     applyProfilePickerSecurity(picker, loadSettings().contentProtection);
     applyIdentityToWebContents(picker.webContents);
@@ -362,6 +434,4 @@ module.exports = {
     getPrimaryWorkAreaBounds,
     createWindow,
     createProfilePickerWindow,
-    showBrowserWindow,
-    shouldSkipOsFocus,
 };

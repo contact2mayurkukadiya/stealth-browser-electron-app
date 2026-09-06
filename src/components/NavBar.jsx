@@ -22,6 +22,7 @@ import {
   menuDotsVerticalSvg,
   menuDownloadsSvg,
   menuFindSvg,
+  menuGhostWindowSvg,
   menuHistorySvg,
   menuLensSvg,
   menuNewTabSvg,
@@ -483,6 +484,7 @@ export default function NavBar({
         { iconSrc: menuNewTabSvg, label: 'New Tab', shortcut: shortcut('⌘T', 'Ctrl+T'), commandId: 'newTab' },
         { iconSrc: menuNewWindowSvg, label: 'New Window', shortcut: shortcut('⌘N', 'Ctrl+N'), commandId: 'newWindow' },
         { iconSrc: menuStealthWindowSvg, label: 'New Incognito Window', shortcut: shortcut('⇧⌘N', 'Ctrl+Shift+N'), commandId: 'newStealthWindow' },
+        { iconSrc: menuGhostWindowSvg, label: 'New Ghost Window', shortcut: shortcut('⌥⌘G', 'Ctrl+Alt+G'), commandId: 'newGhostWindow' },
         { type: 'separator' },
         { label: activeProfileLabel, avatar: activeProfileAvatar ? { ...activeProfileAvatar, src: null } : null, submenuKey: 'profile', highlight: true },
         { iconSrc: menuHistorySvg, label: 'History', submenuKey: 'history' },
@@ -561,6 +563,9 @@ export default function NavBar({
           else if (commandId === 'newWindow') {
             if (currentProfile?.profileId) window.electronAPI.createWindow?.(currentProfile.profileId);
           } else if (commandId === 'newStealthWindow') window.electronAPI.createStealthWindow?.();
+          else if (commandId === 'newGhostWindow') {
+            window.electronAPI.createGhostWindow?.(currentProfile?.profileId ? { profileId: currentProfile.profileId } : {});
+          }
           else if (commandId === 'openSettings') onOpenSettings?.();
           else if (commandId === 'openHistoryPage') onOpenHistory?.();
           else if (commandId === 'openBookmarkPage') onOpenBookmark?.();

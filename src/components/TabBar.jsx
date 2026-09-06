@@ -23,6 +23,7 @@ function getTabDisplayMode(tabWidth) {
 }
 
 export default function TabBar({
+  isGhostWindow = false,
   onNewTab,
   onCloseTab,
   onSwitchTab,
@@ -41,6 +42,34 @@ export default function TabBar({
   const hideTooltip = useCallback(() => {
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     window.electronAPI.tooltipHide();
+  }, []);
+
+  const handleGhostDragMouseDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('button, .tab, input')) return;
+
+    e.preventDefault();
+
+    let lastX = e.screenX;
+    let lastY = e.screenY;
+
+    const onMouseMove = (moveEvent) => {
+      const deltaX = moveEvent.screenX - lastX;
+      const deltaY = moveEvent.screenY - lastY;
+      lastX = moveEvent.screenX;
+      lastY = moveEvent.screenY;
+      if (deltaX !== 0 || deltaY !== 0) {
+        window.electronAPI?.ghostDrag?.(deltaX, deltaY);
+      }
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
   }, []);
 
   const handleTabHoverEnter = useCallback((id, tabEl) => {
@@ -121,8 +150,15 @@ export default function TabBar({
 
   return (
     <div
-      className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}`}
+      className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}${isGhostWindow ? ' tab-bar--ghost' : ''}`}
+      onMouseDown={isGhostWindow ? handleGhostDragMouseDown : undefined}
     >
+      {isGhostWindow && !isMac && (
+        <div className="ghost-badge ghost-badge--left" title="Ghost Window: Non-activating floating browser">
+          <span className="ghost-badge-dot" />
+          <span>Ghost</span>
+        </div>
+      )}
       <div className="tab-container">
         <div ref={tabTrackRef} className="tab-track">
           <div className="tab-active-slider" aria-hidden />
@@ -148,6 +184,12 @@ export default function TabBar({
       <button id="add-tab" className="btn" onClick={() => onNewTab()}>
         {ADD_ICON}
       </button>
+      {isGhostWindow && isMac && (
+        <div className="ghost-badge ghost-badge--right" title="Ghost Window: Non-activating floating browser">
+          <span className="ghost-badge-dot" />
+          <span>Ghost</span>
+        </div>
+      )}
     </div>
   );
 }

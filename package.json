@@ -1,12 +1,13 @@
 {
   "name": "invisurf",
+  "productName": "InviSurf",
   "version": "1.0.0",
   "description": "InviSurf browser (Electron)",
   "main": "main/index.js",
   "scripts": {
+    "postinstall": "node scripts/patch-macos-dev-name.cjs",
     "start": "npm run build:renderer && electron .",
     "build:native": "node-gyp rebuild",
-    "postinstall": "electron-rebuild -f -w invisurf_non_activating",
     "build:renderer": "node scripts/renderer-build-all.cjs",
     "dev": "node scripts/renderer-build-all.cjs && concurrently -k \"node scripts/renderer-watch.cjs\" \"node scripts/main-watch.cjs\"",
     "dev:renderer": "node scripts/renderer-watch.cjs",
@@ -20,8 +21,7 @@
     "productName": "InviSurf",
     "copyright": "Copyright © 2026 Mark Oliver",
     "asarUnpack": [
-      "node_modules/@journeyapps/sqlcipher/**",
-      "build/Release/invisurf_non_activating.node"
+      "node_modules/@journeyapps/sqlcipher/**"
     ],
     "mac": {
       "icon": "renderer/assets/logo/icon.png",
@@ -75,6 +75,7 @@
   "dependencies": {
     "@journeyapps/sqlcipher": "^5.3.1",
     "electron-webauthn": "^1.3.1",
+    "koffi": "^3.2.1",
     "node-machine-id": "^1.1.12"
   }
 }

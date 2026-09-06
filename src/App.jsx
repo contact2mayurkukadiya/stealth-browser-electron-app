@@ -46,6 +46,12 @@ function AppShell() {
   /** True for dedicated stealth (incognito) windows — all tabs are private; chrome is fixed dark InvSurf. */
   const stealthWindowRef = useRef(!!(typeof window !== 'undefined' && window.__INVISURF_STEALTH_WINDOW__));
   const isStealthShell = stealthWindowRef.current;
+  /** True for dedicated ghost (non-activating) windows. */
+  const [isGhostShell, setIsGhostShell] = useState(
+    () => !!(typeof window !== 'undefined' && (window.__INVISURF_GHOST_WINDOW__ || window.__APP_BOOTSTRAP?.ghostWindow))
+  );
+  const ghostWindowRef = useRef(isGhostShell);
+  ghostWindowRef.current = isGhostShell;
 
   const [searchTabsOpen, setSearchTabsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -444,6 +450,7 @@ function AppShell() {
         },
         runMenuCommand: (id) => window.electronAPI.runMenuCommand(id),
         createStealthWindow: () => window.electronAPI.createStealthWindow?.(),
+        createGhostWindow: () => window.electronAPI.createGhostWindow?.(),
       }),
     [
       createTab,
@@ -538,6 +545,10 @@ function AppShell() {
       const bootstrap = typeof window.__APP_BOOTSTRAP !== 'undefined' ? window.__APP_BOOTSTRAP : null;
       if (bootstrap?.stealthWindow) {
         stealthWindowRef.current = true;
+      }
+      if (bootstrap?.ghostWindow) {
+        ghostWindowRef.current = true;
+        setIsGhostShell(true);
       }
 
       // 1. Load bookmarks and settings in parallel
@@ -670,7 +681,7 @@ function AppShell() {
   };
 
   return (
-    <div className={`header${isStealthShell ? ' header--stealth-window' : ''}`}>
+    <div className={`header${isStealthShell ? ' header--stealth-window' : ''}${isGhostShell ? ' header--ghost-window' : ''}`}>
       <CommandPaletteModal
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
@@ -689,6 +700,7 @@ function AppShell() {
         onCloseTab={closeTab}
       />
       <TabBar
+        isGhostWindow={isGhostShell}
         onNewTab={createTab}
         onCloseTab={closeTab}
         onSwitchTab={switchTab}

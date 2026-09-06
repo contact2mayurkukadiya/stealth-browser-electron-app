@@ -271,10 +271,13 @@ const IPC_INVOKE = freeze({
   RUN_MENU_COMMAND: 'app:run-menu-command',
   GOOGLE_LENS_ACTIVE_FOR_PROFILE: 'google-lens:active-for-profile',
   IS_STEALTH_WINDOW: 'context:is-stealth-window',
+  IS_GHOST_WINDOW: 'context:is-ghost-window',
   WINDOW_CREATE: 'window:create',
   WINDOW_CREATE_STEALTH: 'window:create-stealth',
+  WINDOW_CREATE_GHOST: 'window:create-ghost',
   WINDOW_CLOSE_IF_STEALTH: 'window:close-if-stealth',
   WINDOW_CLOSE_CURRENT: 'window:close-current',
+  GHOST_CLOSE: 'ghost:close',
   WINDOW_GET_BOOTSTRAP: 'window:get-bootstrap',
   PROFILE_LIST: 'profile:list',
   PROFILE_GET_CURRENT: 'profile:get-current',
@@ -310,9 +313,6 @@ const IPC_INVOKE = freeze({
   COOKIE_SETTINGS_UPDATE: 'cookies:settings-update',
   CLIPBOARD_WRITE: 'clipboard:write-text',
   CLIPBOARD_READ: 'clipboard:read-text',
-  VIRTUAL_KEYBOARD_FOCUS: 'virtual-keyboard:set-focus',
-  VIRTUAL_KEYBOARD_PERMISSION: 'virtual-keyboard:permission-status',
-  VIRTUAL_KEYBOARD_REQUEST_PERMISSION: 'virtual-keyboard:request-permission',
   APP_RELAUNCH: 'app:relaunch',
   APP_LOG_INFO: 'app:log-info',
   APP_LOG_FILES: 'app:log-files',
@@ -369,6 +369,7 @@ const IPC_SEND = freeze({
   TOOLTIP_HIDE: 'tooltip:hide',
   CHROME_OVERLAY_FROM_OVERLAY: 'chrome-overlay:v1:from-overlay',
   APP_LOG: 'app:log',
+  GHOST_DRAG: 'ghost:drag',
 });
 
 /** IPC event channels (main → renderer) */
@@ -401,8 +402,6 @@ const IPC_EVENT = freeze({
   THEME_APPLY: 'theme:apply',
   TAB_AWOKEN: 'tab:awoken',
   TOOLTIP_UPDATE: 'tooltip:update',
-  VIRTUAL_KEYBOARD_EVENT: 'virtual-keyboard:event',
-  VIRTUAL_KEYBOARD_STATE: 'virtual-keyboard:state',
 });
 
 /** Custom DOM events (renderer-only) */

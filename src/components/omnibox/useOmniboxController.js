@@ -13,7 +13,6 @@ import {
   OVERLAY,
   DOM_EVENT,
 } from '../../constants/conditionStrings.js';
-import { isGhostInputMode, focusEditableVirtually } from '../../input/installVirtualInput.js';
 
 export function escapeHtml(str) {
   return String(str)
@@ -749,10 +748,6 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
         requestAnimationFrame(() => {
           const input = inputRef.current;
           if (!input) return;
-          if (isGhostInputMode()) {
-            focusEditableVirtually(input, { selectAll });
-            return;
-          }
           input.focus({ preventScroll: true });
           if (selectAll) {
             try {
