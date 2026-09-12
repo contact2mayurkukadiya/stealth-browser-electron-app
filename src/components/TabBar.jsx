@@ -108,17 +108,12 @@ export default function TabBar({
     const tabTrackEl = tabTrackRef.current;
     if (!tabTrackEl) return undefined;
 
-    const syncLayoutState = () => {
-      const activeTabEl = tabTrackEl.querySelector('.tab.active');
-      if (!activeTabEl) {
-        tabTrackEl.style.setProperty('--active-width', '0px');
-      } else {
-        tabTrackEl.style.setProperty('--active-left', `${activeTabEl.offsetLeft}px`);
-        tabTrackEl.style.setProperty('--active-width', `${activeTabEl.offsetWidth}px`);
-      }
+    const syncDisplayModes = () => {
+      const tabElements = tabTrackEl.querySelectorAll('.tab');
+      if (tabElements.length === 0) return;
 
       const nextModes = {};
-      tabTrackEl.querySelectorAll('.tab').forEach((tabEl) => {
+      tabElements.forEach((tabEl) => {
         nextModes[tabEl.id] = getTabDisplayMode(tabEl.offsetWidth);
       });
       setTabDisplayModes((prevModes) => {
@@ -132,21 +127,18 @@ export default function TabBar({
       });
     };
 
-    syncLayoutState();
+    syncDisplayModes();
 
-    const resizeObserver = new ResizeObserver(syncLayoutState);
+    const resizeObserver = new ResizeObserver(syncDisplayModes);
     resizeObserver.observe(tabTrackEl);
-    tabTrackEl.querySelectorAll('.tab').forEach((tabEl) => resizeObserver.observe(tabEl));
 
-    window.addEventListener('resize', syncLayoutState);
-    const rafId = window.requestAnimationFrame(syncLayoutState);
+    window.addEventListener('resize', syncDisplayModes);
 
     return () => {
-      window.cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', syncLayoutState);
+      window.removeEventListener('resize', syncDisplayModes);
       resizeObserver.disconnect();
     };
-  }, [tabOrder, tabs, currentTabId]);
+  }, [tabOrder]);
 
   return (
     <div
@@ -161,7 +153,6 @@ export default function TabBar({
       )}
       <div className="tab-container">
         <div ref={tabTrackRef} className="tab-track">
-          <div className="tab-active-slider" aria-hidden />
           {tabOrder.map(id => (
             <Tab
               key={id}

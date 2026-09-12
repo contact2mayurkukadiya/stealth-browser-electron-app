@@ -141,13 +141,6 @@ export function useTabDrag({
 
         // ── Animate via transform (no DOM reorder during drag) ───────────
         const draggedWidthWithGap = originalRects[draggingIndex].width + 5;
-        const activeSliderLeft = tabEl.offsetLeft + dragDx;
-        const activeSliderWidth = tabEl.offsetWidth;
-        const trackEl = tabEl.closest('.tab-track');
-        if (trackEl && tabEl.classList.contains('active')) {
-          trackEl.style.setProperty('--active-left', `${activeSliderLeft}px`);
-          trackEl.style.setProperty('--active-width', `${activeSliderWidth}px`);
-        }
         originalTabs.forEach((t, i) => {
           if (i === draggingIndex) {
             t.style.transform = `translateX(${dragDx}px)`;
@@ -176,12 +169,6 @@ export function useTabDrag({
               t.style.zIndex = '';
             });
           };
-          const syncSliderToActiveTabSlot = () => {
-            const trackEl = tabEl.closest('.tab-track');
-            if (!trackEl || !tabEl.classList.contains('active')) return;
-            trackEl.style.setProperty('--active-left', `${tabEl.offsetLeft}px`);
-            trackEl.style.setProperty('--active-width', `${tabEl.offsetWidth}px`);
-          };
           const restoreTransitionsLater = () => {
             window.requestAnimationFrame(() => {
               originalTabs.forEach((t) => {
@@ -204,15 +191,12 @@ export function useTabDrag({
           }
 
           if (!didReorder) {
-            syncSliderToActiveTabSlot();
             clearTransformsOnly();
             restoreTransitionsLater();
           } else {
             // Preserve visual positions through React reorder, then clear transforms.
             window.requestAnimationFrame(() => {
               window.requestAnimationFrame(() => {
-                // After DOM reorder snaps to insertion slot, align slider to active tab.
-                syncSliderToActiveTabSlot();
                 clearTransformsOnly();
                 restoreTransitionsLater();
               });
