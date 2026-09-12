@@ -60,6 +60,9 @@ function AppShell() {
   // Always-fresh ref so event-handler closures never capture stale state
   const stateRef = useRef({});
   stateRef.current = { tabs, tabOrder, currentTabId };
+  // Startup waits on IPC before deciding whether to create its default tab.
+  // Track tab creation synchronously so Cmd+T can win that race safely.
+  const hasRegisteredTabRef = useRef(false);
   /** Latest handlers for native tab strip context menu action IPC (refilled each render). */
   const tabStripMenuHandlersRef = useRef({});
 
@@ -130,6 +133,7 @@ function AppShell() {
   const createTab = useCallback(() => {
     const st = stealthWindowRef.current;
     const id = 'tab-' + Date.now();
+    hasRegisteredTabRef.current = true;
     dispatch(addTab({ id, isStealth: st, initialUrl: null }));
     // Main activates the tab inside new-tab → createTab; avoid redundant switch-tab IPC
     // (stateRef is stale until the next render, so switchTab would always fire duplicate IPC).
@@ -138,6 +142,7 @@ function AppShell() {
 
   const createTabWithUrl = useCallback((id, isStealth, initialUrl, options = {}) => {
     const st = stealthWindowRef.current || isStealth;
+    hasRegisteredTabRef.current = true;
     dispatch(addTab({ id, isStealth: st, initialUrl }));
     window.electronAPI.newTab(id, st, initialUrl, options);
   }, [dispatch]);
@@ -473,6 +478,7 @@ function AppShell() {
 
   const handleTabCreated = useCallback(({ id, url, isStealth }) => {
     console.log('handleTabCreated', id, url, isStealth);
+    hasRegisteredTabRef.current = true;
     const { tabs } = stateRef.current;
     if (!tabs[id]) {
       dispatch(addTab({ id, isStealth, initialUrl: url }));
@@ -559,13 +565,7 @@ function AppShell() {
       dispatch(setBookmarks(bkData));
       if (settingsData?.searchEngine) setSearchEngine(settingsData.searchEngine);
 
-      // 1.5 Dedicated stealth window: one fresh private tab (session not restored).
-      if (bootstrap?.stealthWindow) {
-        createTab();
-        return;
-      }
-
-      // 1.6 Bootstrap payload for windows created from "Move Tab to New Window".
+      // 1.5 Bootstrap payload for windows created from "Move Tab to New Window".
       if (bootstrap?.movedTab?.url) {
         const movedTabId = `tab-${Date.now()}`;
         createTabWithUrl(movedTabId, !!bootstrap.movedTab.isStealth, bootstrap.movedTab.url, {
@@ -574,15 +574,16 @@ function AppShell() {
         return;
       }
 
-      // 1.6b Bootstrap payload for windows spawned with a specific initial URL
-      //     (e.g. "Open in new window" from bookmark context menu).
+      // 1.6 Bootstrap payload for windows spawned with a specific initial URL
+      //     (e.g. "Open in new window" / "Open in stealth tab" from bookmark context menu).
       if (bootstrap?.initialUrl) {
+        const isStealth = !!bootstrap.stealthWindow;
         const tabId = `tab-${Date.now()}`;
-        createTabWithUrl(tabId, false, bootstrap.initialUrl);
+        createTabWithUrl(tabId, isStealth, bootstrap.initialUrl);
         return;
       }
 
-      // 1.6c Bootstrap payload for "Open All (N) in new window / stealth window".
+      // 1.7 Bootstrap payload for "Open All (N) in new window / stealth window".
       //     Opens every URL as a separate tab; first URL becomes the active tab.
       if (Array.isArray(bootstrap?.initialUrls) && bootstrap.initialUrls.length > 0) {
         const isStealth = !!bootstrap.stealthWindow;
@@ -598,7 +599,13 @@ function AppShell() {
         return;
       }
 
-      // 1.7 Bootstrap payload for Cmd/Ctrl+Shift+T closed-window restore.
+      // 1.8 Dedicated stealth window fallback: one fresh private tab (session not restored).
+      if (bootstrap?.stealthWindow) {
+        createTab();
+        return;
+      }
+
+      // 1.9 Bootstrap payload for Cmd/Ctrl+Shift+T closed-window restore.
       if (bootstrap?.restoreWindow?.tabs?.length) {
         const { tabs, activeTabId } = bootstrap.restoreWindow;
         const activeId = activeTabId && tabs.some((t) => t.id === activeTabId)
@@ -636,6 +643,10 @@ function AppShell() {
       if (window.electronAPI.sessionLoad) {
         session = await window.electronAPI.sessionLoad();
       }
+
+      // A user-created tab arrived while initialization was awaiting IPC. Do
+      // not append the default/restored tab after it.
+      if (hasRegisteredTabRef.current) return;
 
       if (session?.tabs?.length > 0) {
         // Determine which tab should be active on restore.

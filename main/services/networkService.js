@@ -9,9 +9,56 @@ const { getCachedCookieConfig } = require('./settingsService');
 const { installCookieStoreGuard } = require('./cookieService');
 const { configureSession } = require('../../runtime/sessionPolicy');
 
+// Renderer files are immutable for the lifetime of a running app.  Keeping the
+// NTP entry documents in memory prevents a Cmd+T from synchronously touching
+// the filesystem on Electron's main-process event loop.
+const appAssetCache = new Map();
+const appAssetReads = new Map();
+const NTP_PREWARM_PATHS = Object.freeze([
+    'dist/newtab.html',
+    'dist/assets/newtab.js',
+]);
+
+function appRendererPath(relativePath) {
+    return path.join(app.getAppPath(), 'renderer', relativePath);
+}
+
+async function readAppAsset(filePath) {
+    const cached = appAssetCache.get(filePath);
+    if (cached) return cached;
+    const pending = appAssetReads.get(filePath);
+    if (pending) return pending;
+
+    const read = fs.promises.readFile(filePath)
+        .then((data) => {
+            appAssetCache.set(filePath, data);
+            return data;
+        })
+        .finally(() => {
+            appAssetReads.delete(filePath);
+        });
+    appAssetReads.set(filePath, read);
+    return read;
+}
+
+/** Warm only the tiny, self-contained NTP document and its JavaScript bundle. */
+function prewarmNewTabAssets() {
+    return Promise.all(
+        NTP_PREWARM_PATHS.map(async (relativePath) => {
+            try {
+                await readAppAsset(appRendererPath(relativePath));
+            } catch (err) {
+                // Development rebuilds can briefly replace an asset.  The
+                // protocol handler will retry from disk on the real request.
+                console.warn('Failed to prewarm NTP asset', relativePath, err?.message || err);
+            }
+        }),
+    );
+}
+
 function registerAppProtocolForSession(targetSession, sessionTag = 'unknown') {
     if (!targetSession || State.appProtocolInstalledSessions.has(targetSession)) return;
-    targetSession.protocol.handle('app', (request) => {
+    targetSession.protocol.handle('app', async (request) => {
         const url = new URL(request.url);
         const normalizedPathname = url.pathname === '/' ? '' : url.pathname;
         let reqPath = normalizedPathname;
@@ -25,10 +72,10 @@ function registerAppProtocolForSession(targetSession, sessionTag = 'unknown') {
         const safePath = relativePath.replace(/^\//, '').replace(/\/+$/, '');
 
         // FIXED: Safely fetch the absolute path to the HTML renderer
-        const filePath = path.join(app.getAppPath(), 'renderer', safePath);
+        const filePath = appRendererPath(safePath);
 
         try {
-            const data = fs.readFileSync(filePath);
+            const data = await readAppAsset(filePath);
             let mimeType = 'text/plain';
             const ext = path.extname(filePath).toLowerCase();
             if (ext === '.html') mimeType = 'text/html';
@@ -106,6 +153,7 @@ function installSessionNetworkGuards(targetSession, options = {}) {
 
 module.exports = {
     registerAppProtocolForSession,
+    prewarmNewTabAssets,
     pickResponseHeadersForDiag,
     recordCompatEvent,
     getSessionPolicyDeps,
