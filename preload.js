@@ -392,7 +392,14 @@ const C = Object.freeze({
         "TAB_MOVE_NEW_WINDOW": "tab:move-to-new-window",
         "TAB_STRIP_CONTEXT_MENU": "tab:strip-context-menu",
         "TAB_GET_INFO": "tab:get-info",
-        "DEVTOOLS_UNDOCKED": "devtools:open-undocked"
+        "DEVTOOLS_UNDOCKED": "devtools:open-undocked",
+        "PERMISSIONS_GET_ORIGIN_STATE": "permissions:get-origin-state",
+        "PERMISSIONS_SET_ORIGIN_STATE": "permissions:set-origin-state",
+        "PERMISSIONS_RESET_ORIGIN": "permissions:reset-origin",
+        "PERMISSIONS_GET_ALL": "permissions:get-all",
+        "PERMISSIONS_DELETE": "permissions:delete",
+        "PERMISSIONS_CLEAR_ALL": "permissions:clear-all",
+        "PERMISSIONS_PROMPT_RESPOND": "permissions:prompt-respond"
     },
     "IPC_SEND": {
         "NEW_TAB": "new-tab",
@@ -441,7 +448,9 @@ const C = Object.freeze({
         "OMNIBOX_OVERLAY_DELIVERED": "omnibox-overlay:delivered",
         "THEME_APPLY": "theme:apply",
         "TAB_AWOKEN": "tab:awoken",
-        "TOOLTIP_UPDATE": "tooltip:update"
+        "TOOLTIP_UPDATE": "tooltip:update",
+        "PERMISSION_PROMPT_REQUEST": "permission:prompt-request",
+        "PERMISSION_PROMPT_DISMISSED": "permission:prompt-dismissed"
     }
 });
 
@@ -673,8 +682,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tooltipHide: () => ipcRenderer.send(C.IPC_SEND.TOOLTIP_HIDE),
     onTooltipUpdate: (callback) => ipcRenderer.on(C.IPC_EVENT.TOOLTIP_UPDATE, (event, v) => callback(v)),
 
+    // Permissions & Site Settings
+    permissionsGetOriginState: (origin, profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_GET_ORIGIN_STATE, { origin, profileId }),
+    permissionsSetOriginState: (origin, permission, state, profileId = null, persist = true) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_SET_ORIGIN_STATE, { origin, permission, state, profileId, persist }),
+    permissionsResetOrigin: (origin, profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_RESET_ORIGIN, { origin, profileId }),
+    permissionsGetAll: (profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_GET_ALL, { profileId }),
+    permissionsDelete: (origin, permission, profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_DELETE, { origin, permission, profileId }),
+    permissionsClearAll: (profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_CLEAR_ALL, { profileId }),
+    permissionsPromptRespond: (promptId, decision, persist = false) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_PROMPT_RESPOND, { promptId, decision, persist }),
+    onPermissionPromptRequest: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on(C.IPC_EVENT.PERMISSION_PROMPT_REQUEST, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.PERMISSION_PROMPT_REQUEST, handler);
+    },
+    onPermissionPromptDismissed: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on(C.IPC_EVENT.PERMISSION_PROMPT_DISMISSED, handler);
+        return () => ipcRenderer.removeListener(C.IPC_EVENT.PERMISSION_PROMPT_DISMISSED, handler);
+    },
+
     // Platform identifier
     platform: process.platform,
+});
+
+contextBridge.exposeInMainWorld('permissionAPI', {
+    getOriginState: (origin, profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_GET_ORIGIN_STATE, { origin, profileId }),
+    setOriginState: (origin, permission, state, profileId = null, persist = true) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_SET_ORIGIN_STATE, { origin, permission, state, profileId, persist }),
+    resetOrigin: (origin, profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_RESET_ORIGIN, { origin, profileId }),
+    getAll: (profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_GET_ALL, { profileId }),
+    deletePermission: (origin, permission, profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_DELETE, { origin, permission, profileId }),
+    clearAll: (profileId = null) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_CLEAR_ALL, { profileId }),
+    respondToPrompt: (promptId, decision, persist = false) => ipcRenderer.invoke(C.IPC_INVOKE.PERMISSIONS_PROMPT_RESPOND, { promptId, decision, persist }),
 });
 
 contextBridge.exposeInMainWorld('cookieAPI', {

@@ -28,6 +28,7 @@ export function renderSiteInfo(payload) {
     DOM.panel.classList.remove('co-panel--app-menu');
 
     const domain = payload.domain || '';
+    const targetOrigin = payload.origin || payload.url || domain;
     const isSecure = payload.isSecure !== false;
 
     function showMainView() {
@@ -93,12 +94,225 @@ export function renderSiteInfo(payload) {
         content.appendChild(createRow(cookieIconHtml, 'Cookies and site data', chevronSvg, false, null, function () {
             showCookiesView();
         }));
-        content.appendChild(createRow(settingsIconHtml, 'Site settings', externalSvg, false));
+        content.appendChild(createRow(settingsIconHtml, 'Site permissions', chevronSvg, false, null, function () {
+            showPermissionsView();
+        }));
         const divider = document.createElement('div');
         divider.className = 'co-site-info-divider';
         content.appendChild(divider);
         content.appendChild(createRow(commentInfoIconHtml, 'About this page', externalSvg, true, 'Learn about its source and topic'));
         DOM.panel.appendChild(content);
+    }
+
+    async function showPermissionsView() {
+        DOM.panel.innerHTML = '';
+        DOM.panel.style.display = 'flex';
+        DOM.panel.style.flexDirection = 'column';
+        DOM.panel.style.overflowY = 'hidden';
+
+        const header = document.createElement('div');
+        header.className = 'co-site-info-header co-site-info-header--sub';
+        const backBtn = document.createElement('button');
+        backBtn.className = 'co-site-info-icon-btn';
+        backBtn.appendChild(AssetMaskIcon('assets/images/arrow-left.svg', 20));
+        backBtn.onclick = showMainView;
+
+        const titleGroup = document.createElement('div');
+        titleGroup.className = 'co-site-info-title-group';
+        const title = document.createElement('span');
+        title.className = 'co-site-info-title';
+        title.textContent = 'Site permissions';
+        const subtitle = document.createElement('span');
+        subtitle.className = 'co-site-info-subtitle';
+        subtitle.textContent = domain;
+        titleGroup.appendChild(title);
+        titleGroup.appendChild(subtitle);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'co-site-info-close-btn';
+        closeBtn.appendChild(AssetMaskIcon('assets/images/cross-small.svg', 16));
+        closeBtn.onclick = function () { hideAll({ hideLens: false }); };
+
+        header.appendChild(backBtn);
+        header.appendChild(titleGroup);
+        header.appendChild(closeBtn);
+        DOM.panel.appendChild(header);
+
+        const divider = document.createElement('div');
+        divider.className = 'co-site-info-divider';
+        DOM.panel.appendChild(divider);
+
+        const scrollArea = document.createElement('div');
+        scrollArea.style.flex = '1';
+        scrollArea.style.overflowY = 'auto';
+        scrollArea.style.overflowX = 'hidden';
+        scrollArea.style.padding = '8px 0';
+        DOM.panel.appendChild(scrollArea);
+
+        const loading = document.createElement('div');
+        loading.className = 'co-site-info-loading';
+        loading.textContent = 'Loading permissions...';
+        loading.style.padding = '16px';
+        loading.style.color = 'var(--chrome-secondary-fg, #5f6368)';
+        loading.style.fontSize = '13px';
+        scrollArea.appendChild(loading);
+
+        const footer = document.createElement('div');
+        footer.style.padding = '10px 16px';
+        footer.style.display = 'flex';
+        footer.style.alignItems = 'center';
+        footer.style.justifyContent = 'space-between';
+        footer.style.borderTop = '1px solid var(--chrome-tab-separator, #dadce0)';
+        footer.style.backgroundColor = 'var(--chrome-card-bg, #f8f9fa)';
+        footer.style.borderBottomLeftRadius = '8px';
+        footer.style.borderBottomRightRadius = '8px';
+
+        const resetBtn = document.createElement('button');
+        resetBtn.textContent = 'Reset permissions';
+        resetBtn.style.background = 'none';
+        resetBtn.style.border = 'none';
+        resetBtn.style.color = 'var(--chrome-accent, #1a73e8)';
+        resetBtn.style.fontSize = '12px';
+        resetBtn.style.fontWeight = '500';
+        resetBtn.style.cursor = 'pointer';
+        resetBtn.style.padding = '4px 8px';
+        resetBtn.style.borderRadius = '4px';
+        resetBtn.onmouseenter = () => resetBtn.style.backgroundColor = 'var(--chrome-hover-bg, #e8f0fe)';
+        resetBtn.onmouseleave = () => resetBtn.style.backgroundColor = 'transparent';
+        resetBtn.onclick = async () => {
+            if (window.permissionAPI?.resetOrigin) {
+                await window.permissionAPI.resetOrigin(targetOrigin);
+                showPermissionsView();
+            } else if (window.electronAPI?.permissionsResetOrigin) {
+                await window.electronAPI.permissionsResetOrigin(targetOrigin);
+                showPermissionsView();
+            }
+        };
+
+        const doneBtn = document.createElement('button');
+        doneBtn.textContent = 'Done';
+        doneBtn.style.padding = '5px 14px';
+        doneBtn.style.background = 'var(--chrome-hover-bg, #f1f3f4)';
+        doneBtn.style.border = 'none';
+        doneBtn.style.borderRadius = '14px';
+        doneBtn.style.color = 'var(--chrome-fg, #202124)';
+        doneBtn.style.fontSize = '12px';
+        doneBtn.style.fontWeight = '500';
+        doneBtn.style.cursor = 'pointer';
+        doneBtn.onclick = function () { hideAll({ hideLens: false }); };
+
+        footer.appendChild(resetBtn);
+        footer.appendChild(doneBtn);
+        DOM.panel.appendChild(footer);
+
+        try {
+            const data = window.permissionAPI?.getOriginState
+                ? await window.permissionAPI.getOriginState(targetOrigin)
+                : (window.electronAPI?.permissionsGetOriginState ? await window.electronAPI.permissionsGetOriginState(targetOrigin) : { permissions: [] });
+
+            scrollArea.innerHTML = '';
+            const perms = data?.permissions || [];
+
+            if (perms.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.padding = '16px';
+                empty.style.fontSize = '13px';
+                empty.style.color = 'var(--chrome-secondary-fg, #5f6368)';
+                empty.textContent = 'No permissions requested yet.';
+                scrollArea.appendChild(empty);
+                return;
+            }
+
+            for (const perm of perms) {
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.alignItems = 'center';
+                row.style.justifyContent = 'space-between';
+                row.style.padding = '8px 16px';
+                row.style.gap = '12px';
+
+                const leftGroup = document.createElement('div');
+                leftGroup.style.display = 'flex';
+                leftGroup.style.alignItems = 'center';
+                leftGroup.style.gap = '12px';
+                leftGroup.style.flex = '1';
+                leftGroup.style.minWidth = '0';
+
+                let iconFile = 'shield.svg';
+                if (perm.name === 'camera') iconFile = 'camera.svg';
+                else if (perm.name === 'microphone') iconFile = 'mic.svg';
+                else if (perm.name === 'geolocation') iconFile = 'earth-americas.svg';
+                else if (perm.name === 'notifications') iconFile = 'comment-info.svg';
+                else if (perm.name.includes('clipboard')) iconFile = 'clipboard.svg';
+
+                const iconBox = document.createElement('div');
+                iconBox.style.color = 'var(--chrome-secondary-fg, #5f6368)';
+                iconBox.style.display = 'flex';
+                iconBox.style.alignItems = 'center';
+                iconBox.style.flexShrink = '0';
+                iconBox.appendChild(AssetMaskIcon(`assets/images/${iconFile}`, 16));
+
+                const label = document.createElement('div');
+                label.style.fontSize = '13px';
+                label.style.fontWeight = '500';
+                label.style.color = 'var(--chrome-fg, #202124)';
+                label.textContent = perm.label || perm.name;
+
+                leftGroup.appendChild(iconBox);
+                leftGroup.appendChild(label);
+
+                const select = document.createElement('select');
+                select.style.padding = '4px 8px';
+                select.style.borderRadius = '4px';
+                select.style.border = '1px solid var(--chrome-tab-separator, #dadce0)';
+                select.style.backgroundColor = 'var(--chrome-bg, #ffffff)';
+                select.style.color = 'var(--chrome-fg, #202124)';
+                select.style.fontSize = '12px';
+                select.style.cursor = 'pointer';
+
+                const optAsk = document.createElement('option');
+                optAsk.value = 'prompt';
+                optAsk.textContent = 'Ask (default)';
+
+                const optAllow = document.createElement('option');
+                optAllow.value = 'allow';
+                optAllow.textContent = 'Allow';
+
+                const optDeny = document.createElement('option');
+                optDeny.value = 'deny';
+                optDeny.textContent = 'Block';
+
+                select.appendChild(optAsk);
+                select.appendChild(optAllow);
+                select.appendChild(optDeny);
+
+                select.value = perm.state === 'allow' || perm.state === 'allow-this-session'
+                    ? 'allow'
+                    : (perm.state === 'deny' ? 'deny' : 'prompt');
+
+                select.onchange = async () => {
+                    const newState = select.value;
+                    if (window.permissionAPI?.setOriginState) {
+                        await window.permissionAPI.setOriginState(targetOrigin, perm.name, newState);
+                    } else if (window.electronAPI?.permissionsSetOriginState) {
+                        await window.electronAPI.permissionsSetOriginState(targetOrigin, perm.name, newState);
+                    }
+                };
+
+                row.appendChild(leftGroup);
+                row.appendChild(select);
+                scrollArea.appendChild(row);
+            }
+        } catch (err) {
+            console.error('Failed to load permissions:', err);
+            scrollArea.innerHTML = '';
+            const errEl = document.createElement('div');
+            errEl.style.padding = '16px';
+            errEl.style.color = '#d93025';
+            errEl.style.fontSize = '13px';
+            errEl.textContent = 'Failed to load permissions';
+            scrollArea.appendChild(errEl);
+        }
     }
 
     function showSecurityView() {

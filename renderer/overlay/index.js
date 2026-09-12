@@ -10,6 +10,7 @@ import { renderSiteInfo } from './components/siteInfo.js';
 import { renderCookieControls, renderDownloadPanel } from './components/compactPanels.js';
 import { renderOmniboxSuggestions } from './components/omnibox.js';
 import { renderLensSelection } from './components/lensSelection.js';
+import { renderPermissionPrompt } from './components/permissionPrompt.js';
 
 DOM.backdrop.addEventListener('mousedown', function () {
     notifyHost({ type: 'dismiss' });
@@ -65,6 +66,7 @@ if (window.electronAPI && window.electronAPI.onChromeOverlayV1Patch) {
                 case 'bookmarkContextMenu': return renderBookmarkContextMenu(patch);
                 case 'bookmarkFolderMenu': return renderBookmarkFolderMenu(patch);
                 case 'bookmarkEditor': return renderBookmarkEditor(patch);
+                case 'permissionPrompt': return renderPermissionPrompt(patch);
             }
         } catch (err) {
             // If any menu crashes, log it and safely reset the overlay to prevent freezing

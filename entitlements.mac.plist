@@ -12,5 +12,12 @@
     <!-- Note: You MUST apply for this entitlement from Apple and use a provisioning profile -->
     <key>com.apple.developer.web-browser.public-key-credential</key>
     <true/>
+    <!-- Device Entitlements for Permissions -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+    <key>com.apple.security.device.microphone</key>
+    <true/>
+    <key>com.apple.security.personal-information.location</key>
+    <true/>
   </dict>
 </plist>

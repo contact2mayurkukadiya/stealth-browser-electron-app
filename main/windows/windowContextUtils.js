@@ -52,13 +52,28 @@ function getWindowContextByEventSender(sender) {
     } catch (_) {
         return null;
     }
-    const win = BrowserWindow.fromWebContents(sender);
+    const win = (BrowserWindow && typeof BrowserWindow.fromWebContents === 'function') ? BrowserWindow.fromWebContents(sender) : null;
     if (win && !win.isDestroyed()) {
         const ctx = getWindowContextByBrowserWindow(win);
         if (ctx) return ctx;
     }
     const tabId = State.webContentsIdToTabId.get(sender.id);
     if (tabId) return getWindowContextByTabId(tabId);
+
+    const overlayCtx = getWindowContextByChromeOverlaySender(sender);
+    if (overlayCtx) return overlayCtx;
+
+    for (const ctx of State.windowContextsById.values()) {
+        if (isViewWebContentsAlive(ctx.tabContentView) && ctx.tabContentView.webContents === sender) {
+            return ctx;
+        }
+        for (const tabView of Object.values(ctx.tabs || {})) {
+            if (isViewWebContentsAlive(tabView) && tabView.webContents === sender) {
+                return ctx;
+            }
+        }
+    }
+
     return null;
 }
 

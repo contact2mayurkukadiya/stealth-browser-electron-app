@@ -281,6 +281,10 @@ export default function SettingsApp() {
   const [cookieError, setCookieError] = useState('');
   const [cookieExceptionModal, setCookieExceptionModal] = useState(null);
   const [cookieDeleteConfirm, setCookieDeleteConfirm] = useState(null);
+  const [permissionsList, setPermissionsList] = useState([]);
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [permissionsSearch, setPermissionsSearch] = useState('');
+  const [permissionDeleteConfirm, setPermissionDeleteConfirm] = useState(null);
 
   useInvsurfDocumentFavicon(isStealthWindow);
 
@@ -895,6 +899,18 @@ export default function SettingsApp() {
           </span>
           <AssetMaskIcon icon={angleRightSvg} size={15} className="settings-link-row__chevron" />
         </button>
+
+        <button
+          type="button"
+          className="settings-link-row"
+          onClick={() => setActiveView('privacy/permissions')}
+        >
+          <span>
+            <span className="setting-row__label">Site settings and permissions</span>
+            <span className="setting-row__desc">Controls what information sites can use and show (camera, location, notifications).</span>
+          </span>
+          <AssetMaskIcon icon={angleRightSvg} size={15} className="settings-link-row__chevron" />
+        </button>
       </div>
     </section>
   );
@@ -1098,6 +1114,251 @@ export default function SettingsApp() {
         <span className="cookies-info" aria-hidden="true">i</span>
         <span>Deleting cookies will sign you out of most sites.</span>
         <strong>{filteredCookieSites.length} total sites listed</strong>
+      </div>
+    </section>
+  );
+
+  const refreshPermissions = useCallback(async () => {
+    if (!window.permissionAPI?.getAll && !window.electronAPI?.permissionsGetAll) return;
+    setPermissionsLoading(true);
+    try {
+      const items = window.permissionAPI?.getAll
+        ? await window.permissionAPI.getAll()
+        : await window.electronAPI.permissionsGetAll();
+      setPermissionsList(Array.isArray(items) ? items : []);
+    } catch (err) {
+      console.error('Failed to load permissions:', err);
+    } finally {
+      setPermissionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeView === 'privacy/permissions') {
+      void refreshPermissions();
+    }
+  }, [activeView, refreshPermissions]);
+
+  const handleResetOrigin = async (origin) => {
+    if (window.permissionAPI?.resetOrigin) {
+      await window.permissionAPI.resetOrigin(origin);
+    } else if (window.electronAPI?.permissionsResetOrigin) {
+      await window.electronAPI.permissionsResetOrigin(origin);
+    }
+    void refreshPermissions();
+  };
+
+  const handleClearAllPermissions = async () => {
+    if (window.permissionAPI?.clearAll) {
+      await window.permissionAPI.clearAll();
+    } else if (window.electronAPI?.permissionsClearAll) {
+      await window.electronAPI.permissionsClearAll();
+    }
+    void refreshPermissions();
+  };
+
+  const handleSetPermission = async (origin, perm, state) => {
+    if (window.permissionAPI?.setOriginState) {
+      await window.permissionAPI.setOriginState(origin, perm, state);
+    } else if (window.electronAPI?.permissionsSetOriginState) {
+      await window.electronAPI.permissionsSetOriginState(origin, perm, state);
+    }
+    void refreshPermissions();
+  };
+
+  const formatPermissionName = (name) => {
+    if (!name) return '';
+    const map = {
+      camera: 'Camera',
+      microphone: 'Microphone',
+      geolocation: 'Geolocation',
+      notifications: 'Notifications',
+      'clipboard-read': 'Clipboard (Read)',
+      'clipboard-sanitized-write': 'Clipboard (Write)',
+      'display-capture': 'Screen Sharing',
+      fullscreen: 'Fullscreen',
+      pointerLock: 'Pointer Lock',
+      openExternal: 'Open External Apps',
+      usb: 'USB',
+      hid: 'HID',
+      serial: 'Serial',
+      bluetooth: 'Bluetooth',
+      midi: 'MIDI',
+      midiSysex: 'MIDI (SysEx)',
+      sensors: 'Sensors',
+      'idle-detection': 'Idle Detection',
+      mediaKeySystem: 'Protected Content (DRM)',
+    };
+    if (map[name]) return map[name];
+    return name.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
+  };
+
+  const getPermissionChipProps = (state) => {
+    switch (state) {
+      case 'allow':
+        return {
+          label: 'Allowed',
+          bg: 'rgba(52, 168, 83, 0.15)',
+          color: '#188038',
+          border: 'rgba(52, 168, 83, 0.3)',
+        };
+      case 'allow-this-session':
+        return {
+          label: 'Allowed once',
+          bg: 'rgba(26, 115, 232, 0.15)',
+          color: '#1a73e8',
+          border: 'rgba(26, 115, 232, 0.3)',
+        };
+      case 'deny':
+        return {
+          label: 'Blocked',
+          bg: 'rgba(234, 67, 53, 0.15)',
+          color: '#d93025',
+          border: 'rgba(234, 67, 53, 0.3)',
+        };
+      case 'prompt':
+      default:
+        return {
+          label: 'Ask (default)',
+          bg: 'rgba(95, 99, 104, 0.12)',
+          color: 'var(--settings-muted-text, #5f6368)',
+          border: 'rgba(95, 99, 104, 0.25)',
+        };
+    }
+  };
+
+  const filteredPermissions = useMemo(() => {
+    const q = permissionsSearch.trim().toLowerCase();
+    if (!q) return permissionsList;
+    return permissionsList.filter((item) => {
+      if (item.origin?.toLowerCase().includes(q)) return true;
+      return Object.keys(item.permissions || {}).some((p) => p.toLowerCase().includes(q));
+    });
+  }, [permissionsList, permissionsSearch]);
+
+  const flattenedPermissions = useMemo(() => {
+    const list = [];
+    for (const item of filteredPermissions) {
+      const perms = Object.entries(item.permissions || {});
+      if (perms.length === 0) continue;
+      for (const [permName, rec] of perms) {
+        list.push({
+          origin: item.origin,
+          permName,
+          state: rec.state,
+          lastUpdated: rec.lastUpdated,
+        });
+      }
+    }
+    return list;
+  }, [filteredPermissions]);
+
+  const renderPermissionsPanel = () => (
+    <section className="settings-section settings-section--cookies">
+      <div className="settings-subpage-header settings-subpage-header--stacked">
+        <BackIconButton onClick={() => setActiveView('privacy/main')} />
+        <div className="settings-subpage-heading-text">
+          <h2>Site settings and permissions</h2>
+          <p>Review and manage device and privacy permissions granted to websites</p>
+        </div>
+      </div>
+
+      <div className="cookies-toolbar">
+        <SettingsSearchField
+          value={permissionsSearch}
+          onChange={setPermissionsSearch}
+          placeholder="Search for a site or permission"
+          label="Search permissions"
+          className="cookies-search"
+        />
+        <div className="cookies-toolbar-actions">
+          <button
+            type="button"
+            className="cookies-toolbar-button"
+            onClick={refreshPermissions}
+            disabled={permissionsLoading}
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            className="cookies-toolbar-button"
+            onClick={() => setPermissionDeleteConfirm({ type: 'all' })}
+            disabled={permissionsList.length === 0}
+          >
+            Clear all
+          </button>
+        </div>
+      </div>
+
+      <div className="cookies-table-card">
+        <div className="cookies-table cookies-table--header" role="row">
+          <span>Site Origin</span>
+          <span>Permission</span>
+          <span></span>
+          <span style={{ textAlign: 'right' }}>Actions</span>
+        </div>
+        <div className="cookies-table-body">
+          {permissionsLoading ? (
+            <div className="cookies-empty">Loading site permissions…</div>
+          ) : flattenedPermissions.length === 0 ? (
+            <div className="cookies-empty">
+              {permissionsSearch ? 'No site permissions matched your search.' : 'No customized site permissions found.'}
+            </div>
+          ) : (
+            flattenedPermissions.map((item) => {
+              const chip = getPermissionChipProps(item.state);
+              return (
+                <div className="cookies-table cookies-table--row" role="row" key={`${item.origin}-${item.permName}`}>
+                  <span className="cookies-site">
+                    <span className="cookies-site__favicon" aria-hidden="true">
+                      🌐
+                    </span>
+                    <span style={{ fontWeight: 500 }}>{item.origin}</span>
+                  </span>
+                  <span style={{ fontWeight: 500, color: 'var(--settings-text)' }}>
+                    {formatPermissionName(item.permName)}
+                  </span>
+                  <span>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backgroundColor: chip.bg,
+                        color: chip.color,
+                        border: `1px solid ${chip.border}`,
+                        width: 'fit-content',
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      {chip.label}
+                    </span>
+                  </span>
+                  <span className="cookies-actions" style={{ justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="cookies-action-btn"
+                      title={`Reset ${formatPermissionName(item.permName)} permission for ${item.origin}`}
+                      onClick={() =>
+                        setPermissionDeleteConfirm({
+                          type: 'single',
+                          origin: item.origin,
+                          permName: item.permName,
+                        })
+                      }
+                    >
+                      <AssetMaskIcon icon={trashSvg} size={16} />
+                    </button>
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </section>
   );
@@ -1332,6 +1593,8 @@ export default function SettingsApp() {
         return renderCookiesPanel();
       case 'privacy/cookies/all':
         return renderAllCookiesPanel();
+      case 'privacy/permissions':
+        return renderPermissionsPanel();
       case 'privacy':
       case 'privacy/main':
       default:
@@ -1580,6 +1843,31 @@ export default function SettingsApp() {
           confirmLabel={cookieDeleteConfirm.type === 'all' ? 'Remove all' : 'Remove'}
           onConfirm={confirmCookieDelete}
           onClose={() => setCookieDeleteConfirm(null)}
+        />
+      )}
+
+      {permissionDeleteConfirm && (
+        <ConfirmModal
+          title={
+            permissionDeleteConfirm.type === 'all'
+              ? 'Reset all site permissions?'
+              : `Reset ${formatPermissionName(permissionDeleteConfirm.permName)} permission for ${permissionDeleteConfirm.origin}?`
+          }
+          description={
+            permissionDeleteConfirm.type === 'all'
+              ? 'This will reset all customized site permissions across all sites back to their default state.'
+              : `This will reset the ${formatPermissionName(permissionDeleteConfirm.permName)} permission for ${permissionDeleteConfirm.origin} back to Ask (default).`
+          }
+          confirmLabel={permissionDeleteConfirm.type === 'all' ? 'Reset all' : 'Reset'}
+          onConfirm={async () => {
+            if (permissionDeleteConfirm.type === 'all') {
+              await handleClearAllPermissions();
+            } else {
+              await handleSetPermission(permissionDeleteConfirm.origin, permissionDeleteConfirm.permName, 'prompt');
+            }
+            setPermissionDeleteConfirm(null);
+          }}
+          onClose={() => setPermissionDeleteConfirm(null)}
         />
       )}
     </div>

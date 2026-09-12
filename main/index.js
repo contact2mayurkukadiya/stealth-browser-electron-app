@@ -66,6 +66,8 @@ app.whenReady().then(async () => {
 
     networkService.registerAppProtocolForSession(session.defaultSession, 'default');
     networkService.installSessionNetworkGuards(session.defaultSession, { profileId: State.defaultProfileId, isStealthSession: false });
+    const { getPermissionController } = require('./permissions/PermissionController');
+    getPermissionController().registerSession(session.defaultSession, { profileId: State.defaultProfileId, isIncognito: false });
     logStartupIdentity(app, State.appLogger);
 
     settingsService.applyColorThemeFromSettings();

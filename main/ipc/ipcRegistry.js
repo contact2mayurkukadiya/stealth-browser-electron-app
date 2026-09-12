@@ -12,6 +12,7 @@ const settingsService = require('../services/settingsService');
 const sessionService = require('../services/sessionService');
 const bookmarkService = require('../services/bookmarkService');
 const cookieService = require('../services/cookieService');
+const siteSettingsService = require('../services/siteSettingsService');
 
 // Managers
 const windowManager = require('../windows/windowManager');
@@ -568,6 +569,11 @@ function registerIpcHandlers() {
         const context = getWindowContextByChromeOverlaySender(e.sender);
         if (!context?.window?.webContents || context.window.webContents.isDestroyed()) return;
 
+        if (data?.type === C.OVERLAY.PERMISSION_PROMPT_RESPONSE || data?.type === 'permissionPromptResponse') {
+            siteSettingsService.respondToPrompt(data.promptId, data.decision, data.persist === true);
+            return;
+        }
+
         if (data?.type === 'lensSelectionCapture') {
             lensManager.captureGoogleLensSelection(context, data.rect).catch((err) => { console.error('lensSelectionCapture', err?.message || err); });
             return;
@@ -1031,6 +1037,48 @@ function registerIpcHandlers() {
         const savedConfig = settingsService.updateCookieConfigForProfile(authorizedProfileId, config);
         await cookieService.cleanupBlockedCookiesForProfile(authorizedProfileId);
         return savedConfig;
+    });
+
+    // === PERMISSIONS & SITE SETTINGS ===
+    ipcMain.handle(C.IPC_INVOKE.PERMISSIONS_GET_ORIGIN_STATE, (e, { origin, profileId } = {}) => {
+        if (!isSenderTrusted(e)) return { origin: '', permissions: [] };
+        const authorizedProfileId = settingsService.resolveAuthorizedProfileIdForSender(e.sender, profileId) || State.defaultProfileId || 'default';
+        return siteSettingsService.getOriginState(authorizedProfileId, origin);
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.PERMISSIONS_SET_ORIGIN_STATE, (e, { origin, permission, state, profileId, persist } = {}) => {
+        if (!isSenderTrusted(e)) return false;
+        const authorizedProfileId = settingsService.resolveAuthorizedProfileIdForSender(e.sender, profileId) || State.defaultProfileId || 'default';
+        return siteSettingsService.setOriginPermission(authorizedProfileId, origin, permission, state, persist !== false);
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.PERMISSIONS_RESET_ORIGIN, (e, { origin, profileId } = {}) => {
+        if (!isSenderTrusted(e)) return false;
+        const authorizedProfileId = settingsService.resolveAuthorizedProfileIdForSender(e.sender, profileId) || State.defaultProfileId || 'default';
+        return siteSettingsService.resetOrigin(authorizedProfileId, origin);
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.PERMISSIONS_GET_ALL, (e, { profileId } = {}) => {
+        if (!isSenderTrusted(e)) return [];
+        const authorizedProfileId = settingsService.resolveAuthorizedProfileIdForSender(e.sender, profileId) || State.defaultProfileId || 'default';
+        return siteSettingsService.getAllPermissions(authorizedProfileId);
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.PERMISSIONS_DELETE, (e, { origin, permission, profileId } = {}) => {
+        if (!isSenderTrusted(e)) return false;
+        const authorizedProfileId = settingsService.resolveAuthorizedProfileIdForSender(e.sender, profileId) || State.defaultProfileId || 'default';
+        return siteSettingsService.deletePermission(authorizedProfileId, origin, permission);
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.PERMISSIONS_CLEAR_ALL, (e, { profileId } = {}) => {
+        if (!isSenderTrusted(e)) return false;
+        const authorizedProfileId = settingsService.resolveAuthorizedProfileIdForSender(e.sender, profileId) || State.defaultProfileId || 'default';
+        return siteSettingsService.clearAllPermissions(authorizedProfileId);
+    });
+
+    ipcMain.handle(C.IPC_INVOKE.PERMISSIONS_PROMPT_RESPOND, (e, { promptId, decision, persist } = {}) => {
+        if (!isSenderTrusted(e)) return false;
+        return siteSettingsService.respondToPrompt(promptId, decision, persist === true);
     });
 
     // === WEBAUTHN ===

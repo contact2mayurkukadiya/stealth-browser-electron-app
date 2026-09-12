@@ -688,7 +688,8 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
   useEffect(() => {
     if (committedDraftPendingRef.current) {
       const pending = pendingCommittedUrlRef.current;
-      if (displayUrl || isNtpOmniboxUrl(pending)) {
+      const normalizedPending = toOmniboxBarValue(pending);
+      if (displayUrl === normalizedPending || (displayUrl && displayUrl !== normalizedPending) || isNtpOmniboxUrl(pending)) {
         committedDraftPendingRef.current = false;
         pendingCommittedUrlRef.current = '';
         draftValueRef.current = displayUrl;
@@ -696,8 +697,8 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
         return;
       }
       if (pending) {
-        draftValueRef.current = toOmniboxBarValue(pending);
-        setDraftValue(toOmniboxBarValue(pending));
+        draftValueRef.current = normalizedPending;
+        setDraftValue(normalizedPending);
       }
       return;
     }
@@ -712,8 +713,11 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
     const wasLoading = prevTabLoadingRef.current;
     prevTabLoadingRef.current = tabIsLoading;
     if (!currentTabId || !wasLoading || tabIsLoading) return;
-    if (committedDraftPendingRef.current || overlayRequestedRef.current) return;
-    if (draftValueRef.current === displayUrlRef.current) return;
+    if (committedDraftPendingRef.current) {
+      committedDraftPendingRef.current = false;
+      pendingCommittedUrlRef.current = '';
+    }
+    if (overlayRequestedRef.current) return;
     revertDraftToDisplayUrl();
   }, [tabIsLoading, currentTabId, revertDraftToDisplayUrl]);
 
@@ -1019,8 +1023,18 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
     const anchorRect = rectToPlain(anchor);
     let payload = {};
     if (action.opensPopup === OMNIBOX_POPUP.SITE_INFO) {
+      let resolvedDomain = displayParts?.domain || '';
+      if (!resolvedDomain && tab?.url) {
+        try {
+          resolvedDomain = new URL(tab.url).hostname;
+        } catch {
+          resolvedDomain = '';
+        }
+      }
       payload = {
-        domain: displayParts?.domain || '',
+        domain: resolvedDomain,
+        origin: tab?.url || (resolvedDomain ? `https://${resolvedDomain}` : ''),
+        url: tab?.url || '',
         isSecure,
         favicon: tab?.favicon || null,
       };
@@ -1028,7 +1042,7 @@ export function useOmniboxController({ currentTabId, tabsData, searchEngine = 'g
       payload = { domain: displayParts?.domain || '' };
     }
     void openPopup(action.opensPopup, anchorRect, payload);
-  }, [displayParts, isSecure, openPopup, tab?.favicon]);
+  }, [displayParts, isSecure, openPopup, tab?.favicon, tab?.url]);
 
   return {
     barRef,

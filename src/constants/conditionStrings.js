@@ -92,6 +92,7 @@ export const OVERLAY = freeze({
   EDIT_PROFILE: 'editProfile',
   ADD_PROFILE: 'addProfile',
   APP_MENU_COMMAND: 'appMenuCommand',
+  PERMISSION_PROMPT_RESPONSE: 'permissionPromptResponse',
 });
 
 /** app:run-menu-command and palette command ids */
@@ -347,6 +348,13 @@ export const IPC_INVOKE = freeze({
   TAB_STRIP_CONTEXT_MENU: 'tab:strip-context-menu',
   TAB_GET_INFO: 'tab:get-info',
   DEVTOOLS_UNDOCKED: 'devtools:open-undocked',
+  PERMISSIONS_GET_ORIGIN_STATE: 'permissions:get-origin-state',
+  PERMISSIONS_SET_ORIGIN_STATE: 'permissions:set-origin-state',
+  PERMISSIONS_RESET_ORIGIN: 'permissions:reset-origin',
+  PERMISSIONS_GET_ALL: 'permissions:get-all',
+  PERMISSIONS_DELETE: 'permissions:delete',
+  PERMISSIONS_CLEAR_ALL: 'permissions:clear-all',
+  PERMISSIONS_PROMPT_RESPOND: 'permissions:prompt-respond',
 });
 
 /** IPC send channels */
@@ -400,6 +408,8 @@ export const IPC_EVENT = freeze({
   THEME_APPLY: 'theme:apply',
   TAB_AWOKEN: 'tab:awoken',
   TOOLTIP_UPDATE: 'tooltip:update',
+  PERMISSION_PROMPT_REQUEST: 'permission:prompt-request',
+  PERMISSION_PROMPT_DISMISSED: 'permission:prompt-dismissed',
 });
 
 /** Custom DOM events (renderer-only) */

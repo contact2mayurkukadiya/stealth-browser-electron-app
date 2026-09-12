@@ -26,24 +26,23 @@ export function getOmniboxActions(ctx) {
   // const showPageActions = hasDisplayUrl(tab) && !isInternalUrl(tab?.url);
 
   const actions = [];
-  const url = tab?.url || barDisplayValue;
-  const isNtp = tab?.isNewTab || isNtpOmniboxUrl(url);
-  const isInternal = isInternalUrl(url) && !isNtp;
-  const isEmpty = !String(barDisplayValue || '').trim();
-  const isTypingOrEmpty = isFocused || hasUncommittedDraft || isEmpty;
+  const rawUrl = tab?.url || barDisplayValue || '';
+  const isNtp = !!tab?.isNewTab || isNtpOmniboxUrl(rawUrl) || (!tab?.url && !String(barDisplayValue || '').trim());
+  const isInternal = isInternalUrl(rawUrl) && !isNtp;
 
   const activeEngine = SEARCH_ENGINES[String(searchEngine).toLowerCase()] || SEARCH_ENGINES.google;
 
-  // Render left-side Prefix Block Condition checks exclusively:
-  if (isTypingOrEmpty) {
+  // Render left-side Prefix Block:
+  // While NTP page is active, show the selected search engine icon.
+  // When ANY site is loaded on the active tab, the padlock (siteInfo) button is always visible.
+  if (isNtp) {
     actions.push({
-      id: 'search-engine-draft',
+      id: 'new-tab',
       slot: 'prefix',
       visible: true,
       nonClickable: true,
       isColorIcon: true,
       iconSrc: activeEngine.icon,
-      chipText: isInternal && activeEngine.name,
     });
   } else if (isInternal) {
     actions.push({
@@ -55,23 +54,12 @@ export function getOmniboxActions(ctx) {
       iconSrc: activeEngine.icon,
       chipText: activeEngine.name,
     });
-  } else if (isNtp) {
-    actions.push({
-      id: 'new-tab',
-      slot: 'prefix',
-      visible: true,
-      nonClickable: true,
-      isColorIcon: true,
-      iconSrc: activeEngine.icon,
-    });
   } else {
-    // Loaded external network Webpage URL block context rules completely strictly. 
-    // Removes non-relevant standard magnifying SVGs replacing permanently into explicit domain contexts seamlessly.
     actions.push({
       id: 'siteInfo',
       slot: 'prefix',
       title: 'View site information',
-      visible: !!displayParts,
+      visible: true,
       nonClickable: false,
       isColorIcon: false,
       opensPopup: OMNIBOX_POPUP.SITE_INFO,

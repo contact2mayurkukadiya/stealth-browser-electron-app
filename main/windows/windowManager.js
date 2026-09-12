@@ -51,7 +51,10 @@ function createWindow({
     const partition = `persist:profile-${resolvedProfileId}`;
     const mappedSession = session.fromPartition(partition);
     registerAppProtocolForSession(mappedSession, partition);
-    installSessionNetworkGuards(mappedSession, { profileId: resolvedProfileId, isStealthSession: false });
+    const { getPermissionController } = require('../permissions/PermissionController');
+    const permController = getPermissionController();
+    permController.registerSession(mappedSession, { profileId: resolvedProfileId, isIncognito: false });
+
     // This is deliberately best-effort and is shared safely across all
     // partitions: these are packaged, profile-independent renderer assets.
     void prewarmNewTabAssets();
@@ -63,6 +66,7 @@ function createWindow({
         const stealthTabSession = session.fromPartition(stealthTabsPartition);
         registerAppProtocolForSession(stealthTabSession, stealthTabsPartition);
         installSessionNetworkGuards(stealthTabSession, { profileId: resolvedProfileId, isStealthSession: true });
+        permController.registerSession(stealthTabSession, { profileId: stealthTabsPartition, isIncognito: true });
     }
 
     const isMac = process.platform === C.PLATFORM.DARWIN;
@@ -376,6 +380,10 @@ function createWindow({
                     });
                 }
             });
+            try {
+                const { getPermissionController } = require('../permissions/PermissionController');
+                getPermissionController().db.unregisterEphemeralProfile(context.stealthTabsPartition);
+            } catch (_) {}
         }
 
         if (!profileStillOpen) {

@@ -1027,7 +1027,16 @@ function createTab(context, id, url = C.URL.NTP_DISPLAY, isStealth = false, opti
 
     view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
         if (!isMainFrame) return;
-        if (errorCode === -3) return;
+        if (errorCode === -3) {
+            // net::ERR_ABORTED: Navigation was cancelled/aborted (e.g. user pressed Cmd+R or stopped navigation).
+            // Re-assert current URL and stop loading state so the omnibox and UI synchronize.
+            if (!context.window || context.window.isDestroyed() || context.window.webContents.isDestroyed()) return;
+            const { toDisplayUrl } = require('../utils/navigation');
+            const currentUrl = toDisplayUrl(view.webContents.getURL());
+            sendTabEvent(C.IPC_EVENT.URL_CHANGED, { id, url: currentUrl });
+            sendTabEvent(C.IPC_EVENT.TAB_UPDATE, { id, isLoading: false, url: currentUrl });
+            return;
+        }
 
         console.log(`Navigation failed: ${validatedURL} (${errorCode}: ${errorDescription})`);
         if (State.appLogger) {

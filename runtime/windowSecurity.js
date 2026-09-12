@@ -78,10 +78,11 @@ function applyContentProtection(browserWindow, enabled = true) {
 function applyShellWindowSecurity(window, { permissionFullscreen }) {
     if (!window || window.isDestroyed?.()) return;
 
-    window.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-        if (permission === permissionFullscreen) return callback(true);
-        callback(false);
-    });
+    // Session permissions are comprehensively managed by PermissionController
+    try {
+        const { getPermissionController } = require('../main/permissions/PermissionController');
+        getPermissionController().registerSession(window.webContents.session);
+    } catch (_) {}
 
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 

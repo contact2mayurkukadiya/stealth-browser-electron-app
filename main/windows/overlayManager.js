@@ -237,6 +237,18 @@ function computeMenuOverlayBounds(context, patch) {
         return menuOverlayBoundsFromPanel(context, { left, top, width: panelWidth, height });
     }
 
+    if (kind === 'permissionPrompt') {
+        const ar = patch.anchorRect || { left: 160, top: 44, width: 34, height: 34 };
+        const panelWidth = 360;
+        const left0 = Math.round(Number(ar.left) || 160);
+        const top0 = Math.round(Number(ar.top) || 44);
+        const h0 = Math.max(1, Math.round(Number(ar.height) || 34));
+        const left = clampNumber(left0, pad, windowW - panelWidth - pad);
+        const top = clampNumber(top0 + h0 + 6, pad, windowH - 240 - pad);
+        const height = 220;
+        return menuOverlayBoundsFromPanel(context, { left, top, width: panelWidth, height });
+    }
+
     if (kind === 'cookieControls' || kind === 'downloadPanel') {
         const ar = patch.anchorRect || {};
         const panelWidth = kind === 'cookieControls' ? 340 : 300;
@@ -525,6 +537,32 @@ function layoutChromeOverlayFullWindowBounds(context) {
     }
 }
 
+function showPermissionPromptOverlay(context, promptPayload) {
+    if (!context?.window || context.window.isDestroyed()) return;
+    createChromeShellMenuOverlayLayer(context);
+    const ov = context.chromeShellMenuOverlayView;
+    if (!isViewWebContentsAlive(ov)) return;
+
+    context.chromeShellMenuOverlayAcquireCount = (context.chromeShellMenuOverlayAcquireCount || 0) + 1;
+    ensureChromeOverlayOnTop(context);
+
+    const patch = {
+        kind: 'permissionPrompt',
+        ...promptPayload,
+    };
+
+    const bounds = computeMenuOverlayBounds(context, patch);
+    if (bounds) {
+        ov.setBounds(bounds);
+    }
+    ov.webContents.send(C.IPC_EVENT.CHROME_OVERLAY_PATCH, patch);
+}
+
+function hidePermissionPromptOverlay(context) {
+    if (!context) return;
+    dismissChromeShellMenuOverlay(context);
+}
+
 module.exports = {
     createChromeOverlayLayer,
     createChromeOmniboxOverlayLayer,
@@ -547,5 +585,7 @@ module.exports = {
     dismissChromeShellMenuOverlayOnBlur,
     focusChromeShellMenuOverlayWebContents,
     layoutChromeOverlayBounds,
-    layoutChromeOverlayFullWindowBounds
+    layoutChromeOverlayFullWindowBounds,
+    showPermissionPromptOverlay,
+    hidePermissionPromptOverlay
 };

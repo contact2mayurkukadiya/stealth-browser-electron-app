@@ -79,8 +79,28 @@ function ProfileCard({
   const displayLabel = profile.displayName || profile.profileId;
 
   return (
-    <div className="pp-card">
-      <div className="pp-card-menu-anchor" ref={menuWrapRef}>
+    <div
+      className="pp-card"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(profile.profileId)}
+      onKeyDown={(e) => {
+        if (e.key === KEYBOARD.ENTER || e.key === KEYBOARD.SPACE) {
+          if (e.target.closest('.pp-card-name-input') || e.target.closest('.pp-card-menu-anchor')) {
+            return;
+          }
+          e.preventDefault();
+          onOpen(profile.profileId);
+        }
+      }}
+      title={`Open ${displayLabel}`}
+    >
+      <div
+        className="pp-card-menu-anchor"
+        ref={menuWrapRef}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           className="pp-card-ellipsis"
@@ -126,14 +146,12 @@ function ProfileCard({
         )}
       </div>
 
-      <button
-        type="button"
+      <div
         className="pp-card-avatar-hit"
-        onClick={() => onOpen(profile.profileId)}
-        title={`Open ${displayLabel}`}
+        aria-hidden="true"
       >
         <ProfileAvatar profile={profile} size="lg" />
-      </button>
+      </div>
 
       <div
         className="pp-card-name-zone"

@@ -31,7 +31,12 @@
       "identity": null,
       "category": "public.app-category.utilities",
       "entitlements": "entitlements.mac.plist",
-      "entitlementsInherit": "entitlements.mac.inherit.plist"
+      "entitlementsInherit": "entitlements.mac.inherit.plist",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Allow access to your camera for video calls and web applications.",
+        "NSMicrophoneUsageDescription": "Allow access to your microphone for audio calls and voice recognition.",
+        "NSLocationUsageDescription": "Allow access to your location for geolocation features."
+      }
     },
     "win": {
       "icon": "renderer/assets/logo/icon.ico",
