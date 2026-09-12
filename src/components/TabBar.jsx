@@ -34,8 +34,11 @@ export default function TabBar({
   const tabs = useSelector(s => s.browser.tabs);
   const currentTabId = useSelector(s => s.browser.currentTabId);
 
-  const [tabDisplayModes, setTabDisplayModes] = useState({});
+  const [isStuckToRight, setIsStuckToRight] = useState(false);
+  const [tabWidth, setTabWidth] = useState(240);
+  const tabBarRef = useRef(null);
   const tabTrackRef = useRef(null);
+  const tabContainerRef = useRef(null);
 
   const hoverTimeoutRef = useRef(null);
 
@@ -43,6 +46,20 @@ export default function TabBar({
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     window.electronAPI.tooltipHide();
   }, []);
+
+  const handleWheel = useCallback((e) => {
+    hideTooltip();
+    const container = tabContainerRef.current;
+    if (!container) return;
+    if (container.scrollWidth <= container.clientWidth) return;
+
+    // Trackpad horizontal swipe (deltaX !== 0) is natively handled by Chromium with momentum.
+    // Only convert pure vertical wheel (e.g. mouse wheel where deltaX === 0) to horizontal scroll.
+    if (Math.abs(e.deltaX) === 0 && e.deltaY !== 0) {
+      e.preventDefault();
+      container.scrollLeft += e.deltaY;
+    }
+  }, [hideTooltip]);
 
   const handleGhostDragMouseDown = useCallback((e) => {
     if (e.button !== 0) return;
@@ -104,44 +121,88 @@ export default function TabBar({
     [tabOrder, tabs],
   );
 
+  const updateTabWidth = useCallback(() => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+
+    const computed = window.getComputedStyle(bar);
+    const padLeft = parseFloat(computed.paddingLeft) || 0;
+    const padRight = parseFloat(computed.paddingRight) || 0;
+    const totalBarWidth = bar.clientWidth - padLeft - padRight;
+
+    // Reserve space for #add-tab button (32px + 5px gap = 37px) + right window drag buffer (25px)
+    const addTabSpace = 62;
+    const maxAvailable = Math.max(100, totalBarWidth - addTabSpace);
+
+    const unpinnedCount = tabOrder.length - pinnedTabCount;
+    if (unpinnedCount <= 0) {
+      setIsStuckToRight(false);
+      setTabWidth(240);
+      return;
+    }
+
+    // Pinned tabs take 42px each + 5px gap = 47px
+    const pinnedSpace = pinnedTabCount * 47;
+    // Gaps between unpinned tabs (5px each) + container left/right padding (20px)
+    const gapsAndPadding = Math.max(0, (unpinnedCount - 1) * 5) + 20;
+
+    // Total width if all unpinned tabs were at full preferred width (240px)
+    const totalWidthAtFull = (unpinnedCount * 240) + pinnedSpace + gapsAndPadding;
+    const shouldStick = totalWidthAtFull > maxAvailable;
+    setIsStuckToRight(shouldStick);
+
+    const availableForUnpinned = maxAvailable - pinnedSpace - gapsAndPadding;
+    const idealWidth = availableForUnpinned / unpinnedCount;
+    const nextWidth = Math.min(240, Math.max(28, Math.floor(idealWidth)));
+
+    setTabWidth(nextWidth);
+
+    // If total tabs now fit within container, reset scrollLeft so tabs align cleanly
+    const container = tabContainerRef.current;
+    if (container && (!shouldStick || container.scrollWidth <= container.clientWidth)) {
+      container.scrollLeft = 0;
+    }
+  }, [tabOrder.length, pinnedTabCount]);
+
   useLayoutEffect(() => {
-    const tabTrackEl = tabTrackRef.current;
-    if (!tabTrackEl) return undefined;
+    updateTabWidth();
 
-    const syncDisplayModes = () => {
-      const tabElements = tabTrackEl.querySelectorAll('.tab');
-      if (tabElements.length === 0) return;
+    const barEl = tabBarRef.current;
+    if (!barEl) return undefined;
 
-      const nextModes = {};
-      tabElements.forEach((tabEl) => {
-        nextModes[tabEl.id] = getTabDisplayMode(tabEl.offsetWidth);
-      });
-      setTabDisplayModes((prevModes) => {
-        const prevKeys = Object.keys(prevModes);
-        const nextKeys = Object.keys(nextModes);
-        if (prevKeys.length !== nextKeys.length) return nextModes;
-        for (const key of nextKeys) {
-          if (prevModes[key] !== nextModes[key]) return nextModes;
-        }
-        return prevModes;
-      });
-    };
+    const resizeObserver = new ResizeObserver(() => {
+      updateTabWidth();
+    });
+    resizeObserver.observe(barEl);
 
-    syncDisplayModes();
-
-    const resizeObserver = new ResizeObserver(syncDisplayModes);
-    resizeObserver.observe(tabTrackEl);
-
-    window.addEventListener('resize', syncDisplayModes);
+    window.addEventListener('resize', updateTabWidth);
 
     return () => {
-      window.removeEventListener('resize', syncDisplayModes);
+      window.removeEventListener('resize', updateTabWidth);
       resizeObserver.disconnect();
     };
-  }, [tabOrder]);
+  }, [updateTabWidth]);
+
+  useLayoutEffect(() => {
+    if (!currentTabId || !tabTrackRef.current) return;
+    const activeTabEl = tabTrackRef.current.querySelector(`.tab[data-tab-id="${currentTabId}"]`);
+    if (activeTabEl) {
+      activeTabEl.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest',
+      });
+    }
+  }, [currentTabId]);
+
+  const displayMode = useMemo(() => {
+    if (tabWidth >= 60) return TAB_DISPLAY_MODE.FULL;
+    return TAB_DISPLAY_MODE.ICON_ONLY;
+  }, [tabWidth]);
 
   return (
     <div
+      ref={tabBarRef}
       className={`tab-bar${isMac ? ' tab-bar--mac' : ''}${isWin ? ' tab-bar--win' : ''}${isGhostWindow ? ' tab-bar--ghost' : ''}`}
       onMouseDown={isGhostWindow ? handleGhostDragMouseDown : undefined}
     >
@@ -151,15 +212,19 @@ export default function TabBar({
           <span>Ghost</span>
         </div>
       )}
-      <div className="tab-container">
-        <div ref={tabTrackRef} className="tab-track">
+      <div
+        ref={tabContainerRef}
+        className={`tab-container${isStuckToRight ? ' tab-container--stuck' : ''}`}
+        onWheel={handleWheel}
+      >
+        <div ref={tabTrackRef} className="tab-track" style={{ '--tab-width': `${tabWidth}px` }}>
           {tabOrder.map(id => (
             <Tab
               key={id}
               id={id}
               tab={tabs[id]}
               isActive={id === currentTabId}
-              displayMode={tabDisplayModes[id] || TAB_DISPLAY_MODE.FULL}
+              displayMode={displayMode}
               pinnedTabCount={pinnedTabCount}
               onClose={() => onCloseTab(id)}
               onSwitch={onSwitchTab}

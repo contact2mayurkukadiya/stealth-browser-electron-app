@@ -318,14 +318,24 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 }
 
 .tab-container {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-width: 0;
-    max-width: calc(100% - 100px);
+    max-width: calc(100% - 60px);
     height: 100%;
-    overflow: hidden;
-    /* border: 1px solid blue; */
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
     padding: 0px 10px 3px;
-    /* border: 1px solid green; */
+    -webkit-app-region: no-drag;
+}
+
+.tab-container.tab-container--stuck {
+    flex: 1 1 auto;
+    width: 100%;
+}
+
+.tab-container::-webkit-scrollbar {
+    display: none;
 }
 
 .tab-track {
@@ -333,10 +343,16 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
-    width: 100%;
+    width: max-content;
+    min-width: 100%;
     height: 100%;
     gap: 5px;
-    /* border: 1px solid blue; */
+    -webkit-app-region: no-drag;
+}
+
+.tab-container.tab-container--stuck .tab-track {
+    width: 100%;
+    min-width: 100%;
 }
 
 /* Add-tab sits immediately right of .tab-container. The 60px slack on the
@@ -360,8 +376,9 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     position: relative;
     padding: 5px 12px;
     border-radius: 10px 10px 0 0;
-    flex: 1 1 200px;
-    min-width: 20px;
+    width: 240px;
+    flex: 0 0 240px;
+    min-width: 28px;
     max-width: 240px;
     top: 0px;
     height: calc(100% - 5px);
@@ -376,6 +393,13 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     -webkit-app-region: no-drag;
     z-index: 2;
     color: var(--chrome-toolbar-icon);
+}
+
+.tab-container.tab-container--stuck .tab:not(.tab--pinned) {
+    flex: 1 1 0px;
+    width: 0;
+    min-width: 28px;
+    max-width: 240px;
 }
 
 .icon-container {
@@ -432,10 +456,12 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
+    margin-right: 0;
     /* Default: fade near tab edge when close button is hidden. */
-    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
-    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 6px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 6px), transparent 100%);
     pointer-events: none;
+    transition: margin-right 0.18s ease, -webkit-mask-image 0.18s ease, mask-image 0.18s ease;
 }
 
 /* ── Nav bar ──────────────────────────────────────────────────────────────── */
@@ -1379,11 +1405,18 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 
 /* ── Close button ─────────────────────────────────────────────────────────── */
 .close-btn {
+    --posX: 8px;
+    --posY: -50%;
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(var(--posY)) translateX(var(--posX));
     opacity: 0;
+    pointer-events: none;
     font-size: 12px;
-    width: 0;
+    width: 20px;
     height: 20px;
-    padding: 0;
+    padding: 3px;
     box-sizing: border-box;
     line-height: 1;
     display: flex;
@@ -1392,7 +1425,8 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     border-radius: 50%;
     overflow: hidden;
     flex-shrink: 0;
-    transition: width 0.15s ease, padding 0.15s ease, opacity 0.15s ease, background-color 0.15s ease;
+    transition: opacity 0.18s ease, --posX 0.18s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s ease;
+    z-index: 3;
 }
 
 .close-btn .tab-close-icon {
@@ -1416,19 +1450,28 @@ body:has(.header--stealth-window) .tab-content-snapshot {
 
 .tab--mode-full .close-btn {
     opacity: 0;
-    width: 0;
-    padding: 0;
+    pointer-events: none;
+    --posX: 8px;
 }
 
 .tab--mode-full:hover .close-btn {
     opacity: 1;
-    width: 20px;
-    padding: 4px;
+    pointer-events: auto;
+    --posX: 0;
 }
 
-.tab--mode-full:hover .tab-title {
-    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
-    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+.tab--mode-full.active .close-btn {
+    opacity: 1;
+    pointer-events: auto;
+    --posX: 0;
+    --posY: calc(-50% - 2px);
+}
+
+.tab--mode-full:hover .tab-title,
+.tab--mode-full.active .tab-title {
+    margin-right: 24px;
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 8px), transparent 100%);
 }
 
 .tab--mode-icon-only {
@@ -1442,40 +1485,36 @@ body:has(.header--stealth-window) .tab-content-snapshot {
     display: none;
 }
 
-.tab--mode-icon-only .icon-container,
-.tab--mode-icon-only .close-btn {
-    margin: 0 auto;
-}
-
 .tab--mode-icon-only .icon-container {
-    opacity: 1;
     display: flex;
     width: 16px;
     height: 16px;
-    flex-basis: 16px;
-}
-
-.tab--mode-icon-only .close-btn {
-    display: none;
-    opacity: 0;
-    width: 0;
-    height: 16px;
-    padding: 0;
+    margin: 0 auto;
 }
 
 .tab--mode-icon-only:hover .icon-container {
     display: none;
+}
+
+.tab--mode-icon-only .close-btn {
+    right: auto;
+    left: 50%;
+    transform: translate(-50%, -50%);
     opacity: 0;
-    width: 0;
-    flex-basis: 0;
+    pointer-events: none;
 }
 
 .tab--mode-icon-only:hover .close-btn {
     display: flex;
     opacity: 1;
-    width: 16px;
-    height: 16px;
-    padding: 2px;
+    pointer-events: auto;
+    transform: translate(-50%, -50%);
+}
+
+.tab--mode-icon-only.active .close-btn {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, calc(-50% - 2px));
 }
 
 .tab--mode-icon-only .close-btn .tab-close-icon {

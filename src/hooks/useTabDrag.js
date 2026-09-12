@@ -119,10 +119,11 @@ export function useTabDrag({
           window._draggingTabId = id;
         }
 
-        // ── Constrain to tab bar bounds ──────────────────────────────────
-        const barRect = tabEl.closest('.tab-bar').getBoundingClientRect();
+        // ── Constrain to tab container bounds ────────────────────────────
+        const container = tabEl.closest('.tab-container');
+        const boundsRect = container ? container.getBoundingClientRect() : tabEl.closest('.tab-bar').getBoundingClientRect();
         const tabW = originalRects[draggingIndex].width;
-        const newX = Math.max(barRect.left, Math.min(me.clientX - offsetX, barRect.right - tabW));
+        const newX = Math.max(boundsRect.left, Math.min(me.clientX - offsetX, boundsRect.right - tabW));
         const dragDx = newX - originalRects[draggingIndex].left;
 
         // ── Determine new target index ───────────────────────────────────
